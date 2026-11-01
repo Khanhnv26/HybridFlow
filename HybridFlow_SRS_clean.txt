@@ -1,0 +1,1097 @@
+TÀI LIỆU ĐẶC TẢ YÊU CẦU PHẦN MỀM
+
+HYBRIDFLOW
+
+No-Code Automation &amp; Two-Way Data Synchronization Platform
+
+Bản chốt phạm vi sản phẩm v1.0 · Dùng để thiết kế, triển khai và nghiệm thu MVP
+
+Thông tin
+
+Giá trị
+
+Tên sản phẩm
+
+HybridFlow (thống nhất cách viết theo yêu cầu mới nhất)
+
+Mã tài liệu
+
+HF-SRS-001
+
+Phiên bản
+
+1.0 — Baseline Draft
+
+Ngày lập
+
+29/10/2026
+
+Trạng thái
+
+Đề xuất chốt để triển khai MVP; tiêu chí hiệu năng cần đo thực tế
+
+Đối tượng
+
+Developer, tester, reviewer, nhóm thử nghiệm
+
+Tóm tắt điều hành
+
+HybridFlow là ứng dụng web cho phép người dùng kết nối nguồn dữ liệu đã có, trước tiên là Google Sheets, đồng bộ hai chiều giữa các bảng tính, tạo các quy tắc tự động hóa không cần code và quản lý nhiều quy trình chạy độc lập, song song. Mọi quy trình được tổ chức theo Workspace → Business Module → Workflow → Execution. HybridFlow không xây lại phần mềm bán hàng, CRM hay ERP; bảng tính vẫn là nơi người dùng xem và sửa dữ liệu kinh doanh.
+
+Nguyên tắc MVP: làm ít connector nhưng đáng tin cậy; không ghi đè dữ liệu xung đột một cách âm thầm; chạy song song có giới hạn và truy vết được; giao diện dễ hiểu với người không biết lập trình.
+
+Mục lục
+
+1. Giới thiệu, mục tiêu và phạm vi
+
+2. Bên liên quan và vai trò
+
+3. Ngữ cảnh hệ thống và mô hình nghiệp vụ
+
+4. Yêu cầu chức năng (FR)
+
+5. Luồng nghiệp vụ / Use cases
+
+6. Business Rules và mô hình trạng thái
+
+7. Yêu cầu phi chức năng (NFR)
+
+8. Mô hình dữ liệu và API dự kiến
+
+9. Kiến trúc kỹ thuật &amp; thuật toán đồng bộ
+
+10. Tích hợp bên ngoài, quyền và giới hạn
+
+11. Rủi ro, bảo mật và vận hành
+
+12. Kế hoạch phát hành, traceability và UAT
+
+13. Tiêu chí hoàn tất MVP và vấn đề mở
+
+Phụ lục A: Tình huống kiểm thử
+
+Phụ lục B: Ví dụ dữ liệu và workflow
+
+Lưu ý: Bản SRS này định nghĩa yêu cầu kiểm chứng được; thiết kế DB/API ở mức định hướng, có thể chi tiết hóa trong tài liệu thiết kế kỹ thuật mà không thay đổi hành vi nghiệp vụ đã chốt.
+
+1. Giới thiệu, mục tiêu và phạm vi
+
+1.1 Bối cảnh và vấn đề
+
+Khách hàng mục tiêu là chủ shop, nhóm kinh doanh nhỏ, giáo viên/trung tâm nhỏ và nhóm vận hành vốn sử dụng Google Sheets hoặc Excel để quản lý dữ liệu. Các nhóm này thường nhập liệu lại giữa nhiều bảng, không biết bên nào đã cập nhật, thiếu cảnh báo khi một trạng thái thay đổi và gặp lỗi khi nhiều người sửa đồng thời.
+
+1.2 Mục tiêu có thể đo
+
+Rút ngắn thao tác kết nối hai bảng và tạo một flow đơn giản; mục tiêu thử nghiệm ≤ 5 phút đối với người mới có tài khoản Google và bảng mẫu.
+
+Phát hiện thay đổi của cả hai phía, đồng bộ những sửa đổi không xung đột, giữ nguyên bản ghi khi xung đột chưa giải quyết.
+
+Cho phép ít nhất 5 workflow độc lập thực thi đồng thời trong bài test MVP, không tự động làm tác vụ khác thất bại.
+
+Có dấu vết đầy đủ: nguồn, đích, record, trường, thời gian, trạng thái, lỗi và người xác nhận.
+
+Cho phép người dùng tạo quy tắc Khi–Nếu–Thì và gửi thông báo Telegram sau khi thay đổi dữ liệu được xác minh.
+
+1.3 Phạm vi v1.0 (IN)
+
+Workspace và thành viên với quyền cơ bản; Business Module chứa nhiều workflow.
+
+Google OAuth, Google Sheets ↔ Google Sheets, mapping cột và record ID.
+
+Đồng bộ hai chiều bằng polling/diff, có checkpoint, xung đột, retry, reconciliation và nhật ký.
+
+Job queue bền vững trên PostgreSQL; chạy nhiều workflow độc lập song song có giới hạn.
+
+No-Code rules dạng Khi–Nếu–Thì; Telegram Bot để gửi thông báo; tiếp nhận webhook cơ bản khi cần.
+
+Dashboard xem trạng thái, các lần chạy, cảnh báo xung đột, bật/tắt flow.
+
+1.4 Ngoài phạm vi v1.0 (OUT)
+
+Không xây CRM/POS/ERP hay thay thế giao diện bảng tính; không tự động đọc Zalo/Messenger cá nhân; không bảo đảm “realtime tuyệt đối” từ Google Sheets; không đồng bộ file .xlsx nằm trên máy tính nếu không import/agent; không marketplace, AI Agent, đa nhánh React Flow phức tạp, multi-region, microservices hay tự động hóa nghiệp vụ tài chính rủi ro cao không có bước phê duyệt.
+
+1.5 Giả định và phụ thuộc
+
+Người dùng có quyền truy cập hai Google Sheets tương ứng, đồng ý cấp OAuth scopes tối thiểu, có đường truyền internet và cấu trúc bảng xác định. API bên ngoài có thể áp quota, lỗi tạm thời hoặc thay đổi chính sách. Một flow có mapping rõ ràng; hệ thống cần thông báo khi cấu trúc sheet thay đổi.
+
+2. Bên liên quan và vai trò
+
+Vai trò
+
+Quyền chính
+
+Workspace Owner
+
+Tạo workspace, quản lý thành viên/kết nối, xóa workspace, xem toàn bộ audit
+
+Admin
+
+Quản lý module, workflow, connector, lịch sử và xung đột
+
+Editor
+
+Tạo/sửa/chạy các workflow được cấp quyền; xử lý conflict nếu được phân quyền
+
+Viewer
+
+Chỉ đọc dashboard, trạng thái, lịch sử được cho phép
+
+Hệ thống/Worker
+
+Nhận job, đồng bộ, retry và ghi audit theo cấu hình; không là tài khoản người dùng
+
+Quyền truy cập phải kiểm tra tại backend theo workspace_id; ẩn nút trên frontend không được xem là kiểm soát truy cập.
+
+3. Ngữ cảnh hệ thống và mô hình nghiệp vụ
+
+3.1 Cấu trúc phân cấp
+
+Workspace (1) → Business Module (N) → Workflow (N) → Workflow Execution (N) → Execution Step (N). Mỗi module là một nhóm workflow có ý nghĩa nghiệp vụ (bán hàng, kho, học phí), KHÔNG phải một Spring Boot module hay microservice. Connections thuộc workspace và được cấp quyền dùng cho từng workflow/module.
+
+3.2 Khái niệm
+
+Khái niệm
+
+Định nghĩa
+
+Connection
+
+Liên kết được cấp quyền tới nguồn/đích như Google Sheets hoặc Telegram
+
+Sync Flow
+
+Workflow có nhiệm vụ đồng bộ hai nguồn và mapping hai chiều
+
+Trigger Rule
+
+Khi [sự kiện], Nếu [điều kiện], Thì [hành động]
+
+Execution
+
+Một lần chạy workflow, định danh bằng execution_id
+
+Job
+
+Đơn vị công việc bền vững để worker claim và thực thi
+
+Conflict
+
+Cả hai phía sửa cùng một trường khác nhau kể từ snapshot chung
+
+Checkpoint
+
+Mốc dữ liệu/phiên bản đã đồng bộ và xác minh thành công
+
+Reconciliation
+
+Đọc lại và đối chiếu nguồn, đích nhằm khắc phục lệch trạng thái
+
+3.3 Các scenario đại diện
+
+Shop online: Sheets Đơn hàng của chủ shop ↔ Sheets Vận hành của nhân viên; trạng thái “Đang giao” đổi ở bảng nhân viên được đồng bộ về bảng chủ shop, rồi Telegram nhận thông báo.
+
+Trung tâm: Sheets Danh sách học viên ↔ Sheets Thu học phí; một workflow theo dõi trạng thái nợ học phí và gửi cảnh báo theo quy tắc.
+
+Một workspace có module Bán hàng và module Kho: các workflow độc lập chạy cùng lúc, nhưng hai workflow cùng sửa một bản ghi phải được bảo vệ khỏi ghi đè.
+
+4. Yêu cầu chức năng (Functional Requirements)
+
+4.1 Tài khoản, Workspace, Module
+
+FR-001 — Đăng nhập và phiên người dùng
+
+Ưu tiên: P0. Đăng nhập bằng phương thức an toàn (Google OAuth hoặc tài khoản đã xác minh); session/token có hạn sử dụng và khả năng đăng xuất.
+
+Tiêu chí nghiệm thu: Người chưa đăng nhập không truy cập được workspace; token hết hạn bị từ chối.
+
+FR-002 — Workspace và thành viên
+
+Ưu tiên: P0. Tạo, cập nhật, xem workspace; mời và phân vai trò; tách dữ liệu theo workspace.
+
+Tiêu chí nghiệm thu: Editor workspace A không đọc/chỉnh được tài nguyên workspace B.
+
+FR-003 — Business Module
+
+Ưu tiên: P0. Tạo/đổi tên/mô tả/bật-tắt module; mỗi module chứa nhiều workflow; danh sách và thống kê.
+
+Tiêu chí nghiệm thu: Module tắt không nhận trigger mới, job đang chạy theo chính sách dừng an toàn.
+
+FR-004 — Quản lý workflow
+
+Ưu tiên: P0. Tạo/nhân bản/sửa/bật-tắt workflow; mỗi workflow có nguồn, đích, mapping, rule, lịch chạy; phiên bản cấu hình.
+
+Tiêu chí nghiệm thu: Không thể bật workflow cấu hình thiếu hoặc không hợp lệ.
+
+FR-005 — Chia sẻ connection
+
+Ưu tiên: P0. Kết nối có thể được tái sử dụng trong workspace với quyền cụ thể.
+
+Tiêu chí nghiệm thu: Đổi/xóa connector hiển thị tác động tới workflow đang dùng.
+
+4.2 Kết nối và đồng bộ hai chiều
+
+FR-006 — Kết nối Google Sheets
+
+Ưu tiên: P0. OAuth 2.0, chọn spreadsheet, sheet/tab và cấp quyền tối thiểu; có kiểm tra truy cập và ngắt kết nối.
+
+Tiêu chí nghiệm thu: Kiểm tra quyền đọc/ghi trước bật; refresh token được bảo vệ.
+
+FR-007 — Ánh xạ dữ liệu
+
+Ưu tiên: P0. Chọn cột record_id ổn định, định nghĩa field mapping, kiểu dữ liệu và chiều đồng bộ từng cột.
+
+Tiêu chí nghiệm thu: Dòng được sắp xếp/chèn vẫn khớp theo ID; thiếu ID bị báo lỗi.
+
+FR-008 — Khởi tạo snapshot
+
+Ưu tiên: P0. Trước lần sync đầu, preview sai khác và cho chọn cách bootstrap (A là gốc/B là gốc/merge có duyệt).
+
+Tiêu chí nghiệm thu: Không tự ý ghi đè toàn bộ bảng khi vừa kết nối.
+
+FR-009 — Change detection
+
+Ưu tiên: P0. Đọc dữ liệu, so sánh với checkpoint chung để phát hiện thêm/sửa/xóa từ cả hai phía.
+
+Tiêu chí nghiệm thu: Phân biệt thay đổi của A, B và thay đổi từ lần sync trước.
+
+FR-010 — Đồng bộ hai chiều
+
+Ưu tiên: P0. Đồng bộ bản ghi/trường không xung đột từ A sang B hoặc ngược lại, theo mapping đã khai báo.
+
+Tiêu chí nghiệm thu: Sau apply &amp; verify, hai bên thống nhất tại trường được quản lý.
+
+FR-011 — Giải quyết xung đột
+
+Ưu tiên: P0. Phát hiện sửa đồng thời cùng trường; lưu cả hai giá trị, nguyên nhân; cho chọn A/B hoặc nhập giá trị thủ công.
+
+Tiêu chí nghiệm thu: Không ghi đè bên nào khi conflict chưa được giải quyết.
+
+FR-012 — Thao tác xóa
+
+Ưu tiên: P0. Mặc định không truyền xóa tự động; hỗ trợ tombstone/soft delete khi người dùng chủ động bật và có xác nhận.
+
+Tiêu chí nghiệm thu: Xóa nhầm hoặc thiếu dòng do filter không tự lan truyền qua bảng khác.
+
+FR-013 — Kiểm tra và phục hồi
+
+Ưu tiên: P0. Retry/backoff; đọc lại sau ghi để verify; reconcile định kỳ khi lỗi, timeout, chỉnh sửa song song.
+
+Tiêu chí nghiệm thu: Job gián đoạn có thể chạy lại an toàn và thể hiện trạng thái chính xác.
+
+FR-014 — Chống vòng lặp
+
+Ưu tiên: P0. Không sinh ra vòng sync A→B→A không kết thúc khi chính hệ thống phản chiếu thay đổi.
+
+Tiêu chí nghiệm thu: Một thay đổi hợp lệ hội tụ và không tạo job lặp vô hạn.
+
+4.3 Automation và song song
+
+FR-015 — Rule Builder No-Code
+
+Ưu tiên: P0. Cấu hình Khi [record created/updated/conflict], Nếu [field/operator/value], Thì [notification hoặc action cho phép].
+
+Tiêu chí nghiệm thu: Người dùng tạo được rule bằng form, không cần viết mã.
+
+FR-016 — Telegram notifications
+
+Ưu tiên: P0. Kết nối bot/chat được cấp phép; gửi thông báo theo template và ghi delivery status.
+
+Tiêu chí nghiệm thu: Thông báo gửi sau khi change được xác minh; thất bại có retry riêng.
+
+FR-017 — Lịch chạy
+
+Ưu tiên: P0. Mỗi workflow có lịch polling/trigger độc lập, có thể pause/resume tại ranh giới job.
+
+Tiêu chí nghiệm thu: Không chạy job mới khi workflow bị disable.
+
+FR-018 — Parallel workflows
+
+Ưu tiên: P0. Chạy ≥5 workflow không phụ thuộc đồng thời trong môi trường kiểm thử; có worker pool, per-workspace quota và per-connector rate limit.
+
+Tiêu chí nghiệm thu: Workflow A đang sync không chặn workflow B gửi Telegram.
+
+FR-019 — Job queue &amp; idempotency
+
+Ưu tiên: P0. Lưu job, lease, retry, execution log; không claim trùng; mỗi event/operation có idempotency key.
+
+Tiêu chí nghiệm thu: Restart server không mất job; retry không tạo bản ghi trùng.
+
+FR-020 — Monitoring và audit
+
+Ưu tiên: P0. Dashboard tổng quan, lịch sử theo workspace/module/workflow/execution; lỗi, conflict, last sync, retry, correlation ID.
+
+Tiêu chí nghiệm thu: Mọi lần ghi quan trọng truy ngược được nguồn đích và thời điểm.
+
+FR-021 — Webhook đầu vào
+
+Ưu tiên: P1. Endpoint nhận sự kiện có xác thực, chống replay, xác minh schema.
+
+Tiêu chí nghiệm thu: Webhook giả/bị phát lại không tạo công việc trùng.
+
+FR-022 — Workflow gọi workflow
+
+Ưu tiên: P1. Hỗ trợ gọi workflow trong hoặc ngoài module qua event và giới hạn độ sâu.
+
+Tiêu chí nghiệm thu: Vòng gọi A→B→A bị phát hiện, không chạy vô hạn.
+
+FR-023 — Template module
+
+Ưu tiên: P1. Khởi tạo module có sẵn workflow/rule theo mẫu shop, lớp học, nhóm nhỏ.
+
+Tiêu chí nghiệm thu: Mẫu không có secret và yêu cầu kết nối thật khi cài.
+
+FR-024 — Excel Online và import file
+
+Ưu tiên: P2. Microsoft Graph cho workbook tương thích; Apache POI cho import/export file .xlsx.
+
+Tiêu chí nghiệm thu: File offline chỉ đồng bộ khi chủ động import/qua agent, không giả làm realtime.
+
+FR-025 — AI message extraction
+
+Ưu tiên: P2. Trích xuất thông tin từ nội dung copy/paste hoặc kênh cho phép; bước phê duyệt khi rủi ro cao.
+
+Tiêu chí nghiệm thu: Không tự đọc chat cá nhân Zalo/Messenger ngoài quyền API chính thức.
+
+5. Use cases và luồng nghiệp vụ
+
+UC
+
+Actor
+
+Mô tả
+
+FR
+
+UC-01
+
+Owner
+
+Tạo workspace, module và gắn thành viên
+
+001–005
+
+UC-02
+
+Admin
+
+Kết nối Google, chọn Sheets A/B và mapping
+
+006–008
+
+UC-03
+
+System
+
+Poll/diff hai chiều, apply, verify và checkpoint
+
+009–014
+
+UC-04
+
+Editor
+
+Xem conflict và quyết định giá trị cuối
+
+011,020
+
+UC-05
+
+Admin
+
+Tạo quy tắc Khi–Nếu–Thì gửi Telegram
+
+015–016
+
+UC-06
+
+System
+
+Chạy nhiều workflow và retry khi lỗi
+
+017–019
+
+UC-07
+
+Viewer
+
+Xem lịch sử và trạng thái đồng bộ
+
+020
+
+5.1 UC-02: Thiết lập đồng bộ hai chiều
+
+Tiền điều kiện: tài khoản đã đăng nhập, có ít nhất hai bảng Google Sheets mà tài khoản được cấp quyền. Kích hoạt: Admin chọn “Tạo Sync Workflow”.
+
+Chọn Business Module và đặt tên workflow.
+
+Xác thực Google OAuth và chọn bảng A, bảng B.
+
+Chọn sheet/tab, xác nhận cột ID ổn định và mapping các trường.
+
+Chọn chiều đồng bộ từng field, cấu hình xử lý xóa, lịch polling.
+
+Hệ thống preview dữ liệu và xung đột bootstrap; Admin xác nhận.
+
+Hệ thống lưu snapshot/flow, chạy đồng bộ lần đầu, hiển thị kết quả và log.
+
+Ngoại lệ: thiếu OAuth scopes, cột ID trùng/thiếu, thay đổi schema, quota API hoặc conflict → giữ flow ở trạng thái NEEDS_ATTENTION hoặc DRAFT; không tự ghi đè.
+
+5.2 UC-03: Đồng bộ một bản ghi
+
+Tiền điều kiện: mapping hợp lệ, sync snapshot tồn tại. Kích hoạt: scheduler hoặc event. Hệ thống lock logic phù hợp cho cặp flow/record, đọc A/B, thực hiện so sánh ba chiều với base snapshot, lập plan, validate, ghi phía đích, verify và cập nhật checkpoint. Khi một bên thay đổi: chuyển chênh lệch sang bên kia. Khi hai bên đổi hai trường khác nhau: merge từng trường nếu chính sách cho phép. Khi hai bên sửa cùng trường khác giá trị: tạo conflict, không ghi trường đó.
+
+5.3 UC-04: Xử lý xung đột
+
+Editor có quyền mở danh sách conflicts, xem record ID, tên trường, base value, A value, B value, thời gian phát hiện. Người dùng chọn giữ A/B hoặc giá trị nhập; hệ thống đọc lại để kiểm tra có thay đổi mới trước khi áp dụng, nếu có thì tái đánh giá; nếu không, ghi, verify và đánh dấu RESOLVED.
+
+5.4 UC-06: Chạy workflow song song
+
+Khi nhiều workflow tới lịch, scheduler tạo các job độc lập trong PostgreSQL. Các worker claim bằng khóa/lease an toàn; hai workflow không xung đột được chạy đồng thời. Trong cùng một record/target, hệ thống điều phối việc ghi hoặc phát hiện conflict. Một worker chết, job hết lease có thể được claim lại; execution log không bị mất và idempotency bảo vệ side effect.
+
+6. Business Rules và trạng thái
+
+ID
+
+Quy tắc
+
+BR-01
+
+Mỗi module thuộc đúng một workspace; một workflow thuộc đúng một module.
+
+BR-02
+
+Connection thuộc workspace, quyền dùng kết nối được phân tách theo vai trò.
+
+BR-03
+
+Mỗi record đồng bộ cần ID ổn định; không dùng số thứ tự dòng làm ID.
+
+BR-04
+
+Conflict cùng field không được auto-overwrite theo mặc định.
+
+BR-05
+
+Hành vi xóa hai chiều tắt theo mặc định, cần chính sách riêng.
+
+BR-06
+
+Chỉ checkpoint sau khi phía đích được xác minh thành công.
+
+BR-07
+
+Không phát trigger lặp cho thay đổi chỉ mang tính phản chiếu.
+
+BR-08
+
+Workflow lỗi không mặc định dừng workflow khác.
+
+BR-09
+
+Các thao tác trùng idempotency key không tạo side effect trùng.
+
+BR-10
+
+Tắt workflow ngăn job mới; job đang chạy được hoàn tất/dừng tại điểm an toàn.
+
+BR-11
+
+Không có transaction ACID xuyên PostgreSQL và Google Sheets.
+
+BR-12
+
+Không lưu token OAuth hoặc nội dung nhạy cảm trong log.
+
+6.1 Trạng thái chuẩn
+
+Thực thể
+
+Trạng thái
+
+Workflow
+
+DRAFT → ACTIVE ↔ PAUSED; ACTIVE/PAUSED → ARCHIVED
+
+Execution
+
+QUEUED → RUNNING → SUCCEEDED / FAILED / PARTIAL / CANCELLED
+
+Job
+
+PENDING → CLAIMED → RUNNING → DONE / RETRY_WAIT / DEAD_LETTER
+
+Conflict
+
+OPEN → IN_REVIEW → RESOLVED hoặc IGNORED
+
+Connection
+
+CONNECTED / EXPIRED / REVOKED / ERROR
+
+Không cho trạng thái SUCCEEDED nếu có thao tác ghi chưa verify. Các execution PARTIAL hoặc NEEDS_ATTENTION phải hiển thị rõ nguyên nhân.
+
+7. Yêu cầu phi chức năng (NFR)
+
+ID
+
+Tiêu chí nghiệm thu mục tiêu
+
+NFR-01 Usability
+
+Người mới có bảng mẫu kết nối 2 Sheets và bật rule cơ bản trong ≤5 phút ở thử nghiệm có hướng dẫn tiêu chuẩn.
+
+NFR-02 Concurrency
+
+Ít nhất 5 workflow độc lập chạy đồng thời trong môi trường MVP; không bảo đảm throughput cụ thể khi chưa đo.
+
+NFR-03 Data Integrity
+
+Không tự ghi đè conflict; retry không làm trùng record; checkpoint chỉ lưu sau verify.
+
+NFR-04 Reliability
+
+Ứng dụng restart, job dở dang được khôi phục có kiểm soát, không mất audit.
+
+NFR-05 Security
+
+TLS ở production; secrets được mã hóa; least-privilege OAuth; phân quyền workspace; audit admin actions.
+
+NFR-06 Observability
+
+Có workflow_id, execution_id, correlation_id; logs không chứa secrets hoặc toàn bộ dữ liệu nhạy cảm.
+
+NFR-07 Latency
+
+UI xem được trạng thái job trong ≤3 giây sau khi backend đã cập nhật trạng thái trên kết nối thử nghiệm; mục tiêu đo lại.
+
+NFR-08 Quota
+
+Rate limiting theo connector, exponential backoff + jitter khi 429/5xx; không retry vô hạn.
+
+NFR-09 Compatibility
+
+Web responsive desktop/mobile; Chrome/Edge/Firefox phiên bản hỗ trợ hiện hành.
+
+NFR-10 Operability
+
+Có Docker Compose, healthcheck, backup/restore rehearsal, migration Flyway, hướng dẫn vận hành.
+
+NFR-11 Scalability
+
+Worker pool cấu hình được; kiểm soát tải theo workspace; kiến trúc cho phép tách worker sau MVP.
+
+NFR-12 Privacy
+
+Ngắt kết nối thu hồi quyền truy cập; yêu cầu xóa workspace được xử lý theo chính sách retention công bố.
+
+8. Mô hình dữ liệu và API dự kiến
+
+8.1 Các bảng chính
+
+Bảng
+
+Thuộc tính trọng yếu
+
+users
+
+id, identity_provider, subject, created_at
+
+workspaces / workspace_members
+
+id, name; workspace_id, user_id, role
+
+business_modules
+
+id, workspace_id, name, status
+
+connections
+
+id, workspace_id, type, encrypted_credentials_ref, status
+
+workflows / workflow_versions
+
+id, module_id, type, status; version, definition_json
+
+sync_flows / field_mappings
+
+workflow_id, source_id, target_id; field_a, field_b, direction
+
+record_mappings
+
+sync_flow_id, record_key, source_ref, target_ref
+
+sync_snapshots
+
+record_key, field_key, base_value_hash/value, version
+
+sync_runs / sync_operations
+
+execution_id, status, checkpoints; operation_key, write_status, verify_status
+
+workflow_jobs / workflow_executions
+
+job_id, lease_until, attempts, idempotency_key; timestamps, result
+
+sync_conflicts
+
+record_key, field, base, value_a, value_b, resolution, status
+
+workflow_rules / notifications
+
+condition_json, action_json; destination, delivery_status
+
+audit_events
+
+workspace_id, actor, event_type, trace_id, redacted_payload
+
+Chọn cách lưu snapshot phù hợp với dữ liệu nhạy cảm: hash không đủ để hiển thị so sánh base/A/B; nếu cần lưu giá trị phải mã hóa/giới hạn retention và truy cập. Lưu các credential bằng mã hóa có quản lý khóa; không đưa vào definition_json.
+
+8.2 API contract dự kiến
+
+Method / endpoint
+
+Mục đích
+
+POST /api/v1/workspaces
+
+Tạo workspace
+
+POST /api/v1/modules
+
+Tạo business module
+
+POST /api/v1/workflows
+
+Tạo workflow
+
+POST /api/v1/connections/google/start
+
+Bắt đầu OAuth
+
+GET /api/v1/connections/google/callback
+
+Xử lý OAuth callback
+
+POST /api/v1/sync-flows/{id}/preview
+
+Preview mapping và bootstrap
+
+POST /api/v1/sync-flows/{id}/run
+
+Tạo sync execution
+
+GET /api/v1/executions/{id}
+
+Xem trạng thái từng execution
+
+GET /api/v1/conflicts
+
+Danh sách xung đột
+
+POST /api/v1/conflicts/{id}/resolve
+
+Chọn cách giải quyết
+
+POST /api/v1/workflows/{id}/pause
+
+Dừng nhận job mới
+
+POST /api/v1/webhooks/{connectionId}
+
+Nhận webhook đã xác thực (P1)
+
+API phải kiểm tra quyền và ownership ở backend; POST có side effect nên hỗ trợ idempotency key nơi cần thiết, xác minh input, phân trang và trả lỗi machine-readable.
+
+9. Kiến trúc kỹ thuật và thuật toán
+
+9.1 Technology baseline
+
+Tầng
+
+Giải pháp
+
+Frontend
+
+React + TypeScript + Vite, Tailwind CSS, shadcn/ui, TanStack Query
+
+Backend
+
+Java 21 LTS, Spring Boot 3.5.x hoặc 4.x sau khi xác minh compatibility
+
+Architecture
+
+Modular Monolith: identity, workspace, module, connector, sync, workflow, execution, audit
+
+Database
+
+PostgreSQL + Spring Data JPA + Flyway
+
+Queue
+
+PostgreSQL-backed durable jobs; bounded executor; scheduled polling
+
+External APIs
+
+Google Sheets API, Google OAuth/Drive APIs, Telegram Bot API
+
+Testing
+
+JUnit, Mockito, Testcontainers, contract/E2E tests
+
+Infrastructure
+
+Docker Compose, reverse proxy TLS, healthcheck, monitoring căn bản
+
+9.2 Module boundaries trong Spring Boot
+
+Các package kỹ thuật: identity, workspace, modulemanagement, connection, connector.google, connector.telegram, sync, workflow, execution, audit, shared. Đây là module code, tách biệt với Business Module do người dùng tạo. Tránh coupling trực tiếp giữa workflow và connector; sử dụng interface/adapter.
+
+9.3 Thuật toán sync ba chiều (định hướng)
+
+Lấy latest verified base snapshot, đọc giá trị A/B theo record_id; xác thực schema.
+
+Với từng field: aChanged = A ≠ base; bChanged = B ≠ base.
+
+Không đổi: bỏ qua. Chỉ A đổi: đề xuất ghi A→B. Chỉ B đổi: đề xuất B→A. Cả hai đổi và A=B: hội tụ, cập nhật base. Cả hai đổi khác nhau: conflict.
+
+Lập sync plan cho các trường hợp hợp lệ, kiểm tra lại trước ghi khi cần và serialize thao tác có nguy cơ xung đột.
+
+Ghi theo batch vừa phải, xử lý quota và timeout; đọc lại phía đích để verify.
+
+Chỉ cập nhật snapshot và phát domain event cho thay đổi đã verify; các tác vụ dở dang cần reconcile.
+
+Ghi chú: hệ thống không thể bảo đảm atomic compare-and-swap đối với mọi thao tác Google Sheets khi người khác sửa ngoài ứng dụng. “Đồng bộ chính xác tuyệt đối” không được cam kết; hệ thống phải phát hiện sai khác, lưu dấu vết và hỗ trợ phục hồi.
+
+9.4 Parallel execution và nhất quán
+
+Scheduler ghi job vào PostgreSQL. Worker claim job bằng giao dịch và cơ chế an toàn (ví dụ FOR UPDATE SKIP LOCKED + lease). Job độc lập chạy đồng thời, nhưng quyền ghi cùng flow/record/đích phải được quản lý bằng coordination + verify; không chỉ dựa vào @Transactional. Tất cả side effect có operation key, retry policy, dead-letter status. Không bắt buộc RabbitMQ/Redis trong MVP.
+
+10. Kết nối ngoài, quyền và giới hạn
+
+Kết nối
+
+Phiên bản
+
+Điều kiện/giới hạn
+
+Google Sheets ↔ Sheets
+
+P0
+
+Người dùng cấp OAuth; phát hiện thay đổi bằng polling/diff và cơ chế hỗ trợ, không mặc định cell-level push
+
+Telegram Bot
+
+P0
+
+Bot chỉ nhận/đọc các cuộc hội thoại và sự kiện theo quyền, cấu hình và privacy mode
+
+Incoming Webhook
+
+P1
+
+Nguồn gọi phải ký/xác thực request và có chống replay
+
+Excel .xlsx offline
+
+P1/P2
+
+Import/export thủ công; không có sync nền nếu không có local agent
+
+Excel Online
+
+P2
+
+Phụ thuộc Microsoft Graph, loại tài khoản và quyền workbook phù hợp
+
+Messenger Page
+
+P2
+
+Chỉ dùng API/chính sách và quyền Page được phê duyệt
+
+Zalo OA/GMF
+
+P2
+
+Phụ thuộc chương trình API/quyền và điều khoản của Zalo
+
+Zalo/Messenger cá nhân
+
+OUT
+
+Không hứa đọc tự động tin nhắn cá nhân; Smart Capture copy/paste tùy chọn
+
+11. Bảo mật, rủi ro và vận hành
+
+11.1 Các biện pháp bảo mật tối thiểu
+
+OAuth state/PKCE nếu phù hợp; redirect allowlist; mã hóa refresh token và lưu ngoài log.
+
+Least privilege: chỉ scope thật sự cần thiết, có revoke và hiển thị trạng thái kết nối.
+
+Workspace isolation ở mọi query, audit quyền chỉnh sửa, tránh IDOR.
+
+Không cho người dùng tự nhập JavaScript tùy ý vào rule builder v1.
+
+Chặn SSRF với webhook/HTTP action mở rộng; rate limit input và kích thước payload.
+
+Backup định kỳ PostgreSQL + thực hành restore; có retention và xóa dữ liệu theo chính sách.
+
+11.2 Risk register
+
+Rủi ro
+
+Hậu quả
+
+Giảm thiểu
+
+Hai bên sửa cùng dữ liệu
+
+Ghi đè/mất dữ liệu
+
+Three-way diff, conflict, verify, audit
+
+Google API quota/timeout
+
+Chậm hoặc không hoàn tất
+
+Rate limit, batch, retry/backoff, cảnh báo
+
+Schema Sheet thay đổi
+
+Mapping sai
+
+Schema validation, stop flow và yêu cầu remap
+
+Sync loop
+
+Tăng requests, dữ liệu dao động
+
+Origin-aware operation, snapshot, idempotency
+
+Job chạy trùng khi restart
+
+Nhân bản thay đổi
+
+Lease, unique key, idempotent steps
+
+OAuth token bị lộ
+
+Truy cập trái phép Sheets
+
+Encryption, rotation, revoke, least privilege
+
+MVP quá rộng
+
+Không phát hành được
+
+Giới hạn P0, prototype sync trước modules nâng cao
+
+12. Release plan, traceability và UAT
+
+12.1 Lộ trình
+
+Giai đoạn
+
+Deliverable
+
+Điều kiện qua
+
+M0 — Discovery
+
+Phỏng vấn 10–15 khách hàng, chọn 1 tình huống cụ thể
+
+Có 3–5 nhóm đồng ý dùng thử và bảng mẫu
+
+M1 — POC Sync
+
+Đọc/ghi 2 Sheets, stable ID, snapshot/diff
+
+Thử sửa A, B, reorder rows không mất data
+
+M2 — Reliability
+
+Conflict, retry, verify, job/lease, audit
+
+Qua test cạnh tranh và restart
+
+M3 — Product MVP
+
+Workspace/module/workflow, Rule Builder, Telegram
+
+Người mới tạo flow và chạy được
+
+M4 — Closed Beta
+
+Docker, security, onboarding, quan sát lỗi
+
+3–5 nhóm dùng thử thành công theo checklist
+
+12.2 Ma trận truy vết tóm tắt
+
+Mục tiêu
+
+Yêu cầu
+
+Test / bằng chứng
+
+O1 Đồng bộ chính xác
+
+FR-007–014; BR-03–07
+
+TC-SYNC-01..10, conflict logs
+
+O2 Chạy nhiều workflow
+
+FR-017–019; NFR-02
+
+TC-JOB-01..05, restart/retry
+
+O3 Không cần code
+
+FR-003–006,015–016; NFR-01
+
+UAT-ONBOARD-01..03
+
+O4 Minh bạch và an toàn
+
+FR-020; NFR-03–06,12
+
+Security test, audit, backup/restore
+
+13. Điều kiện hoàn tất MVP và vấn đề cần quyết định
+
+13.1 Definition of Done
+
+Không còn lỗi P0 làm mất dữ liệu, leak OAuth token, vượt quyền workspace hoặc sync loop không kiểm soát.
+
+Chạy được một kịch bản end-to-end: chỉnh A → B, chỉnh B → A, cùng sửa conflict, Editor giải quyết và gửi Telegram đúng một lần.
+
+Đạt bài test ≥5 workflow độc lập chạy đồng thời; từng workflow có status/trace riêng.
+
+Khôi phục sau restart và lỗi API có bằng chứng; retry không nhân bản thay đổi.
+
+Cài đặt từ môi trường sạch bằng README/Docker Compose; test CI và bảo mật cơ bản đạt.
+
+Có 3–5 nhóm thử nghiệm beta và ghi nhận thời gian setup, tần suất dùng và lỗi gặp phải.
+
+13.2 Quyết định còn mở (đóng trước khi code các phần tương ứng)
+
+Chọn chính sách bootstrap mặc định cho hai Sheets có dữ liệu sẵn (khuyến nghị: bắt buộc preview và xác nhận).
+
+Chọn cấu trúc record_id và cách xử lý ID thiếu/trùng ở bảng cũ.
+
+Chọn chính sách xóa (khuyến nghị: no propagation v1).
+
+Chọn chu kỳ polling theo quota và mức giá vận hành thực tế.
+
+Chọn mức quyền Editor được xử lý conflict hay chỉ Admin/Owner.
+
+Định nghĩa retention cụ thể cho bản snapshot và log chứa dữ liệu nhạy cảm.
+
+Phụ lục A. Bộ tình huống kiểm thử trọng yếu
+
+TC
+
+Đầu vào / tình huống
+
+Kết quả mong đợi
+
+TC-SYNC-01
+
+Sửa cột ở A, B không đổi
+
+B cập nhật, verify, snapshot mới
+
+TC-SYNC-02
+
+Sửa cột ở B, A không đổi
+
+A cập nhật, verify
+
+TC-SYNC-03
+
+Cùng field sửa hai giá trị khác
+
+OPEN conflict, không overwrite
+
+TC-SYNC-04
+
+A đổi tên, B đổi trạng thái
+
+Merge hai field nếu policy cho phép
+
+TC-SYNC-05
+
+Sort/chèn dòng Sheets
+
+Record khớp theo ID
+
+TC-SYNC-06
+
+Google 429/timeout
+
+Backoff, RETRY_WAIT, không báo success sớm
+
+TC-SYNC-07
+
+Thay đổi lại khi worker đang ghi
+
+Phát hiện sai khác, không ghi checkpoint sai
+
+TC-SYNC-08
+
+Bảng đổi tên cột/mất ID
+
+Flow NEEDS_ATTENTION, không ghi mù
+
+TC-SYNC-09
+
+Job được gửi lại cùng key
+
+Không có side effect trùng
+
+TC-SYNC-10
+
+Restart sau ghi nhưng trước verify
+
+Reconcile, không nhân bản record
+
+TC-JOB-01
+
+5 workflow khác nhau đến lịch
+
+Chạy song song trong quota, đủ log
+
+TC-JOB-02
+
+2 workflow cùng sửa record
+
+Serialize hoặc detect conflict; không mất data
+
+TC-JOB-03
+
+Worker chết khi giữ lease
+
+Job được reclaim và retry an toàn
+
+TC-SEC-01
+
+Workspace B gọi ID của A
+
+403/404, không rò rỉ dữ liệu
+
+TC-UAT-01
+
+Người dùng mới bật sync + alert
+
+Hoàn tất luồng với giao diện, đo thời gian
+
+Phụ lục B. Workflow minh họa
+
+Module “Bán hàng” → Workflow “Đồng bộ trạng thái đơn”: Connection A = Sheet Chủ Shop, Connection B = Sheet Nhân viên, record_id = order_id, mappings: order_status ↔ status, note ↔ note, payment_status ↔ payment_status (tùy chọn one-way). Rule: KHI field order_status thay đổi thành “Đang giao”, NẾU không có conflict và thao tác đã verify, THÌ gửi Telegram “Đơn {order_id} đang giao”.
+
+Module “Kho” → Workflow “Cảnh báo sắp hết”: một workflow riêng có lịch chạy độc lập và cùng workspace. Rule: KHI tồn kho được cập nhật và available_quantity &lt; threshold, THÌ Telegram thông báo; các event lặp không gửi thông báo trùng trong cùng revision.
+
+Phiên bản mở rộng: workflow có thể gọi workflow khác/cross-module, module templates, Excel Online, Messenger Page và Zalo OA theo quyền API; không nằm trong phạm vi nghiệm thu P0.
