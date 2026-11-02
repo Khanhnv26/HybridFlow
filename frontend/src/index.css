@@ -1,3 +1,71 @@
+@import "@xyflow/react/dist/style.css";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+:root {
+  --canvas-bg: #0d1117;
+  --grid-dot: #30363d;
+}
+
+body {
+  margin: 0;
+  padding: 0;
+  background-color: var(--canvas-bg);
+  color: #e6edf3;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  overflow: hidden;
+}
+
+/* React Flow Custom Dark Theme Overrides */
+.react-flow__background {
+  background-color: #0d1117;
+}
+
+.react-flow__edge-path {
+  stroke: #58a6ff;
+  stroke-width: 2.5;
+}
+
+.react-flow__edge.animated path {
+  stroke-dasharray: 6;
+  animation: react-flow__dash 1s linear infinite;
+}
+
+.react-flow__handle {
+  width: 12px;
+  height: 12px;
+  background-color: #0d1117;
+  border: 2px solid #58a6ff;
+  transition: transform 0.15s, background-color 0.15s;
+}
+
+.react-flow__handle:hover {
+  transform: scale(1.3);
+  background-color: #58a6ff;
+}
+
+.react-flow__controls {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+}
+
+.react-flow__controls-button {
+  background: #161b22;
+  border-bottom: 1px solid #30363d;
+  color: #c9d1d9;
+}
+
+.react-flow__controls-button:hover {
+  background: #21262d;
+  color: #ffffff;
+}
+
+.react-flow__minimap {
+  background: #161b22;
+  border: 1px solid #30363d;
+  border-radius: 8px;
+}
