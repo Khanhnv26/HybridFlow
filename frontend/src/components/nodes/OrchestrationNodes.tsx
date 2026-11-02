@@ -1,5 +1,5 @@
-import React from 'react';
-import { Handle, Position } from '@xyflow/react';
+import React, { useLayoutEffect } from 'react';
+import { Handle, Position, useUpdateNodeInternals } from '@xyflow/react';
 import {
   Sparkles,
   Database,
@@ -16,6 +16,32 @@ import {
 import { ExcelIcon, TelegramIcon } from '../icons/BrandIcons';
 import { OrchestrationNodeData } from '../../types';
 
+const cardClass = (selected: boolean, accent: string) =>
+  `w-[280px] rounded-xl border bg-[#1a1f29] shadow-lg select-none ${selected ? accent : 'border-[#303b4b] hover:border-gray-500'}`;
+const handleClass = '!h-3 !w-3 !border-2 !bg-[#111827] transition-colors hover:!bg-slate-700';
+const stopNodeClick = (event: React.MouseEvent) => event.stopPropagation();
+
+function useHandleGeometry(id?: string, layoutKey?: string) {
+  const updateNodeInternals = useUpdateNodeInternals();
+  useLayoutEffect(() => {
+    if (id) updateNodeInternals(id);
+  }, [id, layoutKey, updateNodeInternals]);
+  return () => {
+    if (id) updateNodeInternals(id);
+  };
+}
+
+function NodeHeading({ icon, title }: { icon: React.ReactNode; title: string }) {
+  return (
+    <div className="flex items-center gap-2 rounded-t-xl border-b border-[#293241] bg-[#141922] px-3 py-2.5">
+      <span className="flex h-6 w-6 shrink-0 items-center justify-center">{icon}</span>
+      <span className="min-w-0 truncate text-xs font-semibold text-gray-100" title={title}>
+        {title}
+      </span>
+    </div>
+  );
+}
+
 export const SheetsTriggerNode: React.FC<any> = ({ data, selected }) => {
   const nodeData = data as OrchestrationNodeData;
   const status = nodeData.readStatus || 'idle';
@@ -27,93 +53,87 @@ export const SheetsTriggerNode: React.FC<any> = ({ data, selected }) => {
         : status === 'success'
           ? `Đã đọc ${nodeData.recordsCount ?? 0} dòng`
           : 'Chưa đọc';
+  const fileTitle =
+    nodeData.spreadsheetTitle ||
+    (nodeData.spreadsheetId ? 'Chưa lấy được tên file' : 'Chưa chọn file');
   return (
-    <div
-      className={`w-[320px] bg-[#1a1f29] rounded-2xl border-2 shadow-xl select-none ${selected ? 'border-emerald-400 ring-4 ring-emerald-500/20' : 'border-[#2d3748]'}`}
-    >
+    <div className={cardClass(selected, 'border-emerald-400 ring-2 ring-emerald-500/20')}>
       <Handle
         type="target"
         position={Position.Left}
         id="in"
-        className="!w-3.5 !h-3.5 !bg-[#111827] !border-2 !border-emerald-400"
+        className={`${handleClass} !border-emerald-400`}
       />
-      <div className="p-3 bg-[#131720] rounded-t-2xl border-b border-[#2d3748] flex gap-2.5 items-center">
-        <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
-          <ExcelIcon size={26} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <span className="text-xs font-bold text-white block">
-            Nguồn {nodeData.sourceNumber || 1}
-          </span>
-          <span className="text-[10px] text-gray-400">Google Trang Tính</span>
-        </div>
-        {status === 'loading' && <RefreshCw size={14} className="text-blue-400 animate-spin" />}
-      </div>
-      <div className="p-3 space-y-2 text-[11px]">
-        <div className="flex justify-between gap-2">
-          <span className="text-gray-400 shrink-0">File:</span>
-          <span className="text-gray-100 text-right break-words" title={nodeData.spreadsheetTitle}>
-            {nodeData.spreadsheetTitle ||
-              (nodeData.spreadsheetId ? 'Chưa lấy được tên file' : 'Chưa chọn file')}
-          </span>
-        </div>
-        <div className="flex justify-between gap-2">
-          <span className="text-gray-400 shrink-0">Trang tính:</span>
-          <span className="text-emerald-300 text-right break-words">
-            {nodeData.sheetName || 'Chưa chọn trang tính'}
-          </span>
-        </div>
-        <div className="flex justify-between gap-2 pt-2 border-t border-gray-700">
-          <span className="text-gray-400">Dữ liệu:</span>
-          <span
-            role="status"
-            className={`flex items-center gap-1 ${status === 'error' ? 'text-red-300' : status === 'success' ? 'text-emerald-300' : 'text-gray-400'}`}
-          >
-            {status === 'success' && <CheckCircle2 size={12} />}
-            {status === 'error' && <AlertTriangle size={12} />}
-            {statusText}
-          </span>
-        </div>
+      <NodeHeading
+        icon={<ExcelIcon size={24} />}
+        title={`Sheet · Nguồn ${nodeData.sourceNumber || 1}`}
+      />
+      <div className="space-y-1.5 px-3 py-2.5 text-[11px]">
+        <p className="truncate font-medium text-gray-100" title={fileTitle}>
+          {fileTitle}
+        </p>
+        <p
+          className="truncate text-emerald-300"
+          title={nodeData.sheetName || 'Chưa chọn trang tính'}
+        >
+          Trang tính: {nodeData.sheetName || 'Chưa chọn'}
+        </p>
         {status === 'error' && (
-          <p role="alert" className="text-red-300 break-words">
+          <p
+            role="alert"
+            title={nodeData.readError}
+            className="line-clamp-2 break-words text-red-300"
+          >
             {nodeData.readError || 'Không đọc được dữ liệu. Vui lòng thử lại.'}
           </p>
         )}
-        {nodeData.readAt && (
-          <p className="text-[10px] text-gray-500">
-            Lần đọc thành công: {new Date(nodeData.readAt).toLocaleString('vi-VN')}
-          </p>
-        )}
-        <div className="text-[10px] text-gray-500">
-          Google: {nodeData.userAccount ? 'Đã kết nối' : 'Chưa kết nối'}
-        </div>
-        <div
-          className="flex items-center justify-between gap-2 nodrag nopan"
-          onClick={(event) => event.stopPropagation()}
+        <details className="nodrag nopan text-[10px] text-gray-500" onClick={stopNodeClick}>
+          <summary className="w-fit cursor-pointer hover:text-gray-300">Chi tiết nguồn</summary>
+          <div className="nowheel mt-2 max-h-32 space-y-1 overflow-y-auto break-words text-gray-400">
+            <p>File: {fileTitle}</p>
+            <p>Trang tính: {nodeData.sheetName || 'Chưa chọn'}</p>
+            <p className="break-all">ID file: {nodeData.spreadsheetId || 'Chưa có'}</p>
+            <p>Google: {nodeData.userAccount ? 'Đã kết nối' : 'Chưa kết nối'}</p>
+            {nodeData.readAt && (
+              <p>Lần đọc thành công: {new Date(nodeData.readAt).toLocaleString('vi-VN')}</p>
+            )}
+            {status === 'error' && <p className="text-red-300">{nodeData.readError}</p>}
+          </div>
+        </details>
+      </div>
+      <div className="flex items-center justify-between gap-2 border-t border-[#293241] px-3 py-2 text-[11px]">
+        <span
+          role="status"
+          className={`flex min-w-0 items-center gap-1 ${status === 'error' ? 'text-red-300' : status === 'success' ? 'text-emerald-300' : status === 'loading' ? 'text-blue-300' : 'text-gray-400'}`}
         >
-          <button
-            className="nodrag nopan text-xs text-blue-300 hover:text-blue-200"
-            onClick={() => nodeData.onOpenData?.()}
-          >
-            Xem dữ liệu
-          </button>
-          <details className="text-[10px] text-gray-500 max-w-[160px]">
-            <summary className="cursor-pointer">Chi tiết nguồn</summary>
-            <p className="break-all mt-1">ID file: {nodeData.spreadsheetId || 'Chưa có'}</p>
-          </details>
-        </div>
+          {status === 'success' && <CheckCircle2 size={12} className="shrink-0" />}
+          {status === 'error' && <AlertTriangle size={12} className="shrink-0" />}
+          {status === 'loading' && <RefreshCw size={12} className="shrink-0 animate-spin" />}
+          <span className="truncate" title={statusText}>
+            {statusText}
+          </span>
+        </span>
+        <button
+          className="nodrag nopan shrink-0 text-blue-300 hover:text-blue-200"
+          onClick={(event) => {
+            event.stopPropagation();
+            nodeData.onOpenData?.();
+          }}
+        >
+          Xem dữ liệu
+        </button>
       </div>
       <Handle
         type="source"
         position={Position.Right}
         id="out"
-        className="!w-3.5 !h-3.5 !bg-[#111827] !border-2 !border-emerald-400"
+        className={`${handleClass} !border-emerald-400`}
       />
     </div>
   );
 };
 
-export const DiffEngineNode: React.FC<any> = ({ data, selected }) => {
+export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
   const nodeData = data as OrchestrationNodeData;
   const sheets = nodeData.connectedSheets || [];
   const configured = sheets.filter((sheet) => sheet.spreadsheetId.trim() && sheet.sheetName.trim());
@@ -123,48 +143,51 @@ export const DiffEngineNode: React.FC<any> = ({ data, selected }) => {
   const unconfigured = sheets.length - configured.length;
   const legacy = nodeData.hasLegacyStorageConnection;
   const sheetHint = 'Nối với Google Sheet cần đồng bộ. Có thể nối nhiều khối Sheet vào cổng này.';
-  const rightLabel = legacy ? 'Kho lưu trữ' : 'Kết nối Sheet ⇄';
   const rightHint = legacy ? 'Kết nối với Kho lưu trữ trong luồng Sheet–Vault.' : sheetHint;
+  const refreshHandles = useHandleGeometry(
+    id,
+    `${legacy}:${nodeData.hasConflict}:${sheets.length}`,
+  );
   return (
     <div
-      className={`w-[360px] rounded-2xl border-2 bg-[#1a1f29] shadow-xl transition-all select-none ${selected ? 'border-purple-400 ring-4 ring-purple-500/20' : 'border-[#2d3748] hover:border-purple-500/60'}`}
+      className={`${cardClass(selected, 'border-purple-400 ring-2 ring-purple-500/20')} !w-[320px]`}
     >
-      <div className="flex items-center gap-2.5 rounded-t-2xl border-b border-[#2d3748] bg-[#131720] p-3">
-        <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-purple-500/40 bg-purple-500/20 text-purple-400">
-          <Sparkles size={16} />
-        </div>
+      <div className="flex items-center gap-3 rounded-t-xl border-b border-[#293241] bg-[#141922] px-4 py-3.5">
+        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-purple-500/30 bg-purple-500/10 text-purple-300">
+          <Sparkles size={22} />
+        </span>
         <div>
-          <span className="block text-xs font-bold text-white">Bộ Não So Khớp 2 Chiều</span>
-          <span className="text-[10px] text-gray-400">So sánh và đồng bộ các nguồn dữ liệu</span>
+          <p className="text-sm font-semibold text-gray-100">So khớp 2 chiều</p>
+          <p className="mt-0.5 text-[11px] text-gray-400">Đồng bộ các trang tính</p>
         </div>
       </div>
-      <div className="space-y-3 p-3 text-xs">
-        <div className="flex items-center justify-between text-[11px] text-gray-400">
-          <span>Khóa so sánh:</span>
-          <span className="rounded border border-[#2d3748] bg-[#121620] px-2 py-0.5 font-mono font-bold text-purple-300">
+      <div className="space-y-3 px-4 py-3.5 text-xs">
+        <div className="flex items-center justify-between gap-3 text-gray-400">
+          <span>Khóa so sánh</span>
+          <code
+            className="max-w-[150px] truncate rounded-md border border-[#303b4b] bg-[#121620] px-2 py-1 text-purple-200"
+            title={nodeData.uniqueKey}
+          >
             {nodeData.uniqueKey || 'Chưa chọn khóa'}
-          </span>
+          </code>
         </div>
-        <details className="nodrag nopan text-[11px]" onClick={(event) => event.stopPropagation()}>
-          <summary className="cursor-pointer rounded-lg border border-[#303b4b] bg-[#141a23] px-2.5 py-2 text-gray-200 hover:border-purple-500/60">
+        <details className="nodrag nopan" onClick={stopNodeClick} onToggle={refreshHandles}>
+          <summary className="cursor-pointer rounded-lg border border-[#303b4b] bg-[#141a23] px-3 py-2.5 text-gray-300 hover:border-purple-500/50 hover:text-purple-300">
             Đã nối {pageCount} trang tính
-            {unconfigured > 0 ? ` · ${unconfigured} khối chưa cấu hình` : ''}
+            {unconfigured > 0 ? ` · ${unconfigured} chưa cấu hình` : ''}
           </summary>
-          <div className="nowheel nodrag nopan mt-2 max-h-36 space-y-2 overflow-y-auto rounded-lg border border-gray-700 bg-[#121620] p-2.5">
+          <div className="nowheel mt-2 max-h-36 space-y-2 overflow-y-auto rounded-lg bg-[#121620] p-2.5">
             {sheets.length === 0 ? (
               <p className="text-gray-500">
                 {legacy
-                  ? 'Nối Google Sheet vào cổng bên trái để bắt đầu.'
-                  : 'Nối Google Sheet vào một trong hai cổng Sheet để bắt đầu.'}
+                  ? 'Nối Sheet vào cổng bên trái để bắt đầu.'
+                  : 'Nối Sheet vào một trong hai cổng Sheet để bắt đầu.'}
               </p>
             ) : (
               sheets.map((sheet) => (
-                <div
-                  key={sheet.nodeId}
-                  className="min-w-0 border-b border-gray-800 pb-2 last:border-0 last:pb-0"
-                >
+                <div key={sheet.nodeId} className="min-w-0 border-t border-gray-800 pt-2">
                   <p className="text-[10px] text-gray-500">Nguồn {sheet.number}</p>
-                  <p className="break-words font-medium text-gray-200">
+                  <p className="break-words text-gray-200">
                     {sheet.spreadsheetTitle ||
                       (sheet.spreadsheetId
                         ? `File …${sheet.spreadsheetId.slice(-8)}`
@@ -180,26 +203,21 @@ export const DiffEngineNode: React.FC<any> = ({ data, selected }) => {
           </div>
         </details>
         {nodeData.hasConflict && (
-          <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-600/60 bg-amber-950/40 p-2.5">
-            <div className="flex items-center gap-2 text-amber-300">
-              <AlertTriangle size={14} className="shrink-0" />
-              <span className="text-[11px] font-bold">
-                Phát hiện {nodeData.conflictCount} xung đột
-              </span>
-            </div>
-            <button
-              onClick={(event) => {
-                event.stopPropagation();
-                nodeData.onOpenConflict?.();
-              }}
-              className="nodrag nopan shrink-0 rounded-lg bg-amber-500 px-2.5 py-1 text-[10px] font-bold text-black hover:bg-amber-400"
-            >
-              Xem ngay
-            </button>
-          </div>
+          <button
+            onClick={(event) => {
+              event.stopPropagation();
+              nodeData.onOpenConflict?.();
+            }}
+            className="nodrag nopan flex w-full items-center justify-between gap-2 rounded-lg border border-amber-700/60 bg-amber-950/30 px-2 py-1.5 text-amber-300 hover:bg-amber-950/60"
+          >
+            <span className="flex items-center gap-1.5">
+              <AlertTriangle size={12} /> {nodeData.conflictCount} xung đột
+            </span>
+            <span className="font-semibold">Xem ngay</span>
+          </button>
         )}
       </div>
-      <div className="relative flex h-10 items-center justify-between border-t border-[#2d3748] bg-[#141a23] px-4 text-[11px] font-semibold">
+      <div className="relative flex h-14 items-center justify-between border-t border-[#293241] bg-[#151b25] px-4 text-xs font-medium">
         <Handle
           type="target"
           position={Position.Left}
@@ -207,13 +225,13 @@ export const DiffEngineNode: React.FC<any> = ({ data, selected }) => {
           title={sheetHint}
           aria-label="Kết nối Sheet bên trái"
           style={{ top: '50%' }}
-          className="!h-3.5 !w-3.5 !border-2 !border-purple-400 !bg-[#111827] hover:!scale-125"
+          className="!h-4 !w-4 !border-2 !border-purple-400 !bg-[#111827] transition-colors hover:!bg-slate-700"
         />
-        <span className="text-purple-300" title={sheetHint}>
-          Kết nối Sheet ⇄
+        <span className="text-purple-200" title={sheetHint}>
+          Sheet ⇄
         </span>
-        <span className="text-emerald-300" title={rightHint}>
-          {rightLabel}
+        <span className="text-emerald-200" title={rightHint}>
+          {legacy ? 'Kho lưu trữ' : 'Sheet ⇄'}
         </span>
         <Handle
           type="source"
@@ -222,24 +240,23 @@ export const DiffEngineNode: React.FC<any> = ({ data, selected }) => {
           title={rightHint}
           aria-label={legacy ? 'Kết nối Kho lưu trữ' : 'Kết nối Sheet bên phải'}
           style={{ top: '50%' }}
-          className="!h-3.5 !w-3.5 !border-2 !border-emerald-400 !bg-[#111827] hover:!scale-125"
+          className="!h-4 !w-4 !border-2 !border-emerald-400 !bg-[#111827] transition-colors hover:!bg-slate-700"
         />
       </div>
-      <div className="relative flex h-10 items-center justify-end rounded-b-2xl border-t border-[#252e3c] px-4 text-[11px] font-semibold">
+      <div className="relative flex h-14 items-center justify-center rounded-b-xl border-t border-[#293241] px-4 pb-2 text-xs font-medium">
         <span
-          className="flex items-center gap-1.5 text-amber-300"
+          className="flex items-center gap-1.5 text-amber-200"
           title="Nối với Telegram để gửi cảnh báo khi có xung đột."
         >
-          Cảnh báo xung đột <Zap size={12} />
+          <Zap size={14} /> Cảnh báo · Telegram
         </span>
         <Handle
           type="source"
-          position={Position.Right}
+          position={Position.Bottom}
           id="conflict"
-          title="Nối cổng này với Telegram để gửi cảnh báo xung đột."
+          title="Nối xuống Telegram để gửi cảnh báo xung đột."
           aria-label="Cảnh báo xung đột tới Telegram"
-          style={{ top: '50%' }}
-          className="!h-3.5 !w-3.5 !border-2 !border-amber-400 !bg-[#111827] hover:!scale-125"
+          className="!h-4 !w-4 !border-2 !border-amber-400 !bg-[#111827] transition-colors hover:!bg-slate-700"
         />
       </div>
     </div>
@@ -249,85 +266,62 @@ export const DiffEngineNode: React.FC<any> = ({ data, selected }) => {
 export const StorageActionNode: React.FC<any> = ({ data, selected }) => {
   const nodeData = data as OrchestrationNodeData;
   return (
-    <div
-      className={`w-[300px] bg-[#1a1f29] rounded-2xl border-2 transition-all shadow-xl select-none ${
-        selected
-          ? 'border-blue-400 ring-4 ring-blue-500/20'
-          : 'border-[#2d3748] hover:border-blue-500/60'
-      }`}
-    >
+    <div className={cardClass(selected, 'border-blue-400 ring-2 ring-blue-500/20')}>
       <Handle
         type="target"
         position={Position.Left}
         id="in"
-        className="!w-3.5 !h-3.5 !bg-[#111827] !border-2 !border-emerald-400 hover:!scale-125"
+        title="Nhận dữ liệu từ khối So khớp."
+        className={`${handleClass} !border-emerald-400`}
       />
-      <div className="p-3 bg-[#131720] rounded-t-2xl border-b border-[#2d3748] flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-blue-500/20 text-blue-400 border border-blue-500/40 flex items-center justify-center">
-            <Database size={16} />
-          </div>
-          <div>
-            <span className="text-xs font-bold text-white block">Kho Lưu Trữ An Toàn</span>
-            <span className="text-[10px] text-gray-400">Ghi nhớ bản gốc (Vault)</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="p-3 text-xs text-gray-400 space-y-1.5">
-        <div className="flex justify-between items-center">
-          <span>Vùng lưu trữ:</span>
-          <span className="text-blue-300 font-mono font-medium bg-[#121620] px-2 py-0.5 rounded border border-[#2d3748] text-[11px]">
-            {nodeData.tableName || 'Chưa chọn vùng'}
-          </span>
-        </div>
+      <NodeHeading icon={<Database size={20} className="text-blue-300" />} title="Kho lưu trữ" />
+      <div className="space-y-1 px-3 py-2.5 text-[11px]">
+        <p className="text-gray-500">Vùng lưu trữ</p>
+        <p className="truncate font-medium text-blue-200" title={nodeData.tableName}>
+          {nodeData.tableName || 'Chưa chọn vùng'}
+        </p>
       </div>
     </div>
   );
 };
 
-export const TelegramActionNode: React.FC<any> = ({ data, selected }) => {
+export const TelegramActionNode: React.FC<any> = ({ id, data, selected }) => {
   const nodeData = data as OrchestrationNodeData;
+  const refreshHandles = useHandleGeometry(id);
+  const recipient =
+    nodeData.telegramRecipientName ||
+    (nodeData.chatId ? 'Đã có nơi nhận · mở để kiểm tra' : 'Chưa chọn nơi nhận');
   return (
-    <div
-      className={`w-[300px] bg-[#1a1f29] rounded-2xl border-2 transition-all shadow-xl select-none ${
-        selected
-          ? 'border-sky-400 ring-4 ring-sky-500/20'
-          : 'border-[#2d3748] hover:border-sky-500/60'
-      }`}
-    >
+    <div className={cardClass(selected, 'border-sky-400 ring-2 ring-sky-500/20')}>
       <Handle
         type="target"
-        position={Position.Left}
+        position={Position.Top}
         id="in"
-        className="!w-3.5 !h-3.5 !bg-[#111827] !border-2 !border-amber-400 hover:!scale-125"
+        title="Nối với cổng cảnh báo ở đáy khối So khớp."
+        aria-label="Nhận cảnh báo từ phía trên"
+        className={`${handleClass} !border-amber-400`}
       />
-      <div className="p-3 bg-[#131720] rounded-t-2xl border-b border-[#2d3748] flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-sky-500/20 text-sky-400 border border-sky-500/40 flex items-center justify-center">
-            <TelegramIcon size={26} />
+      <NodeHeading icon={<TelegramIcon size={24} />} title="Telegram" />
+      <div className="space-y-1.5 px-3 py-2.5 text-[11px]">
+        <p className="text-gray-500">Nơi nhận cảnh báo</p>
+        <p
+          className={`truncate font-medium ${nodeData.chatId ? 'text-sky-200' : 'text-amber-300'}`}
+          title={recipient}
+        >
+          {recipient}
+        </p>
+        <details
+          className="nodrag nopan text-[10px] text-gray-500"
+          onClick={stopNodeClick}
+          onToggle={refreshHandles}
+        >
+          <summary className="w-fit cursor-pointer hover:text-gray-300">Chi tiết</summary>
+          <div className="nowheel mt-2 max-h-24 space-y-1 overflow-y-auto break-words text-gray-400">
+            <p>Nơi nhận: {recipient}</p>
+            <p>Bot: {nodeData.botName || 'Chưa có thông tin bot'}</p>
+            {nodeData.chatId && <p className="break-all">Chat ID: {nodeData.chatId}</p>}
           </div>
-          <div>
-            <span className="text-xs font-bold text-white block">Cảnh Báo Telegram</span>
-            <span className="text-[10px] text-gray-400">Báo khi dữ liệu cần xử lý</span>
-          </div>
-        </div>
-      </div>
-
-      <div className="p-3 text-xs space-y-2">
-        <div className="flex items-center justify-between gap-3 text-[11px]">
-          <span className="text-gray-400">Bot:</span>
-          <span className="text-sky-300 font-medium">
-            {nodeData.botName || 'Thiết lập trong khối'}
-          </span>
-        </div>
-        <div className="flex justify-between text-gray-400 text-[11px]">
-          <span>Nơi nhận:</span>
-          <span className="text-sky-300 font-medium truncate max-w-[165px]">
-            {nodeData.telegramRecipientName ||
-              (nodeData.chatId ? 'Đã có nơi nhận · mở để kiểm tra' : 'Chưa chọn nơi nhận')}
-          </span>
-        </div>
+        </details>
       </div>
     </div>
   );
@@ -364,7 +358,7 @@ export const GenericOrchestrationNode: React.FC<any> = ({ data, selected }) => {
           type="target"
           position={Position.Left}
           id="in"
-          className="!w-3.5 !h-3.5 !bg-[#111827] !border-2 !border-blue-400 hover:!scale-125"
+          className="!w-3.5 !h-3.5 !bg-[#111827] !border-2 !border-blue-400 transition-colors hover:!bg-slate-700"
         />
       )}
 
@@ -391,7 +385,7 @@ export const GenericOrchestrationNode: React.FC<any> = ({ data, selected }) => {
           type="source"
           position={Position.Right}
           id="out"
-          className="!w-3.5 !h-3.5 !bg-[#111827] !border-2 !border-blue-400 hover:!scale-125"
+          className="!w-3.5 !h-3.5 !bg-[#111827] !border-2 !border-blue-400 transition-colors hover:!bg-slate-700"
         />
       )}
     </div>

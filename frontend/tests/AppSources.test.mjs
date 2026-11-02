@@ -46,8 +46,10 @@ const bundle = await build({
       import React, { useState } from 'react';
       export function useNodesState(initial) { const [nodes, setNodes] = useState(initial); return [nodes, setNodes, () => {}]; }
       export const useEdgesState = useNodesState;
+      const refreshNode = () => {};
+      export function useUpdateNodeInternals() { return refreshNode; }
       export function ReactFlow({ nodes, nodeTypes, children }) { return React.createElement('div', null,
-        nodes.map(node => React.createElement(nodeTypes[node.type], { key: node.id, data: node.data })), children); }
+        nodes.map(node => React.createElement(nodeTypes[node.type], { key: node.id, id: node.id, data: node.data })), children); }
       export const Background = () => null, Controls = () => null, MiniMap = () => null, Handle = () => null;
       export const Panel = ({ children }) => React.createElement('div', null, children);
       export const Position = { Left: 'left', Right: 'right' }, BackgroundVariant = { Dots: 'dots' };
@@ -143,7 +145,7 @@ test('selecting the second source reads and edits its own file and tab while cou
   await mount();
   const openButtons = () =>
     renderer.root.findAllByType('button').filter((button) => text(button) === 'Xem dữ liệu');
-  await act(async () => openButtons()[0].props.onClick());
+  await act(async () => openButtons()[0].props.onClick({ stopPropagation() {} }));
   assert.deepEqual(calls[0], ['file-a', 'Tab A']);
   await act(async () =>
     renderer.root.findByProps({ id: 'table-source' }).props.onChange({ target: { value: 'b' } }),
@@ -170,7 +172,7 @@ test('a failed read shows the actual error on that source and in the viewer inst
   await mount();
   const openButtons = () =>
     renderer.root.findAllByType('button').filter((button) => text(button) === 'Xem dữ liệu');
-  await act(async () => openButtons()[0].props.onClick());
+  await act(async () => openButtons()[0].props.onClick({ stopPropagation() {} }));
   await act(async () =>
     renderer.root.findByProps({ id: 'table-source' }).props.onChange({ target: { value: 'b' } }),
   );
