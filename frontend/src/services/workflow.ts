@@ -186,3 +186,34 @@ export function cellRange(sheetName: string, columnIndex: number, rowIndex: numb
   }
   return `'${sheetName.replace(/'/g, "''")}'!${letters}${rowIndex + 2}`;
 }
+
+// Count a Sheet once even when it is wired to both ports of the same comparison block.
+export function connectedSheetSources(
+  nodes: WorkflowNode[],
+  edges: WorkflowEdge[],
+  diffId: string,
+) {
+  return nodes
+    .filter((node) => node.type === 'sheetsTrigger')
+    .map((node, index) => ({ node, number: index + 1 }))
+    .filter(({ node }) =>
+      edges.some(
+        (edge) =>
+          (edge.source === node.id &&
+            edge.sourceHandle === 'out' &&
+            edge.target === diffId &&
+            edge.targetHandle === 'in') ||
+          (edge.source === diffId &&
+            edge.sourceHandle === 'clean' &&
+            edge.target === node.id &&
+            edge.targetHandle === 'in'),
+      ),
+    )
+    .map(({ node, number }) => ({
+      nodeId: node.id,
+      number,
+      spreadsheetId: node.data.spreadsheetId || '',
+      spreadsheetTitle: node.data.spreadsheetTitle,
+      sheetName: node.data.sheetName || '',
+    }));
+}

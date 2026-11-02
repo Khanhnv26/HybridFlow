@@ -100,6 +100,8 @@ export interface OrchestrationNodeData extends Record<string, unknown> {
   hasConflict?: boolean;
   conflictCount?: number;
   onOpenConflict?: () => void;
+  connectedSheets?: ConnectedSheetSource[];
+  hasLegacyStorageConnection?: boolean;
   // Natural language parameters
   uniqueKey?: string;
   sharedColumns?: string;
@@ -219,4 +221,12 @@ export interface SheetReadState {
   data: SheetDataResponse | null;
   error?: string;
   readAt?: string;
+}
+
+export interface ConnectedSheetSource {
+  nodeId: string;
+  number: number;
+  spreadsheetId: string;
+  spreadsheetTitle?: string;
+  sheetName: string;
 }

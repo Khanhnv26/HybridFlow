@@ -28,7 +28,7 @@ import {
   GenericOrchestrationNode,
 } from './components/nodes/OrchestrationNodes';
 import { googleService, syncService, workflowService, telegramService } from './services/api';
-import { flowIdFor, workflowConfig } from './services/workflow';
+import { connectedSheetSources, flowIdFor, workflowConfig } from './services/workflow';
 import { historyLog } from './services/history';
 import { useSheetReads } from './hooks/useSheetReads';
 import type { RunHistoryItem, OrchestrationNodeData, SyncConflictDto } from './types';
@@ -484,9 +484,32 @@ export default function App() {
           hasConflict: node.type === 'diffEngine' && conflicts.length > 0,
           conflictCount: node.type === 'diffEngine' ? conflicts.length : undefined,
           onOpenConflict: () => setIsConflictModalOpen(true),
+          connectedSheets:
+            node.type === 'diffEngine'
+              ? connectedSheetSources(nodes, edges, node.id).map((source) => ({
+                  ...source,
+                  spreadsheetTitle:
+                    stateFor({
+                      nodeId: source.nodeId,
+                      spreadsheetId: source.spreadsheetId,
+                      sheetName: source.sheetName,
+                    }).data?.spreadsheetTitle || source.spreadsheetTitle,
+                }))
+              : undefined,
+          hasLegacyStorageConnection:
+            node.type === 'diffEngine' &&
+            edges.some(
+              (edge) =>
+                edge.source === node.id &&
+                edge.sourceHandle === 'clean' &&
+                edge.targetHandle === 'in' &&
+                nodes.some(
+                  (target) => target.id === edge.target && target.type === 'storageAction',
+                ),
+            ),
         },
       })),
-    [nodes, sheetNodes, isRunning, connected, stateFor, openTable, conflicts.length],
+    [nodes, edges, sheetNodes, isRunning, connected, stateFor, openTable, conflicts.length],
   );
   const nodeTypes = useMemo(
     () => ({

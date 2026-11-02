@@ -11,6 +11,7 @@ import {
   CheckCircle2,
   AlertTriangle,
   RefreshCw,
+  Zap,
 } from 'lucide-react';
 import { ExcelIcon, TelegramIcon } from '../icons/BrandIcons';
 import { OrchestrationNodeData } from '../../types';
@@ -114,76 +115,133 @@ export const SheetsTriggerNode: React.FC<any> = ({ data, selected }) => {
 
 export const DiffEngineNode: React.FC<any> = ({ data, selected }) => {
   const nodeData = data as OrchestrationNodeData;
+  const sheets = nodeData.connectedSheets || [];
+  const configured = sheets.filter((sheet) => sheet.spreadsheetId.trim() && sheet.sheetName.trim());
+  const pageCount = new Set(
+    configured.map((sheet) => JSON.stringify([sheet.spreadsheetId, sheet.sheetName])),
+  ).size;
+  const unconfigured = sheets.length - configured.length;
+  const legacy = nodeData.hasLegacyStorageConnection;
+  const sheetHint = 'Nối với Google Sheet cần đồng bộ. Có thể nối nhiều khối Sheet vào cổng này.';
+  const rightLabel = legacy ? 'Kho lưu trữ' : 'Kết nối Sheet ⇄';
+  const rightHint = legacy ? 'Kết nối với Kho lưu trữ trong luồng Sheet–Vault.' : sheetHint;
   return (
     <div
-      className={`w-[320px] bg-[#1a1f29] rounded-2xl border-2 transition-all shadow-xl select-none ${
-        selected
-          ? 'border-purple-400 ring-4 ring-purple-500/20'
-          : 'border-[#2d3748] hover:border-purple-500/60'
-      }`}
+      className={`w-[360px] rounded-2xl border-2 bg-[#1a1f29] shadow-xl transition-all select-none ${selected ? 'border-purple-400 ring-4 ring-purple-500/20' : 'border-[#2d3748] hover:border-purple-500/60'}`}
     >
-      <Handle
-        type="target"
-        position={Position.Left}
-        id="in"
-        className="!w-3.5 !h-3.5 !bg-[#111827] !border-2 !border-purple-400 hover:!scale-125"
-      />
-      <div className="p-3 bg-[#131720] rounded-t-2xl border-b border-[#2d3748] flex items-center justify-between">
-        <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-purple-500/20 text-purple-400 border border-purple-500/40 flex items-center justify-center">
-            <Sparkles size={16} />
-          </div>
-          <div>
-            <span className="text-xs font-bold text-white block">Bộ Não So Khớp 2 Chiều</span>
-            <span className="text-[10px] text-gray-400">3-Way Diff chống ghi đè</span>
-          </div>
+      <div className="flex items-center gap-2.5 rounded-t-2xl border-b border-[#2d3748] bg-[#131720] p-3">
+        <div className="flex h-8 w-8 items-center justify-center rounded-xl border border-purple-500/40 bg-purple-500/20 text-purple-400">
+          <Sparkles size={16} />
+        </div>
+        <div>
+          <span className="block text-xs font-bold text-white">Bộ Não So Khớp 2 Chiều</span>
+          <span className="text-[10px] text-gray-400">So sánh và đồng bộ các nguồn dữ liệu</span>
         </div>
       </div>
-
-      <div className="p-3 text-xs space-y-2">
-        <div className="text-gray-400 text-[11px] flex justify-between items-center">
+      <div className="space-y-3 p-3 text-xs">
+        <div className="flex items-center justify-between text-[11px] text-gray-400">
           <span>Khóa so sánh:</span>
-          <span className="text-purple-300 font-mono font-bold bg-[#121620] px-2 py-0.5 rounded border border-[#2d3748]">
+          <span className="rounded border border-[#2d3748] bg-[#121620] px-2 py-0.5 font-mono font-bold text-purple-300">
             {nodeData.uniqueKey || 'Chưa chọn khóa'}
           </span>
         </div>
-
-        {/* Conflict Trigger Banner */}
+        <details className="nodrag nopan text-[11px]" onClick={(event) => event.stopPropagation()}>
+          <summary className="cursor-pointer rounded-lg border border-[#303b4b] bg-[#141a23] px-2.5 py-2 text-gray-200 hover:border-purple-500/60">
+            Đã nối {pageCount} trang tính
+            {unconfigured > 0 ? ` · ${unconfigured} khối chưa cấu hình` : ''}
+          </summary>
+          <div className="nowheel nodrag nopan mt-2 max-h-36 space-y-2 overflow-y-auto rounded-lg border border-gray-700 bg-[#121620] p-2.5">
+            {sheets.length === 0 ? (
+              <p className="text-gray-500">
+                {legacy
+                  ? 'Nối Google Sheet vào cổng bên trái để bắt đầu.'
+                  : 'Nối Google Sheet vào một trong hai cổng Sheet để bắt đầu.'}
+              </p>
+            ) : (
+              sheets.map((sheet) => (
+                <div
+                  key={sheet.nodeId}
+                  className="min-w-0 border-b border-gray-800 pb-2 last:border-0 last:pb-0"
+                >
+                  <p className="text-[10px] text-gray-500">Nguồn {sheet.number}</p>
+                  <p className="break-words font-medium text-gray-200">
+                    {sheet.spreadsheetTitle ||
+                      (sheet.spreadsheetId
+                        ? `File …${sheet.spreadsheetId.slice(-8)}`
+                        : 'Chưa chọn file')}{' '}
+                    <span className="text-gray-500">→</span>{' '}
+                    <span className="text-emerald-300">
+                      {sheet.sheetName || 'Chưa chọn trang tính'}
+                    </span>
+                  </p>
+                </div>
+              ))
+            )}
+          </div>
+        </details>
         {nodeData.hasConflict && (
-          <div className="p-2.5 rounded-xl bg-amber-950/40 border border-amber-600/60 flex items-center justify-between gap-3">
+          <div className="flex items-center justify-between gap-3 rounded-xl border border-amber-600/60 bg-amber-950/40 p-2.5">
             <div className="flex items-center gap-2 text-amber-300">
               <AlertTriangle size={14} className="shrink-0" />
-              <span className="font-bold text-[11px]">
+              <span className="text-[11px] font-bold">
                 Phát hiện {nodeData.conflictCount} xung đột
               </span>
             </div>
             <button
-              onClick={(e) => {
-                e.stopPropagation();
+              onClick={(event) => {
+                event.stopPropagation();
                 nodeData.onOpenConflict?.();
               }}
-              className="nodrag nopan shrink-0 px-2.5 py-1 rounded-lg bg-amber-500 hover:bg-amber-400 text-black font-bold text-[10px] transition"
+              className="nodrag nopan shrink-0 rounded-lg bg-amber-500 px-2.5 py-1 text-[10px] font-bold text-black hover:bg-amber-400"
             >
               Xem ngay
             </button>
           </div>
         )}
       </div>
-
-      <Handle
-        type="source"
-        position={Position.Right}
-        id="clean"
-        style={{ top: '40%' }}
-        className="!w-3.5 !h-3.5 !bg-[#111827] !border-2 !border-emerald-400 hover:!scale-125"
-      />
-      <Handle
-        type="source"
-        position={Position.Right}
-        id="conflict"
-        style={{ top: '72%' }}
-        className="!w-3.5 !h-3.5 !bg-[#111827] !border-2 !border-amber-400 hover:!scale-125"
-      />
+      <div className="relative flex h-10 items-center justify-between border-t border-[#2d3748] bg-[#141a23] px-4 text-[11px] font-semibold">
+        <Handle
+          type="target"
+          position={Position.Left}
+          id="in"
+          title={sheetHint}
+          aria-label="Kết nối Sheet bên trái"
+          style={{ top: '50%' }}
+          className="!h-3.5 !w-3.5 !border-2 !border-purple-400 !bg-[#111827] hover:!scale-125"
+        />
+        <span className="text-purple-300" title={sheetHint}>
+          Kết nối Sheet ⇄
+        </span>
+        <span className="text-emerald-300" title={rightHint}>
+          {rightLabel}
+        </span>
+        <Handle
+          type="source"
+          position={Position.Right}
+          id="clean"
+          title={rightHint}
+          aria-label={legacy ? 'Kết nối Kho lưu trữ' : 'Kết nối Sheet bên phải'}
+          style={{ top: '50%' }}
+          className="!h-3.5 !w-3.5 !border-2 !border-emerald-400 !bg-[#111827] hover:!scale-125"
+        />
+      </div>
+      <div className="relative flex h-10 items-center justify-end rounded-b-2xl border-t border-[#252e3c] px-4 text-[11px] font-semibold">
+        <span
+          className="flex items-center gap-1.5 text-amber-300"
+          title="Nối với Telegram để gửi cảnh báo khi có xung đột."
+        >
+          Cảnh báo xung đột <Zap size={12} />
+        </span>
+        <Handle
+          type="source"
+          position={Position.Right}
+          id="conflict"
+          title="Nối cổng này với Telegram để gửi cảnh báo xung đột."
+          aria-label="Cảnh báo xung đột tới Telegram"
+          style={{ top: '50%' }}
+          className="!h-3.5 !w-3.5 !border-2 !border-amber-400 !bg-[#111827] hover:!scale-125"
+        />
+      </div>
     </div>
   );
 };

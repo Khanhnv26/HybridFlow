@@ -6,7 +6,7 @@ const source = await readFile(new URL('../src/services/workflow.ts', import.meta
 const compiled = ts.transpileModule(source, {
   compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
 }).outputText;
-const { workflowConfig, flowIdFor, cellRange } = await import(
+const { workflowConfig, flowIdFor, cellRange, connectedSheetSources } = await import(
   `data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`
 );
 function graph() {
@@ -187,4 +187,52 @@ test('multi-sheet requires an explicit shared-column selection and binds it to f
     await flowIdFor(config),
     await flowIdFor({ ...config, syncColumns: ['private'] }),
   );
+});
+
+test('connected sheet list follows both supported ports and excludes unrelated or invalid edges', () => {
+  const nodes = [
+    {
+      id: 'a',
+      type: 'sheetsTrigger',
+      data: { spreadsheetId: 'file-a', spreadsheetTitle: 'Kho Hà Nội', sheetName: 'Orders' },
+    },
+    {
+      id: 'b',
+      type: 'sheetsTrigger',
+      data: { spreadsheetId: 'file-b', spreadsheetTitle: 'Kho Sài Gòn', sheetName: 'Orders' },
+    },
+    { id: 'c', type: 'sheetsTrigger', data: { spreadsheetId: 'file-c', sheetName: 'Private' } },
+    { id: 'd', type: 'sheetsTrigger', data: { spreadsheetId: '', sheetName: '' } },
+    { id: 'telegram', type: 'telegramAction', data: {} },
+  ];
+  const edges = [
+    { source: 'a', sourceHandle: 'out', target: 'brain', targetHandle: 'in' },
+    { source: 'brain', sourceHandle: 'clean', target: 'b', targetHandle: 'in' },
+    { source: 'brain', sourceHandle: 'conflict', target: 'telegram', targetHandle: 'in' },
+    { source: 'brain', sourceHandle: 'conflict', target: 'c', targetHandle: 'in' },
+    { source: 'd', sourceHandle: 'out', target: 'brain', targetHandle: 'in' },
+  ];
+  const connected = connectedSheetSources(nodes, edges, 'brain');
+  assert.deepEqual(
+    connected.map((source) => source.nodeId),
+    ['a', 'b', 'd'],
+  );
+  assert.equal(connected[0].spreadsheetTitle, 'Kho Hà Nội');
+  assert.equal(connected[1].sheetName, 'Orders');
+  assert.equal(connected[2].spreadsheetId, '');
+  assert.deepEqual(
+    connectedSheetSources(nodes, edges.slice(1), 'brain').map((source) => source.nodeId),
+    ['b', 'd'],
+  );
+});
+
+test('a sheet wired through both comparison ports is listed only once', () => {
+  const nodes = [
+    { id: 'a', type: 'sheetsTrigger', data: { spreadsheetId: 'file-a', sheetName: 'Orders' } },
+  ];
+  const edges = [
+    { source: 'a', sourceHandle: 'out', target: 'brain', targetHandle: 'in' },
+    { source: 'brain', sourceHandle: 'clean', target: 'a', targetHandle: 'in' },
+  ];
+  assert.equal(connectedSheetSources(nodes, edges, 'brain').length, 1);
 });
