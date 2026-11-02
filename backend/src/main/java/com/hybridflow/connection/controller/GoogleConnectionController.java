@@ -50,5 +50,5 @@ public class GoogleConnectionController {
     public ResponseEntity<UpdateCellResponse> updateCell(@RequestBody UpdateCellRequest request) {
         return ResponseEntity.ok(googleSheetsService.updateCell(request));
     }
-    
+
 }
