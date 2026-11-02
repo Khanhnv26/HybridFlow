@@ -44,7 +44,9 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
     public SheetDataResponse readSheet(ReadSheetRequest request) {
         Sheets sheets = createSheetsClient(request.getAccessToken());
 
-        String range = request.getSheetname() + "!A:Z";
+        // Google Sheets bắt buộc bọc tên sheet trong dấu nháy đơn '...' nếu có dấu cách hoặc ký tự tiếng Việt
+        String safeSheetName = request.getSheetname().replace("'", "''");
+        String range = "'" + safeSheetName + "'!A1:Z";
 
         try {
             ValueRange response = sheets.spreadsheets().values()
