@@ -13,6 +13,7 @@ import java.util.Map;
 public class SheetDataResponse {
 
     private String spreadsheetId;
+    private String spreadsheetTitle;
     private String sheetName;
     private List<String> headers;
     private List<Map<String, String>> rows;

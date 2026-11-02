@@ -4,6 +4,7 @@ import com.google.api.client.http.HttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.testing.http.MockHttpTransport;
 import com.google.api.client.testing.http.MockLowLevelHttpResponse;
+import com.google.api.client.testing.http.MockLowLevelHttpRequest;
 import com.google.api.services.sheets.v4.Sheets;
 import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
 import com.hybridflow.connector.google.dto.response.SpreadsheetMetadataResponse;
@@ -13,9 +14,12 @@ import static org.junit.jupiter.api.Assertions.*;
 
 class GoogleSheetsMetadataTest {
     private GoogleSheetsServiceImpl service(int statusCode, String body) {
-        MockLowLevelHttpResponse response = new MockLowLevelHttpResponse().setStatusCode(statusCode)
-                .setContentType("application/json; charset=UTF-8").setContent(body);
-        HttpTransport transport = new MockHttpTransport.Builder().setLowLevelHttpResponse(response).build();
+        HttpTransport transport = new MockHttpTransport() {
+            @Override public MockLowLevelHttpRequest buildRequest(String method, String url) {
+                return new MockLowLevelHttpRequest(url).setResponse(new MockLowLevelHttpResponse().setStatusCode(statusCode)
+                        .setContentType("application/json; charset=UTF-8").setContent(body));
+            }
+        };
         Sheets client = new Sheets.Builder(transport, GsonFactory.getDefaultInstance(), null)
                 .setApplicationName("HybridFlow test").build();
         return new GoogleSheetsServiceImpl() {
@@ -45,5 +49,26 @@ class GoogleSheetsMetadataTest {
     }
     @Test void emptySpreadsheetDoesNotProduceASampleTab() {
         assertThrows(IllegalArgumentException.class, () -> service(200, "{\"sheets\":[]}").getMetadata(request()));
+    }
+    @Test void dataReadIncludesActualFileTitleAndTabName() {
+        com.hybridflow.connector.google.dto.response.SheetDataResponse data = service(200, """
+                {"properties":{"title":"Kho Hà Nội"},"sheets":[{"properties":{"title":"Tồn kho"}}],
+                "values":[["id","quantity"],["SP01",12]]}
+                """).readSheet(request());
+        assertEquals("Kho Hà Nội", data.getSpreadsheetTitle());
+        assertEquals("Tồn kho", data.getSheetName());
+        assertEquals(1, data.getTotalRows());
+    }
+    @Test void emptyDataStillIdentifiesItsFileAndTab() {
+        com.hybridflow.connector.google.dto.response.SheetDataResponse data = service(200, """
+                {"properties":{"title":"Empty workbook"},"sheets":[{"properties":{"title":"Data"}}]}
+                """).readSheet(request());
+        assertEquals("Empty workbook", data.getSpreadsheetTitle());
+        assertEquals(0, data.getTotalRows());
+    }
+    @Test void failedDataReadExplainsPermissionsWithoutDumpingProviderDetails() {
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
+                service(403, "{\"error\":{\"code\":403,\"message\":\"Forbidden\"}}").readSheet(request()));
+        assertTrue(error.getMessage().contains("quyền đọc"));
     }
 }

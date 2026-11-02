@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { X, Play, RefreshCw } from 'lucide-react';
 import type { Node } from '@xyflow/react';
-import type { OrchestrationNodeData } from '../../types';
+import type { OrchestrationNodeData, SheetDataResponse } from '../../types';
 import { SheetSourceConfig } from './SheetSourceConfig';
 import { TelegramConfig } from './TelegramConfig';
 interface Props {
@@ -13,6 +13,12 @@ interface Props {
   onTestStep: (nodeId: string) => Promise<unknown>;
   connectionVersion: number;
   onConnectGoogle: () => Promise<void>;
+  onReadSource: (
+    nodeId: string,
+    spreadsheetId: string,
+    sheetName: string,
+    signal: AbortSignal,
+  ) => Promise<SheetDataResponse>;
   onSaveSource: (nodeId: string, source: Partial<OrchestrationNodeData>) => Promise<void>;
   onSaveTelegram: (nodeId: string, settings: Partial<OrchestrationNodeData>) => Promise<void>;
   notificationConnected: boolean;
@@ -27,6 +33,7 @@ export const NaturalLanguageConfigModal: React.FC<Props> = ({
   connectionVersion,
   onConnectGoogle,
   onSaveSource,
+  onReadSource,
   onSaveTelegram,
   notificationConnected,
 }) => {
@@ -43,6 +50,9 @@ export const NaturalLanguageConfigModal: React.FC<Props> = ({
         connectionVersion={connectionVersion}
         onClose={onClose}
         onConnectGoogle={onConnectGoogle}
+        onReadSource={(spreadsheetId, sheetName, signal) =>
+          onReadSource(node.id, spreadsheetId, sheetName, signal)
+        }
         onSave={(source) => onSaveSource(node.id, source)}
       />
     );

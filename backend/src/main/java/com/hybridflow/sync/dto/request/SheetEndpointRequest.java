@@ -12,6 +12,7 @@ public class SheetEndpointRequest {
     private String nodeId;
     private String label;
     private String spreadsheetId;
+    private String spreadsheetTitle;
     private String sheetName;
 
 }

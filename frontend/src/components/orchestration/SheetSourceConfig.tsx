@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink, Link, Play, RefreshCw, Save, X } from 'lucide-react';
+import { ExcelIcon } from '../icons/BrandIcons';
 import { googleService } from '../../services/api';
 import { chooseSheetTab, parseSheetSource } from '../../services/sheetSource';
 import type {
@@ -15,6 +16,11 @@ interface Props {
   connectionVersion: number;
   onClose: () => void;
   onConnectGoogle: () => Promise<void>;
+  onReadSource?: (
+    spreadsheetId: string,
+    sheetName: string,
+    signal: AbortSignal,
+  ) => Promise<SheetDataResponse>;
   onSave: (source: Partial<OrchestrationNodeData>) => Promise<void>;
 }
 
@@ -35,6 +41,7 @@ export function SheetSourceConfig({
   onClose,
   onConnectGoogle,
   onSave,
+  onReadSource,
 }: Props) {
   const [link, setLink] = useState(
     () =>
@@ -129,12 +136,14 @@ export function SheetSourceConfig({
     try {
       const accessToken = localStorage.getItem('google_access_token');
       if (!accessToken) throw new Error('Kết nối Google trước khi xem trước dữ liệu.');
-      const result = await googleService.readSheet(
-        accessToken,
-        parsed.source.spreadsheetId,
-        selectedTab,
-        controller.signal,
-      );
+      const result = await (onReadSource
+        ? onReadSource(parsed.source.spreadsheetId, selectedTab, controller.signal)
+        : googleService.readSheet(
+            accessToken,
+            parsed.source.spreadsheetId,
+            selectedTab,
+            controller.signal,
+          ));
       if (!controller.signal.aborted) setPreview(result);
     } catch (error) {
       if (!controller.signal.aborted) setError(errorMessage(error));
@@ -149,6 +158,7 @@ export function SheetSourceConfig({
     try {
       await onSave({
         spreadsheetId: parsed.source.spreadsheetId,
+        spreadsheetTitle: metadata?.title,
         sheetName: selected.title,
         spreadsheetUrl: `https://docs.google.com/spreadsheets/d/${parsed.source.spreadsheetId}/edit#gid=${selected.sheetId}`,
       });
@@ -183,8 +193,8 @@ export function SheetSourceConfig({
       <div className="bg-[#171b24] border border-gray-700 rounded-2xl w-full max-w-5xl max-h-[85vh] flex flex-col overflow-hidden">
         <div className="p-5 border-b border-gray-700 flex items-center justify-between gap-4">
           <div>
-            <h3 id="sheet-source-title" className="font-semibold">
-              Google Trang Tính
+            <h3 id="sheet-source-title" className="font-semibold flex items-center gap-2.5">
+              <ExcelIcon size={28} /> Google Trang Tính
             </h3>
             <p className="text-xs text-gray-400 mt-1">Chọn file và trang tính để đồng bộ</p>
           </div>

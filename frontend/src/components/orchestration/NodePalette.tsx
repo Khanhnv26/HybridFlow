@@ -1,5 +1,6 @@
 import React from 'react';
-import { Table, Clock, Webhook, Sparkles, Split, Wand2, Database, Send, FileEdit, Plus } from 'lucide-react';
+import { Clock, Webhook, Sparkles, Split, Wand2, Database, FileEdit, Plus } from 'lucide-react';
+import { ExcelIcon, TelegramIcon } from '../icons/BrandIcons';
 import { OrchestrationNodeType } from '../../types';
 
 interface PaletteItem {
@@ -18,7 +19,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
     label: 'Google Trang Tính',
     subtitle: 'Lắng nghe thay đổi dữ liệu',
     category: 'trigger',
-    icon: <Table size={15} />,
+    icon: <ExcelIcon size={22} />,
     color: 'emerald',
   },
   {
@@ -78,7 +79,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
     label: 'Báo Động Telegram',
     subtitle: 'Gửi tin nhắn tức thì về máy',
     category: 'action',
-    icon: <Send size={15} />,
+    icon: <TelegramIcon size={22} />,
     color: 'sky',
   },
   {

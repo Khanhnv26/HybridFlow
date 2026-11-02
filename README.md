@@ -79,3 +79,9 @@ Conflict mới lưu giá trị quan sát riêng theo định danh file/tab, nên
 Khóa database theo file (theo thứ tự cố định) ngăn các luồng HybridFlow cùng ghi chồng lên một Sheet. Khóa này không khóa thao tác chỉnh sửa của người dùng trên Google Sheets. Đọc kiểm tra rồi ghi qua Google API vẫn có khoảng thời gian giữa hai thao tác, nên không cam kết chống mọi chỉnh sửa đồng thời hay giao dịch nguyên tử giữa nhiều file.
 
 Mỗi đợt ghi nhiều Sheet lưu một intent bền vững vào `sheet_write_journal` trước khi gọi Google, không lưu access token. Trạng thái hoàn tất commit cùng transaction snapshot/conflict. Khi transaction rollback, hệ thống thử khôi phục các ô đã ghi; intent chưa phục hồi được giữ `PENDING`. Lần chạy tiếp phải đối soát/khôi phục intent trước khi tạo kế hoạch mới, kể cả sau khi tiến trình khởi động lại. Nếu có chỉnh sửa mới hoặc dòng đổi vị trí, hệ thống dừng thay vì khôi phục đè lên dữ liệu đó. Luồng khác có chung file cũng bị chặn; chạy lại luồng gốc có đủ các file liên quan để đối soát. Không xóa intent `PENDING` để bỏ qua lỗi.
+
+### Nhận diện nguồn và trạng thái đọc trên giao diện
+
+Mỗi khối Sheet hiển thị riêng tên file thật, tên trang tính và số thứ tự nguồn. ID file nằm trong phần Chi tiết nguồn. Trạng thái đọc được lưu riêng theo khối/file/tab: Chưa đọc, Đang đọc, Đã đọc X dòng hoặc Đọc thất bại kèm lý do. Đọc lỗi không giữ bảng cũ ở trạng thái có thể sửa và không dùng dấu tích xanh. Đổi file/tab không lấy trạng thái của nguồn khác.
+
+Nút Xem bảng tính có bộ chọn nguồn; nút Xem dữ liệu trên từng khối mở thẳng nguồn đó. Làm mới và sửa ô chỉ áp dụng cho file/tab đang chọn. Preview trong cấu hình dùng cùng trạng thái đọc theo nguồn; xem thử file/tab khác không đổi cấu hình đã lưu. Sau đồng bộ hoặc duyệt conflict, ứng dụng đọc lại từng nguồn để cập nhật trạng thái. Popup conflict mới hiển thị tên file, trang tính và giá trị thành các thẻ riêng, nút chọn dùng nhãn nguồn ngắn; dữ liệu conflict cũ còn giữ trong phần chi tiết.

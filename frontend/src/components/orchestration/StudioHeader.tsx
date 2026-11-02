@@ -1,5 +1,6 @@
 import React from 'react';
-import { Play, RotateCcw, Table, Clock, Layers, MoreHorizontal } from 'lucide-react';
+import { ExcelIcon } from '../icons/BrandIcons';
+import { Play, RotateCcw, Clock, Layers, MoreHorizontal } from 'lucide-react';
 
 interface StudioHeaderProps {
   isRunning: boolean;
@@ -57,7 +58,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
         <div className="ml-auto flex items-center gap-2 sm:gap-3">
           <button disabled={isRunning} onClick={onSaveWorkflow} className="h-9 px-3 rounded-lg border border-gray-700 text-xs">Lưu cấu hình</button>
           <button type="button" onClick={onOpenTable} className="flex h-9 items-center gap-2 whitespace-nowrap rounded-lg border border-[#2d3748] bg-[#171b24] px-3 text-xs font-semibold text-gray-300 transition hover:bg-[#202532] hover:text-white">
-            <Table size={14} className="shrink-0 text-emerald-400" /> Xem bảng tính
+            <ExcelIcon size={20} className="shrink-0" /> Xem bảng tính
           </button>
           <button type="button" onClick={onRunWorkflow} disabled={isRunning} className="flex h-9 items-center gap-2 whitespace-nowrap rounded-lg bg-indigo-600 px-4 text-xs font-bold text-white transition hover:bg-indigo-500 disabled:cursor-not-allowed disabled:opacity-50">
             <Play size={13} className="shrink-0 fill-current" />

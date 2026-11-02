@@ -91,6 +91,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             SheetDataResponse sheet = googleSheetsService.readSheet(ReadSheetRequest.builder().accessToken(request.getAccessToken())
                     .spreadsheetId(endpoint.getSpreadsheetId()).sheetname(endpoint.getSheetName()).build());
             endpoint.setSheetName(sheet.getSheetName());
+            endpoint.setSpreadsheetTitle(sheet.getSpreadsheetTitle());
             if (!targets.add(SheetEndpointUtils.identity(endpoint)))
                 throw new IllegalArgumentException("Không được nối hai khối vào cùng file và trang tính.");
             data.add(sheet);

@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import {
   CheckCircle2,
   ExternalLink,
-  MessageCircle,
   RefreshCw,
   Save,
   Send,
@@ -10,6 +9,7 @@ import {
   Users,
   X,
 } from 'lucide-react';
+import { TelegramIcon } from '../icons/BrandIcons';
 import { telegramService } from '../../services/api';
 import type {
   OrchestrationNodeData,
@@ -208,7 +208,7 @@ export function TelegramConfig({ data, disabled, notificationConnected, onClose,
         <div className="p-5 border-b border-gray-700 flex items-start justify-between gap-4">
           <div>
             <h3 id="telegram-title" className="font-semibold flex items-center gap-2">
-              <MessageCircle size={18} className="text-sky-400" />
+              <TelegramIcon size={28} />
               Nhận cảnh báo qua Telegram
             </h3>
             <p className="text-xs text-gray-400 mt-2">

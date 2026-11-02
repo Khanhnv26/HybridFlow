@@ -1,5 +1,6 @@
 export interface SheetDataResponse {
   spreadsheetId: string;
+  spreadsheetTitle?: string;
   sheetName: string;
   headers: string[];
   rows: Record<string, string>[];
@@ -62,6 +63,7 @@ export interface WorkflowNodeData extends Record<string, unknown> {
   status?: string;
   sheetName?: string;
   spreadsheetId?: string;
+  spreadsheetTitle?: string;
   tableName?: string;
   chatId?: string;
   conflictPolicy?: string;
@@ -90,6 +92,11 @@ export interface OrchestrationNodeData extends Record<string, unknown> {
   status?: string;
   isRunning?: boolean;
   recordsCount?: number;
+  sourceNumber?: number;
+  readStatus?: SheetReadStatus;
+  readError?: string;
+  readAt?: string;
+  onOpenData?: () => void;
   hasConflict?: boolean;
   conflictCount?: number;
   onOpenConflict?: () => void;
@@ -98,6 +105,7 @@ export interface OrchestrationNodeData extends Record<string, unknown> {
   sharedColumns?: string;
   conflictPolicy?: string;
   spreadsheetId?: string;
+  spreadsheetTitle?: string;
   spreadsheetUrl?: string;
   sheetName?: string;
   chatId?: string;
@@ -134,6 +142,7 @@ export interface SheetEndpointPayload {
   nodeId: string;
   label: string;
   spreadsheetId: string;
+  spreadsheetTitle?: string;
   sheetName: string;
 }
 
@@ -141,10 +150,12 @@ export interface SyncConflictDto {
   id: number;
   flowId?: string;
   spreadsheetId?: string;
+  spreadsheetTitle?: string;
   sheetName?: string;
   idColumn?: string;
   endpointsJson?: string;
   candidatesJson?: string;
+  observationsJson?: string;
   recordId: string;
   columnName: string;
   baseValue?: string;
@@ -160,6 +171,7 @@ export interface RunSyncRequestPayload {
   flowId: string;
   accessToken: string;
   spreadsheetId: string;
+  spreadsheetTitle?: string;
   sheetName?: string;
   sheets?: SheetEndpointPayload[];
   idColumn?: string;
@@ -199,4 +211,12 @@ export interface TelegramAlertResponse {
   id: number;
   success: boolean;
   message: string;
+}
+
+export type SheetReadStatus = 'idle' | 'loading' | 'success' | 'error';
+export interface SheetReadState {
+  status: SheetReadStatus;
+  data: SheetDataResponse | null;
+  error?: string;
+  readAt?: string;
 }

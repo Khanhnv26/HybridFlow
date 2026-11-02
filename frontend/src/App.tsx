@@ -30,12 +30,8 @@ import {
 import { googleService, syncService, workflowService, telegramService } from './services/api';
 import { flowIdFor, workflowConfig } from './services/workflow';
 import { historyLog } from './services/history';
-import type {
-  SheetDataResponse,
-  RunHistoryItem,
-  OrchestrationNodeData,
-  SyncConflictDto,
-} from './types';
+import { useSheetReads } from './hooks/useSheetReads';
+import type { RunHistoryItem, OrchestrationNodeData, SyncConflictDto } from './types';
 
 const initialNodes: Node<OrchestrationNodeData>[] = [
   {
@@ -139,8 +135,7 @@ export default function App() {
   const running = useRef(false);
   const [isPaletteOpen, setIsPaletteOpen] = useState(true);
   const [isMinimapOpen, setIsMinimapOpen] = useState(false);
-  const [sheetData, setSheetData] = useState<SheetDataResponse | null>(null);
-  const [isDataLoading, setIsDataLoading] = useState(false);
+  const [tableNodeId, setTableNodeId] = useState('');
   const [logs, setLogs] = useState<RunHistoryItem[]>([]);
   const [conflicts, setConflicts] = useState<SyncConflictDto[]>([]);
   const refreshRevision = useRef(0);
@@ -170,12 +165,67 @@ export default function App() {
       return { config: null, error: message(error) };
     }
   }, [nodes, edges]);
-  const configKey = JSON.stringify(configState.config);
+  const configKey = JSON.stringify(configState.config, (key, value) =>
+    ['label', 'nodeId', 'spreadsheetTitle'].includes(key) ? undefined : value,
+  );
   const currentFlow = useRef('');
-  const source = nodes.find((n) => n.type === 'sheetsTrigger');
-  const sourceKey = `${source?.id}:${source?.data.spreadsheetId}:${source?.data.sheetName}`;
-  const currentSource = useRef(sourceKey);
-  currentSource.current = sourceKey;
+  const sheetNodes = useMemo(() => nodes.filter((node) => node.type === 'sheetsTrigger'), [nodes]);
+  const tableSource = sheetNodes.find((node) => node.id === tableNodeId) || sheetNodes[0];
+  const {
+    read: readSheetSource,
+    stateFor,
+    invalidate: invalidateReads,
+  } = useSheetReads(async (target, signal) => {
+    if (!target.spreadsheetId.trim() || !target.sheetName.trim())
+      throw new Error('Chọn file và trang tính trước khi đọc dữ liệu.');
+    const accessToken = localStorage.getItem('google_access_token');
+    if (!accessToken) throw new Error('Kết nối Google trước khi đọc dữ liệu.');
+    const data = await googleService.readSheet(
+      accessToken,
+      target.spreadsheetId.trim(),
+      target.sheetName.trim(),
+      signal,
+    );
+    return data;
+  });
+  const sourceDescriptor = (node: Node<OrchestrationNodeData>) => ({
+    nodeId: node.id,
+    spreadsheetId: node.data.spreadsheetId || '',
+    sheetName: node.data.sheetName || '',
+  });
+  const tableState = tableSource
+    ? stateFor(sourceDescriptor(tableSource))
+    : { status: 'idle' as const, data: null, error: undefined };
+  const configuredFiles = JSON.stringify([
+    ...new Set(sheetNodes.map((node) => node.data.spreadsheetId?.trim()).filter(Boolean)),
+  ]);
+  useEffect(() => {
+    if (!connected) return;
+    const controller = new AbortController();
+    const files = JSON.parse(configuredFiles) as string[];
+    for (const spreadsheetId of files) {
+      const accessToken = localStorage.getItem('google_access_token');
+      if (!accessToken) break;
+      void googleService
+        .getMetadata(accessToken, spreadsheetId, controller.signal)
+        .then((metadata) => {
+          if (!controller.signal.aborted)
+            setNodes((items) =>
+              items.map((node) =>
+                node.type === 'sheetsTrigger' &&
+                node.data.spreadsheetId?.trim() === spreadsheetId &&
+                node.data.spreadsheetTitle !== metadata.title
+                  ? { ...node, data: { ...node.data, spreadsheetTitle: metadata.title } }
+                  : node,
+              ),
+            );
+        })
+        .catch(() => {
+          /* A metadata failure is not a data-read result. */
+        });
+    }
+    return () => controller.abort();
+  }, [configuredFiles, connected, connectionVersion, setNodes]);
 
   useEffect(() => {
     localStorage.setItem(draftKey, JSON.stringify({ nodes, edges }));
@@ -216,10 +266,6 @@ export default function App() {
     window.addEventListener('message', handle);
     return () => window.removeEventListener('message', handle);
   }, [showToast]);
-  useEffect(() => {
-    setSheetData(null);
-    setIsDataLoading(false);
-  }, [sourceKey]);
   useEffect(() => {
     let live = true;
     const revision = ++refreshRevision.current;
@@ -267,26 +313,26 @@ export default function App() {
     return value;
   }, []);
   const fetchData = useCallback(
-    async (targetNode?: Node<OrchestrationNodeData> | null) => {
-      const target = targetNode || source;
-      const requestSource = `${target?.id}:${target?.data.spreadsheetId}:${target?.data.sheetName}`;
-      setIsDataLoading(true);
-      setSheetData(null);
-      try {
-        if (!target?.data.spreadsheetId?.trim() || !target.data.sheetName?.trim())
-          throw new Error('Điền mã file và tên tab Google Sheet.');
-        const data = await googleService.readSheet(
-          token(),
-          target.data.spreadsheetId.trim(),
-          target.data.sheetName.trim(),
-        );
-        if (!targetNode || currentSource.current === requestSource) setSheetData(data);
-        return data;
-      } finally {
-        if (!targetNode || currentSource.current === requestSource) setIsDataLoading(false);
-      }
+    async (target: Node<OrchestrationNodeData>) =>
+      readSheetSource({
+        nodeId: target.id,
+        spreadsheetId: target.data.spreadsheetId || '',
+        sheetName: target.data.sheetName || '',
+      }),
+    [readSheetSource],
+  );
+  const refreshSources = useCallback(async () => {
+    invalidateReads();
+    await Promise.allSettled(sheetNodes.map((node) => fetchData(node)));
+  }, [sheetNodes, fetchData, invalidateReads]);
+  const openTable = useCallback(
+    (nodeId?: string) => {
+      const target = sheetNodes.find((node) => node.id === nodeId) || sheetNodes[0];
+      setTableNodeId(target?.id || '');
+      setIsTableModalOpen(true);
+      if (target) void fetchData(target).catch((error) => showToast(message(error)));
     },
-    [source, token],
+    [sheetNodes, fetchData, showToast],
   );
   const saveWorkflow = useCallback(async () => {
     await workflowService.save(workflowId, { nodes, edges });
@@ -320,16 +366,19 @@ export default function App() {
             `Đồng bộ ${result.cleanRecordIds.length} bản ghi, ${result.conflicts.length} xung đột. Telegram: gửi ${result.notificationsSent}, lỗi ${result.notificationsFailed}.`,
           );
         await refreshRunData(id);
-        setSheetData(null);
+        await refreshSources();
       } catch (error) {
         showToast(message(error));
-        if (id) await refreshRunData(id).catch(() => {});
+        if (id) {
+          await refreshRunData(id).catch(() => {});
+          await refreshSources();
+        }
       } finally {
         running.current = false;
         setIsRunning(false);
       }
     },
-    [configState, token, saveWorkflow, refreshRunData, showToast],
+    [configState, token, saveWorkflow, refreshRunData, refreshSources, showToast],
   );
   useEffect(() => {
     if (!autoActive) return;
@@ -368,13 +417,13 @@ export default function App() {
       await syncService.resolveConflict(conflict.id, value, token());
       refreshRevision.current++;
       setConflicts((items) => items.filter((item) => item.id !== conflict.id));
-      setSheetData(null);
+      await refreshSources();
       showToast('Đã đồng bộ giá trị đã chọn xuống tất cả các bảng và cập nhật snapshot.');
       await refreshRunData(conflict.flowId || flowId).catch((error) =>
         showToast(`Đã lưu quyết định; tải lại danh sách thất bại: ${message(error)}`),
       );
     },
-    [token, flowId, refreshRunData, showToast],
+    [token, flowId, refreshRunData, refreshSources, showToast],
   );
   const sendTelegram = useCallback(
     async (conflictId: number) => {
@@ -388,20 +437,20 @@ export default function App() {
   );
   const updateCell = useCallback(
     async (range: string, value: string) => {
-      if (!source?.data.spreadsheetId) throw new Error('Chưa chọn nguồn dữ liệu.');
+      if (!tableSource?.data.spreadsheetId) throw new Error('Chưa chọn nguồn dữ liệu.');
       const result = await googleService.updateCell({
         accessToken: token(),
-        spreadsheetId: source.data.spreadsheetId,
+        spreadsheetId: tableSource.data.spreadsheetId,
         range,
         value,
       });
       if (!result.success) throw new Error(result.message);
-      showToast('Đã cập nhật ô trên Google Sheet. Chạy luồng để đồng bộ vào Vault.');
-      await fetchData().catch((error) =>
+      showToast('Đã cập nhật ô trên trang tính đang chọn. Chạy luồng để đồng bộ các nguồn.');
+      await fetchData(tableSource).catch((error) =>
         showToast(`Đã ghi ô; tải lại bảng thất bại: ${message(error)}`),
       );
     },
-    [source, token, fetchData, showToast],
+    [tableSource, token, fetchData, showToast],
   );
   const onConnect = useCallback(
     (connection: Connection) => setEdges((items) => addEdge(connection, items)),
@@ -415,13 +464,29 @@ export default function App() {
           ...node.data,
           isRunning,
           userAccount: node.type === 'sheetsTrigger' && connected ? 'Google OAuth' : undefined,
-          recordsCount: node.type === 'sheetsTrigger' ? sheetData?.totalRows : undefined,
+          spreadsheetTitle:
+            node.type === 'sheetsTrigger'
+              ? stateFor(sourceDescriptor(node)).data?.spreadsheetTitle ||
+                node.data.spreadsheetTitle
+              : node.data.spreadsheetTitle,
+          sourceNumber: sheetNodes.findIndex((source) => source.id === node.id) + 1,
+          recordsCount:
+            node.type === 'sheetsTrigger'
+              ? stateFor(sourceDescriptor(node)).data?.totalRows
+              : undefined,
+          readStatus:
+            node.type === 'sheetsTrigger' ? stateFor(sourceDescriptor(node)).status : undefined,
+          readError:
+            node.type === 'sheetsTrigger' ? stateFor(sourceDescriptor(node)).error : undefined,
+          readAt:
+            node.type === 'sheetsTrigger' ? stateFor(sourceDescriptor(node)).readAt : undefined,
+          onOpenData: () => openTable(node.id),
           hasConflict: node.type === 'diffEngine' && conflicts.length > 0,
           conflictCount: node.type === 'diffEngine' ? conflicts.length : undefined,
           onOpenConflict: () => setIsConflictModalOpen(true),
         },
       })),
-    [nodes, isRunning, connected, sheetData, conflicts.length],
+    [nodes, sheetNodes, isRunning, connected, stateFor, openTable, conflicts.length],
   );
   const nodeTypes = useMemo(
     () => ({
@@ -519,10 +584,7 @@ export default function App() {
           setEdges(initialEdges);
           setAutoActive(false);
         }}
-        onOpenTable={() => {
-          setIsTableModalOpen(true);
-          void fetchData().catch((e) => showToast(message(e)));
-        }}
+        onOpenTable={() => openTable(tableNodeId)}
         onConnectGoogle={() => {
           void connectGoogle().catch((error) => showToast(message(error)));
         }}
@@ -633,6 +695,9 @@ export default function App() {
         connectionVersion={connectionVersion}
         onConnectGoogle={connectGoogle}
         onSaveSource={saveSource}
+        onReadSource={(nodeId, spreadsheetId, sheetName, signal) =>
+          readSheetSource({ nodeId, spreadsheetId, sheetName }, signal)
+        }
         onSaveTelegram={saveTelegram}
         notificationConnected={edges.some(
           (edge) =>
@@ -654,16 +719,28 @@ export default function App() {
         onClose={() => setIsConflictModalOpen(false)}
         conflict={conflicts[0] || null}
         remainingCount={conflicts.length}
+        sources={sheetNodes.map((node) => node.data)}
         onResolve={resolveConflict}
         onSendTelegramTest={sendTelegram}
       />
       <DataTableModal
         isOpen={isTableModalOpen}
         onClose={() => setIsTableModalOpen(false)}
-        data={sheetData}
-        isLoading={isDataLoading}
+        key={tableSource ? JSON.stringify(sourceDescriptor(tableSource)) : 'empty-table'}
+        data={tableState.data}
+        isLoading={tableState.status === 'loading'}
+        readError={tableState.error}
+        selectedSourceId={tableSource?.id || ''}
+        sources={sheetNodes.map((node, index) => ({
+          id: node.id,
+          number: index + 1,
+          spreadsheetId: node.data.spreadsheetId || '',
+          spreadsheetTitle: node.data.spreadsheetTitle,
+          sheetName: node.data.sheetName || '',
+        }))}
+        onSelectSource={openTable}
         onRefresh={() => {
-          void fetchData().catch((e) => showToast(message(e)));
+          if (tableSource) void fetchData(tableSource).catch((error) => showToast(message(error)));
         }}
         onUpdateCell={updateCell}
       />

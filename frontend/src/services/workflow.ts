@@ -65,6 +65,7 @@ export function workflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
           ? `${sNode.data.label} (${sheetName})`
           : `Sheet ${idx + 1} (${sheetName})`,
         spreadsheetId,
+        spreadsheetTitle: sNode.data.spreadsheetTitle,
         sheetName,
       };
     });

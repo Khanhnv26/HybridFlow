@@ -70,9 +70,44 @@ test('literal SOURCE and DESTINATION are submitted as values, not interpreted as
   });
   const choices = renderer.root
     .findAllByType('button')
-    .filter((button) => text(button).startsWith('Giữ theo'));
+    .filter((button) => text(button).startsWith('Giữ lựa chọn'));
   assert.equal(choices.length, 2);
   await act(async () => choices[0].props.onClick());
   await act(async () => choices[1].props.onClick());
   assert.deepEqual(received, ['SOURCE', 'DESTINATION']);
+});
+
+test('structured conflicts distinguish files and tabs without putting long IDs in buttons', async () => {
+  const conflict = {
+    id: 2,
+    recordId: 'SP01',
+    columnName: 'stock',
+    baseValue: '150',
+    endpointsJson: JSON.stringify([
+      { spreadsheetId: 'file-one', spreadsheetTitle: 'Kho Hà Nội', sheetName: 'Tồn kho' },
+      { spreadsheetId: 'file-two', spreadsheetTitle: 'Kho Sài Gòn', sheetName: 'Tồn kho' },
+    ]),
+    observationsJson: JSON.stringify({ '8:file-oneTồn kho': '999', '8:file-twoTồn kho': '50' }),
+  };
+  const received = [];
+  await act(async () => {
+    renderer = create(
+      React.createElement(ConflictModal, {
+        isOpen: true,
+        conflict,
+        remainingCount: 1,
+        onClose: () => {},
+        onSendTelegramTest: async () => {},
+        onResolve: async (value) => received.push(value),
+      }),
+    );
+  });
+  assert.match(text(renderer.root), /Kho Hà Nội/);
+  assert.match(text(renderer.root), /Kho Sài Gòn/);
+  const choices = renderer.root
+    .findAllByType('button')
+    .filter((button) => text(button).startsWith('Giữ giá trị'));
+  assert.deepEqual(choices.map(text), ['Giữ giá trị từ Nguồn 1', 'Giữ giá trị từ Nguồn 2']);
+  await act(async () => choices[1].props.onClick());
+  assert.deepEqual(received, ['50']);
 });

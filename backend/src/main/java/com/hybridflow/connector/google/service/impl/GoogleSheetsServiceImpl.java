@@ -128,7 +128,8 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
             if (values == null || values.isEmpty()) {
                 return SheetDataResponse.builder()
                         .spreadsheetId(request.getSpreadsheetId())
-                        .sheetName(targetSheetName)
+                        .spreadsheetTitle(spreadsheet.getProperties() == null ? null : spreadsheet.getProperties().getTitle())
+                    .sheetName(targetSheetName)
                         .headers(List.of())
                         .rows(List.of())
                         .totalRows(0)
@@ -155,14 +156,23 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
 
             return SheetDataResponse.builder()
                     .spreadsheetId(request.getSpreadsheetId())
+                    .spreadsheetTitle(spreadsheet.getProperties() == null ? null : spreadsheet.getProperties().getTitle())
                     .sheetName(targetSheetName)
                     .headers(headers)
                     .rows(rowsList)
                     .totalRows(rowsList.size())
                     .build();
 
+        } catch (GoogleJsonResponseException e) {
+            throw new IllegalArgumentException(switch (e.getStatusCode()) {
+                case 401 -> "Phiên Google đã hết hạn. Kết nối Google lại để đọc dữ liệu.";
+                case 403 -> "Tài khoản Google chưa có quyền đọc file này. Kiểm tra quyền chia sẻ file.";
+                case 404 -> "Không tìm thấy file Google Sheet. Kiểm tra link hoặc quyền truy cập.";
+                case 429 -> "Google đang giới hạn lượt đọc. Chờ một lát rồi thử lại.";
+                default -> "Google chưa trả được dữ liệu. Vui lòng thử lại sau.";
+            }, e);
         } catch (IOException e) {
-            throw new RuntimeException("Lỗi đọc dữ liệu từ Google Sheets: " + e.getMessage(), e);
+            throw new IllegalStateException("Không kết nối được Google để đọc dữ liệu. Kiểm tra mạng rồi thử lại.", e);
         }
     }
 
