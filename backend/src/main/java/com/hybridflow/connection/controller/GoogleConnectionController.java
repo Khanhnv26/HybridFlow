@@ -10,6 +10,7 @@ import com.hybridflow.connector.google.dto.response.SheetDataResponse;
 import com.hybridflow.connector.google.dto.response.UpdateCellResponse;
 import com.hybridflow.connector.google.service.GoogleSheetsService;
 import lombok.RequiredArgsConstructor;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestClient;
@@ -29,15 +30,33 @@ public class GoogleConnectionController {
         return new RedirectView(authorizationUrl);
     }
 
-    @GetMapping("/callback")
-    public ResponseEntity<GoogleCallbackResponse> handleGoogleOAuthCallback(@RequestParam("code") String code) {
+    @GetMapping(value = "/callback", produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> handleGoogleOAuthCallback(@RequestParam("code") String code) {
         GoogleTokenResponse tokenResponse = googleOAuthService.exChangeCode(code);
-        GoogleCallbackResponse callbackResponse = GoogleCallbackResponse.builder()
-                .status("success")
-                .message("Đã kết nối Google Sheets thành công!")
-                .data(tokenResponse)
-                .build();
-        return ResponseEntity.ok(callbackResponse);
+        String accessToken = tokenResponse.getAccessToken();
+        String html = """
+                <!DOCTYPE html>
+                <html>
+                <head><meta charset="UTF-8"><title>Kết nối Google thành công</title></head>
+                <body style="background:#0f131a;color:#10b981;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;">
+                    <h3>✅ Đã kết nối Google Sheets thành công! Cửa sổ sẽ tự đóng...</h3>
+                    <script>
+                        if (window.opener) {
+                            window.opener.postMessage({
+                                type: 'GOOGLE_OAUTH_SUCCESS',
+                                accessToken: '%s'
+                            }, '*');
+                        }
+                        setTimeout(() => window.close(), 1000);
+                    </script>
+                </body>
+                </html>
+                """.formatted(accessToken);
+        return ResponseEntity.ok(html);
+
+
+
+
 
     }
 

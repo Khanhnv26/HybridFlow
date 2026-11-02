@@ -1,16 +1,19 @@
 import React, { useState } from 'react';
 import { X, AlertTriangle, CheckCircle2, Send, Table, Database, Sparkles } from 'lucide-react';
+import { SyncConflictDto } from '../../types';
 
 interface ConflictModalProps {
   isOpen: boolean;
   onClose: () => void;
-  onResolve: (choice: 'SOURCE' | 'DESTINATION') => void;
-  onSendTelegramTest: () => void;
+  conflict?: SyncConflictDto | null;
+  onResolve: (choice: 'SOURCE' | 'DESTINATION', conflict?: SyncConflictDto) => void;
+  onSendTelegramTest: (conflictId?: number) => void;
 }
 
 export const ConflictModal: React.FC<ConflictModalProps> = ({
   isOpen,
   onClose,
+  conflict,
   onResolve,
   onSendTelegramTest,
 }) => {
@@ -18,6 +21,12 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({
   const [chosenOption, setChosenOption] = useState<string | null>(null);
 
   if (!isOpen) return null;
+
+  const recordId = conflict?.recordId || 'ORD-003';
+  const columnName = conflict?.columnName || 'status';
+  const baseValue = conflict?.baseValue || 'NEW';
+  const valueA = conflict?.valueA || 'PROCESSING';
+  const valueB = conflict?.valueB || 'CANCELLED';
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fadeIn">
@@ -30,7 +39,9 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({
             </div>
             <div>
               <h3 className="text-sm font-bold text-white">Trung Tâm Xử Lý Lệch Dữ Liệu (Xung Đột 2 Chiều)</h3>
-              <p className="text-xs text-gray-400">Đơn hàng bị chỉnh sửa cùng lúc ở cả 2 nguồn</p>
+              <p className="text-xs text-gray-400">
+                Bản ghi <code className="text-amber-300 font-mono font-bold">{recordId}</code> bị sửa lệch tại trường <code className="text-amber-300 font-mono font-bold">{columnName}</code>
+              </p>
             </div>
           </div>
           <button onClick={onClose} className="p-1 rounded-lg text-gray-400 hover:text-white">
@@ -42,7 +53,9 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({
         <div className="p-6 space-y-5 text-xs">
           {/* Situation Explanation */}
           <div className="p-3.5 rounded-xl bg-amber-950/20 border border-amber-800/40 text-amber-300 leading-relaxed">
-            <span className="font-bold">Tình huống phát hiện:</span> Đơn hàng <code className="bg-[#0b0f19] px-2 py-0.5 rounded text-white font-mono font-bold">ORD-003</code> bị thay đổi ở cả 2 nơi so với trạng thái ban đầu (<span className="font-semibold text-gray-300">NEW</span>). Để bảo vệ an toàn cho cửa hàng, hệ thống cần bạn chọn bên chính xác.
+            <span className="font-bold">Tình huống phát hiện:</span> Bản ghi{' '}
+            <code className="bg-[#0b0f19] px-2 py-0.5 rounded text-white font-mono font-bold">{recordId}</code> bị thay đổi ở cả Google Trang Tính và Hệ Thống Kho so với giá trị ban đầu (
+            <span className="font-semibold text-gray-300">{baseValue}</span>). Hệ thống bảo vệ tự động chặn ghi đè để bạn phê duyệt.
           </div>
 
           {/* 3-Column Comparison */}
@@ -50,7 +63,7 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({
             {/* Base Snapshot */}
             <div className="p-3.5 rounded-xl bg-[#0d1117] border border-[#30363d] space-y-1">
               <span className="text-[11px] text-gray-500 font-medium block">1. Lúc ban đầu (Gốc)</span>
-              <div className="text-sm font-bold text-gray-300 pt-1">NEW</div>
+              <div className="text-sm font-bold text-gray-300 pt-1 font-mono">{baseValue}</div>
               <span className="text-[11px] text-gray-500">Chưa ai chỉnh sửa</span>
             </div>
 
@@ -60,52 +73,52 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({
                 <span className="text-[11px] font-bold">2. Google Trang Tính</span>
                 <Table size={14} />
               </div>
-              <div className="text-sm font-bold text-blue-200 pt-1">PROCESSING</div>
-              <span className="text-[11px] text-blue-400/80">Nhân viên kho sửa</span>
+              <div className="text-sm font-bold text-blue-200 pt-1 font-mono">{valueA}</div>
+              <span className="text-[11px] text-blue-400/80">Giá trị từ bảng tính</span>
             </div>
 
             {/* Target PostgreSQL */}
             <div className="p-3.5 rounded-xl bg-purple-950/30 border border-purple-800/50 space-y-1">
               <div className="flex items-center justify-between text-purple-400">
-                <span className="text-[11px] font-bold">3. Hệ Thống Website</span>
+                <span className="text-[11px] font-bold">3. Hệ Thống Kho (Vault)</span>
                 <Database size={14} />
               </div>
-              <div className="text-sm font-bold text-purple-200 pt-1">CANCELLED</div>
-              <span className="text-[11px] text-purple-400/80">Khách hủy trên web</span>
+              <div className="text-sm font-bold text-purple-200 pt-1 font-mono">{valueB}</div>
+              <span className="text-[11px] text-purple-400/80">Giá trị trong kho</span>
             </div>
           </div>
 
           {/* Decision Buttons */}
           {!resolved ? (
             <div className="space-y-3 pt-2">
-              <div className="text-xs font-semibold text-white">Bạn muốn giữ trạng thái của bên nào?</div>
+              <div className="text-xs font-semibold text-white">Bạn muốn giữ giá trị của bên nào cho trường "{columnName}"?</div>
               <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                 <button
                   onClick={() => {
-                    onResolve('SOURCE');
+                    onResolve('SOURCE', conflict || undefined);
                     setResolved(true);
-                    setChosenOption('Google Trang Tính (PROCESSING)');
+                    setChosenOption(`Google Trang Tính (${valueA})`);
                   }}
                   className="p-3.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-left transition shadow-lg flex items-center justify-between group"
                 >
                   <div>
                     <div className="font-bold text-xs">Giữ dữ liệu Google Trang Tính</div>
-                    <div className="text-[11px] text-blue-200 font-normal mt-0.5">Đặt đơn thành PROCESSING</div>
+                    <div className="text-[11px] text-blue-200 font-normal mt-0.5 font-mono">Đặt {columnName} = "{valueA}"</div>
                   </div>
                   <CheckCircle2 size={18} className="text-blue-200 group-hover:scale-110 transition" />
                 </button>
 
                 <button
                   onClick={() => {
-                    onResolve('DESTINATION');
+                    onResolve('DESTINATION', conflict || undefined);
                     setResolved(true);
-                    setChosenOption('Hệ Thống Website (CANCELLED)');
+                    setChosenOption(`Hệ Thống Kho (${valueB})`);
                   }}
                   className="p-3.5 rounded-xl bg-purple-600 hover:bg-purple-500 text-white font-semibold text-left transition shadow-lg flex items-center justify-between group"
                 >
                   <div>
-                    <div className="font-bold text-xs">Giữ dữ liệu Hệ Thống Web</div>
-                    <div className="text-[11px] text-purple-200 font-normal mt-0.5">Đặt đơn thành CANCELLED</div>
+                    <div className="font-bold text-xs">Giữ dữ liệu Hệ Thống Kho</div>
+                    <div className="text-[11px] text-purple-200 font-normal mt-0.5 font-mono">Đặt {columnName} = "{valueB}"</div>
                   </div>
                   <CheckCircle2 size={18} className="text-purple-200 group-hover:scale-110 transition" />
                 </button>
@@ -115,16 +128,16 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({
             <div className="p-4 rounded-xl bg-emerald-950/40 border border-emerald-800 text-emerald-300 space-y-2">
               <div className="flex items-center gap-2 font-bold text-sm text-emerald-400">
                 <CheckCircle2 size={18} />
-                Đã xử lý xong xung đột thành công!
+                Đã giải quyết xung đột thành công!
               </div>
               <p className="text-xs text-gray-300">
-                Bạn đã chọn: <strong className="text-white">{chosenOption}</strong>. Hệ thống đã tự động ghi đè và đồng bộ lại 100% khớp nhau giữa Google Sheet và Database.
+                Bạn đã chọn: <strong className="text-white">{chosenOption}</strong>. Giá trị đã được lưu vào hệ thống an toàn.
               </p>
               <button
                 onClick={() => setResolved(false)}
                 className="text-xs text-emerald-400 underline hover:text-emerald-300"
               >
-                Thử lại tình huống này
+                Phê duyệt lại bản ghi này
               </button>
             </div>
           )}
@@ -136,7 +149,7 @@ export const ConflictModal: React.FC<ConflictModalProps> = ({
               Đã tự động gửi thông báo về Telegram của bạn
             </span>
             <button
-              onClick={onSendTelegramTest}
+              onClick={() => onSendTelegramTest(conflict?.id)}
               className="px-3 py-1.5 rounded-lg text-xs font-medium bg-[#21262d] hover:bg-[#30363d] text-sky-400 border border-[#30363d] flex items-center gap-1.5 transition"
             >
               <Send size={12} />

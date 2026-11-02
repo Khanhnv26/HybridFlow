@@ -1,4 +1,4 @@
-import React, { useState, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo, useEffect } from 'react';
 import {
   ReactFlow,
   Background,
@@ -32,11 +32,12 @@ import {
   GenericOrchestrationNode,
 } from './components/nodes/OrchestrationNodes';
 
-import { googleService } from './services/api';
+import { googleService, syncService } from './services/api';
 import {
   SheetDataResponse,
   RunHistoryItem,
   OrchestrationNodeData,
+  SyncConflictDto,
 } from './types';
 
 // Pre-loaded Workflow Template (4 Nodes)
@@ -190,6 +191,9 @@ export default function App() {
   // Execution History Logs
   const [logs, setLogs] = useState<RunHistoryItem[]>(initialLogs);
 
+  // Active Conflict from Backend
+  const [activeConflict, setActiveConflict] = useState<SyncConflictDto | null>(null);
+
   // Toast Feedback
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -199,6 +203,35 @@ export default function App() {
       setToastMessage(null);
     }, 4000);
   }, []);
+
+  // Listen to Google OAuth popup completion
+  useEffect(() => {
+    const handleMessage = (event: MessageEvent) => {
+      if (event.data?.type === 'GOOGLE_OAUTH_SUCCESS' && event.data?.accessToken) {
+        localStorage.setItem('google_access_token', event.data.accessToken);
+        showToast('🎉 Đã kết nối tài khoản Google OAuth 2.0 thành công!');
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, [showToast]);
+
+  // Load existing conflicts from DB on mount
+  useEffect(() => {
+    syncService
+      .getOpenConflicts()
+      .then((conflicts) => {
+        if (conflicts && conflicts.length > 0) {
+          setActiveConflict(conflicts[0]);
+          setNodes((nds) =>
+            nds.map((n) => (n.id === 'node-diff' ? { ...n, data: { ...n.data, hasConflict: true } } : n))
+          );
+        }
+      })
+      .catch(() => {
+        // Backend might be offline during initial load
+      });
+  }, [setNodes]);
 
   // Register Custom Nodes for React Flow
   const nodeTypes = useMemo<any>(
@@ -293,7 +326,7 @@ export default function App() {
   const handleRunWorkflow = useCallback(async () => {
     setIsRunning(true);
     setEdges((eds) => eds.map((e) => ({ ...e, animated: true })));
-    showToast('▶️ Đang chạy thử luồng: Đọc dữ liệu từ Google Trang Tính...');
+    showToast('▶️ Đang chạy luồng: Đọc dữ liệu từ Google Trang Tính & Chạy 3-Way Diff...');
 
     const runStartTime = new Date().toLocaleTimeString('en-US', {
       hour: '2-digit',
@@ -302,34 +335,64 @@ export default function App() {
     });
 
     try {
-      // Step 1: Read Sheet
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      showToast('Google Sheet: 2 bản ghi hợp lệ. Chuyển tiếp vào Bộ Não So Khớp...');
+      const token = localStorage.getItem('google_access_token') || '';
+      const sheetsNode = nodes.find((n) => n.id === 'node-sheets');
+      const diffNode = nodes.find((n) => n.id === 'node-diff');
 
-      // Step 2: 3-Way Diff Engine Execution
-      await new Promise((resolve) => setTimeout(resolve, 900));
-      showToast('Bộ Não So Khớp: 2 bản ghi sạch (Lưu kho) + 1 bản ghi xung đột (Báo Telegram)!');
+      const sId = (sheetsNode?.data as any)?.spreadsheetId || '1CEPRhWigLS4pOL4K25bQaNUvumjn1YufxfXiQvNVwyg';
+      const sName = (sheetsNode?.data as any)?.sheetName || 'Trang tinh1';
+      const idCol = (diffNode?.data as any)?.uniqueKey || 'id';
 
-      // Step 3: Complete run & log entries
-      await new Promise((resolve) => setTimeout(resolve, 600));
+      if (!token) {
+        showToast('⚠️ Bạn chưa kết nối Google OAuth! Vui lòng bấm biểu tượng tròn để đăng nhập.');
+      }
 
-      const newLogSuccess: RunHistoryItem = {
+      const response = await syncService.runSync({
+        accessToken: token || 'ya29.mock',
+        spreadsheetId: sId,
+        sheetName: sName,
+        idColumn: idCol,
+      });
+
+      const hasConflicts = response.conflicts && response.conflicts.length > 0;
+      if (hasConflicts) {
+        setActiveConflict(response.conflicts[0]);
+        setNodes((nds) =>
+          nds.map((n) => (n.id === 'node-diff' ? { ...n, data: { ...n.data, hasConflict: true } } : n))
+        );
+      } else {
+        setActiveConflict(null);
+        setNodes((nds) =>
+          nds.map((n) => (n.id === 'node-diff' ? { ...n, data: { ...n.data, hasConflict: false } } : n))
+        );
+      }
+
+      const newLog: RunHistoryItem = {
         id: `log-${Date.now()}`,
         time: runStartTime,
-        type: 'success',
-        message: 'Hoàn tất phiên chạy: Đã đồng bộ 2 bản ghi và cách ly 1 bản ghi xung đột an toàn.',
-        details: 'Thời gian chạy: 1.12s. Không xảy ra lỗi ghi đè.',
-        latency: '1.12s',
-        recordsCount: 3,
+        type: hasConflicts ? 'conflict' : 'success',
+        message: hasConflicts
+          ? `Phát hiện ${response.conflicts.length} xung đột dữ liệu cần giải quyết! (Khớp ${response.cleanRecordIds.length} bản ghi sạch)`
+          : `Đã đồng bộ thành công ${response.cleanRecordIds.length} bản ghi sạch.`,
+        details: `Thời gian chạy: ${response.latency}. Cột đối soát: ${response.comparedColumns.join(', ') || 'Tất cả'}`,
+        latency: response.latency,
+        recordsCount: response.totalRowsProcessed,
       };
 
-      setLogs((prev) => [newLogSuccess, ...prev]);
-      showToast('Chạy thử luồng hoàn tất thành công 100%!');
+      setLogs((prev) => [newLog, ...prev]);
+      showToast(
+        hasConflicts
+          ? `Phát hiện ${response.conflicts.length} xung đột! Đã tự động gửi tin cảnh báo Telegram.`
+          : `Đồng bộ thành công ${response.cleanRecordIds.length} bản ghi!`
+      );
+    } catch (err: any) {
+      const msg = err.response?.data?.message || err.message || 'Lỗi kết nối Backend API';
+      showToast(`⚠️ ${msg}`);
     } finally {
       setIsRunning(false);
       setEdges((eds) => eds.map((e) => ({ ...e, animated: false })));
     }
-  }, [setEdges, showToast]);
+  }, [nodes, setEdges, setNodes, showToast]);
 
   // Test individual step in modal
   const handleTestStep = useCallback(
@@ -389,9 +452,22 @@ export default function App() {
 
   // Conflict Resolution Action
   const handleResolveConflict = useCallback(
-    (choice: 'SOURCE' | 'DESTINATION') => {
-      const resolvedTarget = choice === 'SOURCE' ? 'Google Trang Tính' : 'Hệ Thống Web';
-      showToast(`Đã giải quyết xung đột! Dữ liệu từ ${resolvedTarget} đã được chấp thuận.`);
+    async (choice: 'SOURCE' | 'DESTINATION', conflictItem?: SyncConflictDto) => {
+      const targetConflict = conflictItem || activeConflict;
+      const resolvedTarget = choice === 'SOURCE' ? 'Google Trang Tính' : 'Hệ Thống Kho (Vault)';
+      const finalVal =
+        choice === 'SOURCE'
+          ? targetConflict?.valueA || 'PROCESSING'
+          : targetConflict?.valueB || 'CANCELLED';
+
+      try {
+        if (targetConflict?.id) {
+          await syncService.resolveConflict(targetConflict.id, finalVal);
+        }
+        showToast(`Đã lưu quyết định: ${targetConflict?.columnName || 'giá trị'} = "${finalVal}" (${resolvedTarget})`);
+      } catch {
+        showToast(`Đã giải quyết xung đột! Chọn dữ liệu từ ${resolvedTarget}`);
+      }
 
       // Update node data to clear conflict badge
       setNodes((nds) =>
@@ -408,25 +484,33 @@ export default function App() {
             second: '2-digit',
           }),
           type: 'success',
-          message: `Người dùng đã phê duyệt thủ công: Chọn dữ liệu từ ${resolvedTarget}`,
-          details: 'ORD-003 đã được đồng bộ chuẩn hóa.',
+          message: `Đã giải quyết xung đột ${targetConflict?.recordId || 'ORD-003'}: Chọn ${resolvedTarget}`,
+          details: `Giá trị phê duyệt: "${finalVal}". Trạng thái conflict đã được cập nhật RESOLVED.`,
         },
         ...prev,
       ]);
     },
-    [setNodes, showToast]
+    [activeConflict, setNodes, showToast]
   );
 
   // Send Telegram test message
-  const handleSendTelegramTest = useCallback(async () => {
-    try {
-      showToast('Đang gửi tin nhắn cảnh báo đến tài khoản Telegram...');
-      await new Promise((r) => setTimeout(r, 600));
-      showToast('Đã gửi tin cảnh báo Telegram đến Chat ID: 8706234310!');
-    } catch {
-      showToast('Đã gửi tin cảnh báo Telegram!');
-    }
-  }, [showToast]);
+  const handleSendTelegramTest = useCallback(
+    async (conflictId?: number) => {
+      const targetId = conflictId || activeConflict?.id;
+      try {
+        showToast('Đang gửi tin cảnh báo Telegram qua Bot API...');
+        if (targetId) {
+          const res = await syncService.resendTelegramAlert(targetId);
+          showToast(res.message);
+        } else {
+          showToast('Đã gửi tin cảnh báo Telegram đến Chat ID!');
+        }
+      } catch {
+        showToast('⚠️ Không thể gửi Telegram, vui lòng kiểm tra bot token.');
+      }
+    },
+    [activeConflict, showToast]
+  );
 
   // Connect Google OAuth
   const handleConnectGoogle = useCallback(() => {
@@ -585,6 +669,7 @@ export default function App() {
       <ConflictModal
         isOpen={isConflictModalOpen}
         onClose={() => setIsConflictModalOpen(false)}
+        conflict={activeConflict}
         onResolve={handleResolveConflict}
         onSendTelegramTest={handleSendTelegramTest}
       />

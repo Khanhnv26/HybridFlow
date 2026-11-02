@@ -96,3 +96,40 @@ export interface OrchestrationNodeData extends Record<string, unknown> {
   userAccount?: string;
   botName?: string;
 }
+
+export interface SyncConflictDto {
+  id: number;
+  recordId: string;
+  columnName: string;
+  baseValue?: string;
+  valueA?: string;
+  valueB?: string;
+  resolvedValue?: string;
+  status: 'OPEN' | 'RESOLVED' | string;
+  createdAt?: string;
+  resolvedAt?: string;
+}
+
+export interface RunSyncRequestPayload {
+  flowId?: string;
+  accessToken: string;
+  spreadsheetId: string;
+  sheetName?: string;
+  idColumn?: string;
+  syncColumns?: string[];
+}
+
+export interface RunSyncResponse {
+  flowId: string;
+  totalRowsProcessed: number;
+  cleanRecordIds: string[];
+  conflicts: SyncConflictDto[];
+  comparedColumns: string[];
+  latency: string;
+}
+
+export interface TelegramAlertResponse {
+  id: number;
+  success: boolean;
+  message: string;
+}
