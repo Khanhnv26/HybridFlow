@@ -18,39 +18,49 @@ body {
   overflow: hidden;
 }
 
-/* Keep the block library's native scrollbar consistent with the dark panel. */
-.palette-scrollbar {
+/* Keep the block library's and canvas nodes' native scrollbar consistent with the dark panel. */
+.palette-scrollbar,
+.node-scrollbar {
   color-scheme: dark;
   scrollbar-width: thin;
   scrollbar-color: #465166 #11151c;
+}
+
+.palette-scrollbar {
   scrollbar-gutter: stable;
 }
 
-.palette-scrollbar:hover {
+.palette-scrollbar:hover,
+.node-scrollbar:hover {
   scrollbar-color: #64748b #11151c;
 }
 
 /* Fallback for browsers that use the WebKit scrollbar styling API. */
 @supports not (scrollbar-width: thin) {
-  .palette-scrollbar::-webkit-scrollbar {
+  .palette-scrollbar::-webkit-scrollbar,
+  .node-scrollbar::-webkit-scrollbar {
     width: 8px;
   }
 
-  .palette-scrollbar::-webkit-scrollbar-track {
+  .palette-scrollbar::-webkit-scrollbar-track,
+  .node-scrollbar::-webkit-scrollbar-track {
     background: #11151c;
   }
 
-  .palette-scrollbar::-webkit-scrollbar-thumb {
+  .palette-scrollbar::-webkit-scrollbar-thumb,
+  .node-scrollbar::-webkit-scrollbar-thumb {
     border: 2px solid #11151c;
     border-radius: 999px;
     background: #465166;
   }
 
-  .palette-scrollbar::-webkit-scrollbar-thumb:hover {
+  .palette-scrollbar::-webkit-scrollbar-thumb:hover,
+  .node-scrollbar::-webkit-scrollbar-thumb:hover {
     background: #64748b;
   }
 
-  .palette-scrollbar::-webkit-scrollbar-button {
+  .palette-scrollbar::-webkit-scrollbar-button,
+  .node-scrollbar::-webkit-scrollbar-button {
     display: none;
     width: 0;
     height: 0;

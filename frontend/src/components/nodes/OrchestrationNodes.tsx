@@ -42,8 +42,9 @@ function NodeHeading({ icon, title }: { icon: React.ReactNode; title: string }) 
   );
 }
 
-export const SheetsTriggerNode: React.FC<any> = ({ data, selected }) => {
+export const SheetsTriggerNode: React.FC<any> = ({ id, data, selected }) => {
   const nodeData = data as OrchestrationNodeData;
+  const refreshHandles = useHandleGeometry(id);
   const status = nodeData.readStatus || 'idle';
   const statusText =
     status === 'loading'
@@ -87,9 +88,13 @@ export const SheetsTriggerNode: React.FC<any> = ({ data, selected }) => {
             {nodeData.readError || 'Không đọc được dữ liệu. Vui lòng thử lại.'}
           </p>
         )}
-        <details className="nodrag nopan text-[10px] text-gray-500" onClick={stopNodeClick}>
+        <details
+          className="nodrag nopan text-[10px] text-gray-500"
+          onClick={stopNodeClick}
+          onToggle={refreshHandles}
+        >
           <summary className="w-fit cursor-pointer hover:text-gray-300">Chi tiết nguồn</summary>
-          <div className="nowheel mt-2 max-h-32 space-y-1 overflow-y-auto break-words text-gray-400">
+          <div className="nowheel node-scrollbar mt-2 max-h-32 space-y-1 overflow-y-auto break-words text-gray-400">
             <p>File: {fileTitle}</p>
             <p>Trang tính: {nodeData.sheetName || 'Chưa chọn'}</p>
             <p className="break-all">ID file: {nodeData.spreadsheetId || 'Chưa có'}</p>
@@ -149,34 +154,31 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
     `${legacy}:${nodeData.hasConflict}:${sheets.length}`,
   );
   return (
-    <div
-      className={`${cardClass(selected, 'border-purple-400 ring-2 ring-purple-500/20')} !w-[320px]`}
-    >
-      <div className="flex items-center gap-3 rounded-t-xl border-b border-[#293241] bg-[#141922] px-4 py-3.5">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-purple-500/30 bg-purple-500/10 text-purple-300">
-          <Sparkles size={22} />
-        </span>
-        <div>
-          <p className="text-sm font-semibold text-gray-100">So khớp 2 chiều</p>
-          <p className="mt-0.5 text-[11px] text-gray-400">Đồng bộ các trang tính</p>
-        </div>
-      </div>
-      <div className="space-y-3 px-4 py-3.5 text-xs">
-        <div className="flex items-center justify-between gap-3 text-gray-400">
+    <div className={cardClass(selected, 'border-purple-400 ring-2 ring-purple-500/20')}>
+      <NodeHeading
+        icon={<Sparkles size={18} className="text-purple-300" />}
+        title="So khớp 2 chiều"
+      />
+      <div className="space-y-1.5 px-3 py-2.5 text-[11px]">
+        <div className="flex items-center justify-between gap-2 text-gray-400">
           <span>Khóa so sánh</span>
           <code
-            className="max-w-[150px] truncate rounded-md border border-[#303b4b] bg-[#121620] px-2 py-1 text-purple-200"
+            className="max-w-[140px] truncate rounded border border-[#303b4b] bg-[#121620] px-1.5 py-0.5 text-purple-200"
             title={nodeData.uniqueKey}
           >
             {nodeData.uniqueKey || 'Chưa chọn khóa'}
           </code>
         </div>
-        <details className="nodrag nopan" onClick={stopNodeClick} onToggle={refreshHandles}>
-          <summary className="cursor-pointer rounded-lg border border-[#303b4b] bg-[#141a23] px-3 py-2.5 text-gray-300 hover:border-purple-500/50 hover:text-purple-300">
+        <details
+          className="nodrag nopan text-gray-400"
+          onClick={stopNodeClick}
+          onToggle={refreshHandles}
+        >
+          <summary className="w-fit cursor-pointer hover:text-purple-300">
             Đã nối {pageCount} trang tính
             {unconfigured > 0 ? ` · ${unconfigured} chưa cấu hình` : ''}
           </summary>
-          <div className="nowheel mt-2 max-h-36 space-y-2 overflow-y-auto rounded-lg bg-[#121620] p-2.5">
+          <div className="nowheel node-scrollbar mt-1.5 max-h-32 space-y-1 overflow-y-auto rounded-lg bg-[#121620] px-2.5 py-2">
             {sheets.length === 0 ? (
               <p className="text-gray-500">
                 {legacy
@@ -184,21 +186,25 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
                   : 'Nối Sheet vào một trong hai cổng Sheet để bắt đầu.'}
               </p>
             ) : (
-              sheets.map((sheet) => (
-                <div key={sheet.nodeId} className="min-w-0 border-t border-gray-800 pt-2">
-                  <p className="text-[10px] text-gray-500">Nguồn {sheet.number}</p>
-                  <p className="break-words text-gray-200">
-                    {sheet.spreadsheetTitle ||
-                      (sheet.spreadsheetId
-                        ? `File …${sheet.spreadsheetId.slice(-8)}`
-                        : 'Chưa chọn file')}{' '}
-                    <span className="text-gray-500">→</span>{' '}
-                    <span className="text-emerald-300">
-                      {sheet.sheetName || 'Chưa chọn trang tính'}
-                    </span>
+              sheets.map((sheet) => {
+                const sheetTitle =
+                  sheet.spreadsheetTitle ||
+                  (sheet.spreadsheetId
+                    ? `File …${sheet.spreadsheetId.slice(-8)}`
+                    : 'Chưa chọn file');
+                const tabTitle = sheet.sheetName || 'Chưa chọn trang tính';
+                return (
+                  <p
+                    key={sheet.nodeId}
+                    className="truncate text-gray-200"
+                    title={`Nguồn ${sheet.number} · ${sheetTitle} → ${tabTitle}`}
+                  >
+                    <span className="text-gray-500">Nguồn {sheet.number} · </span>
+                    <span>{sheetTitle}</span> <span className="text-gray-500">→</span>{' '}
+                    <span className="text-emerald-300">{tabTitle}</span>
                   </p>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </details>
@@ -208,7 +214,7 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
               event.stopPropagation();
               nodeData.onOpenConflict?.();
             }}
-            className="nodrag nopan flex w-full items-center justify-between gap-2 rounded-lg border border-amber-700/60 bg-amber-950/30 px-2 py-1.5 text-amber-300 hover:bg-amber-950/60"
+            className="nodrag nopan flex w-full items-center justify-between gap-2 rounded-lg border border-amber-700/60 bg-amber-950/30 px-2 py-1 text-amber-300 hover:bg-amber-950/60"
           >
             <span className="flex items-center gap-1.5">
               <AlertTriangle size={12} /> {nodeData.conflictCount} xung đột
@@ -217,7 +223,7 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
           </button>
         )}
       </div>
-      <div className="relative flex h-14 items-center justify-between border-t border-[#293241] bg-[#151b25] px-4 text-xs font-medium">
+      <div className="relative flex h-8 items-center justify-between border-t border-[#293241] bg-[#151b25] px-3 text-[11px] font-medium">
         <Handle
           type="target"
           position={Position.Left}
@@ -225,7 +231,7 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
           title={sheetHint}
           aria-label="Kết nối Sheet bên trái"
           style={{ top: '50%' }}
-          className="!h-4 !w-4 !border-2 !border-purple-400 !bg-[#111827] transition-colors hover:!bg-slate-700"
+          className={`${handleClass} !border-purple-400`}
         />
         <span className="text-purple-200" title={sheetHint}>
           Sheet ⇄
@@ -240,15 +246,15 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
           title={rightHint}
           aria-label={legacy ? 'Kết nối Kho lưu trữ' : 'Kết nối Sheet bên phải'}
           style={{ top: '50%' }}
-          className="!h-4 !w-4 !border-2 !border-emerald-400 !bg-[#111827] transition-colors hover:!bg-slate-700"
+          className={`${handleClass} !border-emerald-400`}
         />
       </div>
-      <div className="relative flex h-14 items-center justify-center rounded-b-xl border-t border-[#293241] px-4 pb-2 text-xs font-medium">
+      <div className="relative flex h-8 items-center justify-center rounded-b-xl border-t border-[#293241] px-3 text-[11px] font-medium">
         <span
           className="flex items-center gap-1.5 text-amber-200"
           title="Nối với Telegram để gửi cảnh báo khi có xung đột."
         >
-          <Zap size={14} /> Cảnh báo · Telegram
+          <Zap size={12} /> Cảnh báo · Telegram
         </span>
         <Handle
           type="source"
@@ -256,7 +262,7 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
           id="conflict"
           title="Nối xuống Telegram để gửi cảnh báo xung đột."
           aria-label="Cảnh báo xung đột tới Telegram"
-          className="!h-4 !w-4 !border-2 !border-amber-400 !bg-[#111827] transition-colors hover:!bg-slate-700"
+          className={`${handleClass} !border-amber-400`}
         />
       </div>
     </div>
@@ -316,7 +322,7 @@ export const TelegramActionNode: React.FC<any> = ({ id, data, selected }) => {
           onToggle={refreshHandles}
         >
           <summary className="w-fit cursor-pointer hover:text-gray-300">Chi tiết</summary>
-          <div className="nowheel mt-2 max-h-24 space-y-1 overflow-y-auto break-words text-gray-400">
+          <div className="nowheel node-scrollbar mt-2 max-h-24 space-y-1 overflow-y-auto break-words text-gray-400">
             <p>Nơi nhận: {recipient}</p>
             <p>Bot: {nodeData.botName || 'Chưa có thông tin bot'}</p>
             {nodeData.chatId && <p className="break-all">Chat ID: {nodeData.chatId}</p>}
