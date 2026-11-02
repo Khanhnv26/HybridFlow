@@ -57,4 +57,17 @@ public class SyncConflictServiceImpl implements SyncConflictService {
         conflict.setResolvedAt(LocalDateTime.now());
         syncConflictRepository.save(conflict);
     }
+
+    @Override
+    @Transactional(readOnly = true)
+    public SyncConflict getConflictById(Long conflictId) {
+        return syncConflictRepository.findById(conflictId)
+                .orElseThrow(() -> new IllegalArgumentException("Không tìm thấy xung đột với ID: " + conflictId));
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<SyncConflict> getOpenConflicts() {
+        return syncConflictRepository.findByStatus("OPEN");
+    }
 }

@@ -9,4 +9,6 @@ public interface SyncConflictService {
 
     List<SyncConflict> saveConflicts(SyncDiffResult diffResult);
     void resolveConflict(Long conflictId, String finalValue);
+    SyncConflict getConflictById(Long conflictId);
+    List<SyncConflict> getOpenConflicts();
 }
