@@ -2,7 +2,9 @@ package com.hybridflow.sync.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
-import org.springframework.stereotype.Component;
+import org.hibernate.annotations.JdbcTypeCode;
+import org.hibernate.type.SqlTypes;
+
 
 import java.time.LocalDateTime;
 
@@ -23,6 +25,14 @@ public class SyncConflict {
     private String spreadsheetId;
     private String sheetName;
     private String idColumn;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "endpoints_json", columnDefinition = "jsonb")
+    private String endpointsJson;
+
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "candidates_json", columnDefinition = "jsonb")
+    private String candidatesJson;
 
     @Column(name = "record_id", nullable = false)
     private String recordId;

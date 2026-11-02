@@ -4,7 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hybridflow.notification.dto.response.TelegramLinkResponse;
 import com.hybridflow.notification.dto.response.TelegramTestResponse;
-import com.hybridflow.notification.service.TelegramApiClient;
+import com.hybridflow.notification.client.TelegramApiClient;
 import com.hybridflow.notification.service.impl.TelegramSetupServiceImpl;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;

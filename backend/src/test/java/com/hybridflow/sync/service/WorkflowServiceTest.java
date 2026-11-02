@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hybridflow.sync.repository.WorkflowDefinitionRepository;
 import com.hybridflow.sync.service.impl.WorkflowServiceImpl;
+import com.hybridflow.sync.support.SyncJsonCodec;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -19,28 +20,29 @@ import static org.mockito.ArgumentMatchers.*;
 @ExtendWith(MockitoExtension.class)
 class WorkflowServiceTest {
     @Mock WorkflowDefinitionRepository repository;
-    @Mock SyncStore store;
-    @Mock ExecutionHistory history;
+    @Mock SyncStateService store;
+    @Mock ExecutionHistoryService history;
+    @Mock SyncJsonCodec codec;
     private final ObjectMapper mapper = new ObjectMapper();
     private WorkflowService service;
 
     @BeforeEach
     void setup() {
-        service = new WorkflowServiceImpl(repository, mapper, store, history);
+        service = new WorkflowServiceImpl(repository, mapper, store, history, codec);
     }
 
     @Test
     void definitionValidationHappensBeforePersistence() throws Exception {
         JsonNode invalid = mapper.readTree("{\"nodes\":[],\"edges\":null}");
         assertThrows(IllegalArgumentException.class, () -> service.saveDefinition("workflow", invalid));
-        verifyNoInteractions(repository, store);
+        verifyNoInteractions(repository, store, codec);
     }
 
     @Test
     void validDefinitionIsSavedAndReportedAsSuccessful() throws Exception {
         String json = "{\"nodes\":[],\"edges\":[]}";
         JsonNode definition = mapper.readTree(json);
-        when(store.encode(definition)).thenReturn(json);
+        when(codec.encode(definition)).thenReturn(json);
         assertTrue(service.saveDefinition("workflow", definition).isSuccess());
         verify(repository).saveDefinition("workflow", json);
     }

@@ -4,6 +4,8 @@ import com.hybridflow.connector.google.dto.response.SheetDataResponse;
 import com.hybridflow.connector.google.service.GoogleSheetsService;
 import com.hybridflow.notification.service.TelegramNotificationService;
 import com.hybridflow.sync.dto.request.RunSyncRequest;
+import com.hybridflow.sync.dto.request.SheetEndpointRequest;
+import com.hybridflow.sync.dto.response.RunSyncResponse;
 import com.hybridflow.sync.engine.ThreeWayDiffEngine;
 import com.hybridflow.sync.service.impl.SyncExecutionServiceImpl;
 import org.junit.jupiter.api.Test;
@@ -23,8 +25,8 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class SyncExecutionServiceTest {
     @Mock GoogleSheetsService sheets;
-    @Mock SyncStore store;
-    @Mock ExecutionHistory history;
+    @Mock SyncStateService store;
+    @Mock ExecutionHistoryService history;
     @Mock SyncConflictService conflicts;
     @Mock TelegramNotificationService notifications;
     @Spy ThreeWayDiffEngine engine = new ThreeWayDiffEngine();
@@ -48,28 +50,29 @@ class SyncExecutionServiceTest {
     private void rows(String sourceValue, String vaultValue) {
         when(sheets.readSheet(any())).thenReturn(SheetDataResponse.builder().sheetName("Data")
                 .headers(List.of("id", "status")).rows(List.of(Map.of("id", "1", "status", sourceValue))).totalRows(1).build());
-        when(store.read("sync_snapshots", "flow", "1")).thenReturn(Map.of("id", "1", "status", "NEW"));
-        when(store.read("vault_records", "flow", "1")).thenReturn(Map.of("id", "1", "status", vaultValue));
+        when(store.getSnapshot("flow", "1")).thenReturn(Map.of("id", "1", "status", "NEW"));
+        when(store.getVaultRecord("flow", "1")).thenReturn(Map.of("id", "1", "status", vaultValue));
     }
     @Test void vaultChangesAreWrittenBackToSheetsBeforeCheckpointAdvances() {
         rows("NEW", "CANCELLED");
         service.executeSync(request());
         org.mockito.InOrder order = inOrder(sheets, store);
         order.verify(sheets).updateCells("test-token", "sheet", Map.of("'Data'!B2", "CANCELLED"));
-        order.verify(store).write("vault_records", "flow", "1", Map.of("id", "1", "status", "CANCELLED"));
-        order.verify(store).write("sync_snapshots", "flow", "1", Map.of("id", "1", "status", "CANCELLED"));
+        order.verify(store).saveVaultRecord("flow", "1", Map.of("id", "1", "status", "CANCELLED"));
+        order.verify(store).saveSnapshot("flow", "1", Map.of("id", "1", "status", "CANCELLED"));
     }
     @Test void sheetChangesAreWrittenToVault() {
         rows("SHIPPING", "NEW");
         com.hybridflow.sync.dto.response.RunSyncResponse result = service.executeSync(request());
-        verify(store).write("vault_records", "flow", "1", Map.of("id", "1", "status", "SHIPPING"));
+        verify(store).saveVaultRecord("flow", "1", Map.of("id", "1", "status", "SHIPPING"));
         assertEquals(List.of("1"), result.getCleanRecordIds());
     }
     @Test void failedSheetWriteDoesNotAdvanceCheckpointOrClaimSuccess() {
         rows("NEW", "CANCELLED");
         doThrow(new IllegalStateException("unavailable")).when(sheets).updateCells(anyString(), anyString(), anyMap());
         assertThrows(IllegalStateException.class, () -> service.executeSync(request()));
-        verify(store, never()).write(anyString(), anyString(), anyString(), anyMap());
+        verify(store, never()).saveSnapshot(anyString(), anyString(), anyMap());
+        verify(store, never()).saveVaultRecord(anyString(), anyString(), anyMap());
         verify(history).finish(isNull(), eq("ERROR"), isNull(), anyString());
     }
     @Test void sourceWinsActuallyUpdatesTheVault() {
@@ -77,8 +80,8 @@ class SyncExecutionServiceTest {
         RunSyncRequest request = request(); request.setConflictPolicy("SOURCE_WINS");
         com.hybridflow.sync.dto.response.RunSyncResponse result = service.executeSync(request);
         assertTrue(result.getConflicts().isEmpty());
-        verify(store).write("vault_records", "flow", "1", Map.of("id", "1", "status", "SHIPPING"));
-        verify(store).write("sync_snapshots", "flow", "1", Map.of("id", "1", "status", "SHIPPING"));
+        verify(store).saveVaultRecord("flow", "1", Map.of("id", "1", "status", "SHIPPING"));
+        verify(store).saveSnapshot("flow", "1", Map.of("id", "1", "status", "SHIPPING"));
     }
     @Test void destinationWinsActuallyUpdatesSheets() {
         rows("SHIPPING", "CANCELLED");
@@ -89,7 +92,7 @@ class SyncExecutionServiceTest {
     @Test void conflictingFieldsKeepTheOldCheckpointUntilApproved() {
         rows("SHIPPING", "CANCELLED");
         service.executeSync(request());
-        verify(store).write("sync_snapshots", "flow", "1", Map.of("id", "1", "status", "NEW"));
+        verify(store).saveSnapshot("flow", "1", Map.of("id", "1", "status", "NEW"));
         verify(notifications, never()).sendConflictAlert(any(), anyString());
     }
     @Test void initialCopyNeedsExplicitConfirmation() {
@@ -99,7 +102,8 @@ class SyncExecutionServiceTest {
         com.hybridflow.sync.dto.response.RunSyncResponse response = service.executeSync(request);
         assertTrue(response.isBootstrapRequired());
         assertEquals("AWAITING_CONFIRMATION", response.getStatus());
-        verify(store, never()).write(anyString(), anyString(), anyString(), anyMap());
+        verify(store, never()).saveSnapshot(anyString(), anyString(), anyMap());
+        verify(store, never()).saveVaultRecord(anyString(), anyString(), anyMap());
         verify(sheets, never()).updateCells(anyString(), anyString(), anyMap());
     }
     @Test void notificationFailureIsReturnedInsteadOfClaimingDelivery() {
@@ -115,7 +119,8 @@ class SyncExecutionServiceTest {
         when(sheets.readSheet(any())).thenReturn(SheetDataResponse.builder().sheetName("Data")
                 .headers(List.of("id", "status")).rows(List.of(Map.of("id", "1", "status", "NEW"), Map.of("id", "1", "status", "NEW"))).build());
         assertThrows(IllegalArgumentException.class, () -> service.executeSync(request()));
-        verify(store, never()).write(anyString(), anyString(), anyString(), anyMap());
+        verify(store, never()).saveSnapshot(anyString(), anyString(), anyMap());
+        verify(store, never()).saveVaultRecord(anyString(), anyString(), anyMap());
     }
     @Test void aCommitFailureCannotLeaveASuccessfulHistoryEntry() {
         rows("NEW", "CANCELLED");
@@ -127,5 +132,91 @@ class SyncExecutionServiceTest {
                 callback.afterCompletion(org.springframework.transaction.support.TransactionSynchronization.STATUS_ROLLED_BACK);
             verify(history).finish(isNull(), eq("ERROR"), isNull(), anyString());
         } finally { org.springframework.transaction.support.TransactionSynchronizationManager.clearSynchronization(); }
+    }
+
+    @Test
+    void multiSheetSyncPropagatesSingleChangeToAllOtherSheets() {
+        when(store.hasSnapshots("multi-flow")).thenReturn(true);
+        when(store.getSnapshot("multi-flow", "1")).thenReturn(Map.of("id", "1", "status", "NEW"));
+
+        SheetEndpointRequest ep1 = SheetEndpointRequest.builder().nodeId("n1").spreadsheetId("s1").sheetName("Tab1").build();
+        SheetEndpointRequest ep2 = SheetEndpointRequest.builder().nodeId("n2").spreadsheetId("s2").sheetName("Tab2").build();
+
+        when(sheets.readSheet(argThat(r -> r != null && "s1".equals(r.getSpreadsheetId()))))
+                .thenReturn(SheetDataResponse.builder().spreadsheetId("s1").sheetName("Tab1")
+                        .headers(List.of("id", "status")).rows(List.of(Map.of("id", "1", "status", "PROCESSING"))).totalRows(1).build());
+
+        when(sheets.readSheet(argThat(r -> r != null && "s2".equals(r.getSpreadsheetId()))))
+                .thenReturn(SheetDataResponse.builder().spreadsheetId("s2").sheetName("Tab2")
+                        .headers(List.of("id", "status")).rows(List.of(Map.of("id", "1", "status", "NEW"))).totalRows(1).build());
+
+        RunSyncRequest request = RunSyncRequest.builder()
+                .flowId("multi-flow")
+                .accessToken("test-token")
+                .idColumn("id")
+                .sheets(List.of(ep1, ep2))
+                .bootstrapConfirmed(true)
+                .build();
+
+        RunSyncResponse response = service.executeSync(request);
+
+        assertEquals("SUCCESS", response.getStatus());
+        assertEquals(List.of("1"), response.getCleanRecordIds());
+        verify(sheets).updateCells("test-token", "s2", Map.of("'Tab2'!B2", "PROCESSING"));
+        verify(store).saveSnapshot("multi-flow", "1", Map.of("id", "1", "status", "PROCESSING"));
+    }
+
+    @Test
+    void multiSheetSyncDetectsConflictWhenMultipleSheetsChangeDifferently() {
+        when(store.hasSnapshots("multi-flow")).thenReturn(true);
+        when(store.getSnapshot("multi-flow", "1")).thenReturn(Map.of("id", "1", "status", "NEW"));
+
+        SheetEndpointRequest ep1 = SheetEndpointRequest.builder().nodeId("n1").spreadsheetId("s1").sheetName("Tab1").build();
+        SheetEndpointRequest ep2 = SheetEndpointRequest.builder().nodeId("n2").spreadsheetId("s2").sheetName("Tab2").build();
+
+        when(sheets.readSheet(argThat(r -> r != null && "s1".equals(r.getSpreadsheetId()))))
+                .thenReturn(SheetDataResponse.builder().spreadsheetId("s1").sheetName("Tab1")
+                        .headers(List.of("id", "status")).rows(List.of(Map.of("id", "1", "status", "PROCESSING"))).totalRows(1).build());
+
+        when(sheets.readSheet(argThat(r -> r != null && "s2".equals(r.getSpreadsheetId()))))
+                .thenReturn(SheetDataResponse.builder().spreadsheetId("s2").sheetName("Tab2")
+                        .headers(List.of("id", "status")).rows(List.of(Map.of("id", "1", "status", "CANCELLED"))).totalRows(1).build());
+
+        com.hybridflow.sync.entity.SyncConflict conflict = com.hybridflow.sync.entity.SyncConflict.builder().id(99L).build();
+        when(conflicts.saveMultiSheetConflict(any(), any(), eq("1"), eq("status"), eq("NEW"), any(), any()))
+                .thenReturn(conflict);
+
+        RunSyncRequest request = RunSyncRequest.builder()
+                .flowId("multi-flow")
+                .accessToken("test-token")
+                .idColumn("id")
+                .sheets(List.of(ep1, ep2))
+                .bootstrapConfirmed(true)
+                .build();
+
+        RunSyncResponse response = service.executeSync(request);
+
+        assertEquals("CONFLICT", response.getStatus());
+        assertEquals(List.of(conflict), response.getConflicts());
+        verify(sheets, never()).updateCells(anyString(), anyString(), anyMap());
+    }
+
+    @Test
+    void multiSheetRejectsDuplicateSameSheetTarget() {
+        SheetEndpointRequest ep1 = SheetEndpointRequest.builder().nodeId("n1").spreadsheetId("s1").sheetName("Tab1").build();
+        SheetEndpointRequest ep2 = SheetEndpointRequest.builder().nodeId("n2").spreadsheetId("s1").sheetName("Tab1").build();
+
+        when(sheets.readSheet(any())).thenReturn(SheetDataResponse.builder().spreadsheetId("s1").sheetName("Tab1")
+                .headers(List.of("id", "status")).rows(List.of(Map.of("id", "1", "status", "NEW"))).build());
+
+        RunSyncRequest request = RunSyncRequest.builder()
+                .flowId("multi-flow")
+                .accessToken("test-token")
+                .idColumn("id")
+                .sheets(List.of(ep1, ep2))
+                .bootstrapConfirmed(true)
+                .build();
+
+        assertThrows(IllegalArgumentException.class, () -> service.executeSync(request));
     }
 }

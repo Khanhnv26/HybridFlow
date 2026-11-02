@@ -57,7 +57,7 @@ Các conflict cũ thiếu thông tin nguồn không được phê duyệt mù; c
 
 ## Kiểm thử
 
-Quy ước backend: controller chỉ nhận tham số HTTP, gọi interface service và trả response/redirect. Kiểm tra nghiệp vụ, điều phối tác vụ và transaction đặt ở service/implementation; truy vấn định nghĩa luồng đã tách sang repository. HTML callback OAuth nằm trong template và renderer riêng. Dùng kiểu tường minh và class DTO, không dùng `var` hoặc Java `record`. `ControllerArchitectureTest` kiểm tra ranh giới controller khi chạy test.
+Quy ước backend: controller chỉ nhận tham số HTTP, gọi interface service và trả response/redirect. Package `service` chỉ chứa interface; các lớp nghiệp vụ nằm trong `service.impl` và triển khai interface tương ứng. SQL nằm ở repository; utility nằm trong `util`, JSON codec trong `support`, HTTP client trong `client`. `ExecutionHistoryServiceImpl` giữ transaction `REQUIRES_NEW` để lưu lịch sử độc lập với giao dịch đồng bộ. HTML callback OAuth nằm trong template và renderer riêng. Dùng kiểu tường minh và class DTO, không dùng `var` hoặc Java `record`. `ControllerArchitectureTest` và `ServiceArchitectureTest` kiểm tra các ranh giới này khi chạy test.
 
 - Frontend: `npm test`, `npm run build` trong `frontend`.
 - Backend: `mvn test` trong `backend`. Test Telegram dùng HTTP giả lập của Spring, không gửi tin thật.

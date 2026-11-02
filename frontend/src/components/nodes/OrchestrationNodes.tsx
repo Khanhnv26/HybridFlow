@@ -24,6 +24,12 @@ export const SheetsTriggerNode: React.FC<any> = ({ data, selected }) => {
         selected ? 'border-emerald-400 ring-4 ring-emerald-500/20' : 'border-[#2d3748] hover:border-emerald-500/60'
       }`}
     >
+      <Handle
+        type="target"
+        position={Position.Left}
+        id="in"
+        className="!w-3.5 !h-3.5 !bg-[#111827] !border-2 !border-emerald-400 hover:!scale-125"
+      />
       <div className="p-3 bg-[#131720] rounded-t-2xl border-b border-[#2d3748] flex items-center justify-between">
         <div className="flex items-center gap-2.5">
           <div className="w-8 h-8 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 flex items-center justify-center">

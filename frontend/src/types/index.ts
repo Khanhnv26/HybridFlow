@@ -129,12 +129,21 @@ export interface TelegramLink {
   recipient: TelegramRecipient | null;
 }
 
+export interface SheetEndpointPayload {
+  nodeId: string;
+  label: string;
+  spreadsheetId: string;
+  sheetName: string;
+}
+
 export interface SyncConflictDto {
   id: number;
   flowId?: string;
   spreadsheetId?: string;
   sheetName?: string;
   idColumn?: string;
+  endpointsJson?: string;
+  candidatesJson?: string;
   recordId: string;
   columnName: string;
   baseValue?: string;
@@ -151,6 +160,7 @@ export interface RunSyncRequestPayload {
   accessToken: string;
   spreadsheetId: string;
   sheetName?: string;
+  sheets?: SheetEndpointPayload[];
   idColumn?: string;
   syncColumns?: string[];
   bootstrapConfirmed?: boolean;

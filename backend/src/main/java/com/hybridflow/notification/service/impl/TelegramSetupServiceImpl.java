@@ -5,7 +5,7 @@ import com.hybridflow.notification.dto.response.TelegramBotInfoResponse;
 import com.hybridflow.notification.dto.response.TelegramLinkResponse;
 import com.hybridflow.notification.dto.response.TelegramRecipientResponse;
 import com.hybridflow.notification.dto.response.TelegramTestResponse;
-import com.hybridflow.notification.service.TelegramApiClient;
+import com.hybridflow.notification.client.TelegramApiClient;
 import com.hybridflow.notification.service.TelegramSetupService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;

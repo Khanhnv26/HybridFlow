@@ -266,24 +266,28 @@ export default function App() {
     if (!value) throw new Error('Kết nối Google trước khi thao tác dữ liệu.');
     return value;
   }, []);
-  const fetchData = useCallback(async () => {
-    const requestSource = sourceKey;
-    setIsDataLoading(true);
-    setSheetData(null);
-    try {
-      if (!source?.data.spreadsheetId?.trim() || !source.data.sheetName?.trim())
-        throw new Error('Điền mã file và tên tab Google Sheet.');
-      const data = await googleService.readSheet(
-        token(),
-        source.data.spreadsheetId.trim(),
-        source.data.sheetName.trim(),
-      );
-      if (currentSource.current === requestSource) setSheetData(data);
-      return data;
-    } finally {
-      if (currentSource.current === requestSource) setIsDataLoading(false);
-    }
-  }, [source, sourceKey, token]);
+  const fetchData = useCallback(
+    async (targetNode?: Node<OrchestrationNodeData> | null) => {
+      const target = targetNode || source;
+      const requestSource = `${target?.id}:${target?.data.spreadsheetId}:${target?.data.sheetName}`;
+      setIsDataLoading(true);
+      setSheetData(null);
+      try {
+        if (!target?.data.spreadsheetId?.trim() || !target.data.sheetName?.trim())
+          throw new Error('Điền mã file và tên tab Google Sheet.');
+        const data = await googleService.readSheet(
+          token(),
+          target.data.spreadsheetId.trim(),
+          target.data.sheetName.trim(),
+        );
+        if (!targetNode || currentSource.current === requestSource) setSheetData(data);
+        return data;
+      } finally {
+        if (!targetNode || currentSource.current === requestSource) setIsDataLoading(false);
+      }
+    },
+    [source, token],
+  );
   const saveWorkflow = useCallback(async () => {
     await workflowService.save(workflowId, { nodes, edges });
   }, [workflowId, nodes, edges]);
@@ -338,7 +342,7 @@ export default function App() {
     async (nodeId: string) => {
       const node = nodes.find((n) => n.id === nodeId);
       if (!node) throw new Error('Không tìm thấy khối.');
-      if (node.type === 'sheetsTrigger') return (await fetchData()).rows;
+      if (node.type === 'sheetsTrigger') return (await fetchData(node)).rows;
       if (!flowId) throw new Error(configState.error || 'Cấu hình luồng trước khi chạy thử.');
       if (node.type === 'storageAction') return syncService.getVault(flowId);
       if (node.type === 'diffEngine')
@@ -359,14 +363,19 @@ export default function App() {
     [nodes, fetchData, flowId, configState.error, conflicts],
   );
   const resolveConflict = useCallback(
-    async (choice: 'SOURCE' | 'DESTINATION', conflict: SyncConflictDto) => {
-      const value = choice === 'SOURCE' ? conflict.valueA : conflict.valueB;
+    async (choice: 'SOURCE' | 'DESTINATION' | string, conflict: SyncConflictDto) => {
+      const value =
+        choice === 'SOURCE'
+          ? conflict.valueA
+          : choice === 'DESTINATION'
+          ? conflict.valueB
+          : choice;
       if (value === undefined) throw new Error('Xung đột thiếu giá trị. Tải lại danh sách.');
       await syncService.resolveConflict(conflict.id, value, token());
       refreshRevision.current++;
       setConflicts((items) => items.filter((item) => item.id !== conflict.id));
       setSheetData(null);
-      showToast('Đã ghi giá trị đã chọn vào Sheet, Vault và snapshot.');
+      showToast('Đã đồng bộ giá trị đã chọn xuống tất cả các bảng và cập nhật snapshot.');
       await refreshRunData(conflict.flowId || flowId).catch((error) =>
         showToast(`Đã lưu quyết định; tải lại danh sách thất bại: ${message(error)}`),
       );

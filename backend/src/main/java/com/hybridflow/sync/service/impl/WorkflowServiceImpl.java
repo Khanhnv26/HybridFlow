@@ -5,9 +5,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hybridflow.sync.dto.response.SaveWorkflowResponse;
 import com.hybridflow.sync.repository.WorkflowDefinitionRepository;
-import com.hybridflow.sync.service.ExecutionHistory;
-import com.hybridflow.sync.service.SyncStore;
+import com.hybridflow.sync.service.ExecutionHistoryService;
+import com.hybridflow.sync.service.SyncStateService;
 import com.hybridflow.sync.service.WorkflowService;
+import com.hybridflow.sync.support.SyncJsonCodec;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -21,8 +22,9 @@ import java.util.Optional;
 public class WorkflowServiceImpl implements WorkflowService {
     private final WorkflowDefinitionRepository repository;
     private final ObjectMapper mapper;
-    private final SyncStore store;
-    private final ExecutionHistory history;
+    private final SyncStateService store;
+    private final ExecutionHistoryService history;
+    private final SyncJsonCodec codec;
 
     @Override
     @Transactional(readOnly = true)
@@ -35,7 +37,7 @@ public class WorkflowServiceImpl implements WorkflowService {
     @Transactional(readOnly = true)
     public List<Map<String, String>> getVault(String flowId) {
         validateId(flowId);
-        return store.vault(flowId);
+        return store.getVaultRecords(flowId);
     }
 
     @Override
@@ -60,7 +62,7 @@ public class WorkflowServiceImpl implements WorkflowService {
         if (definition == null || !definition.path("nodes").isArray() || !definition.path("edges").isArray()) {
             throw new IllegalArgumentException("Cấu hình luồng không hợp lệ.");
         }
-        repository.saveDefinition(workflowId, store.encode(definition));
+        repository.saveDefinition(workflowId, codec.encode(definition));
         return new SaveWorkflowResponse(true);
     }
 

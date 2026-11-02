@@ -6,6 +6,7 @@ import lombok.Getter;
 import lombok.NoArgsConstructor;
 import lombok.Setter;
 
+import java.util.List;
 import java.util.Set;
 
 @Getter
@@ -18,6 +19,7 @@ public class RunSyncRequest {
     private String accessToken;
     private String spreadsheetId;
     private String sheetName;
+    private List<SheetEndpointRequest> sheets;
     @Builder.Default
     private String idColumn = "id";
     private Set<String> syncColumns;

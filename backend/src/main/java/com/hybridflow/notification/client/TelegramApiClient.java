@@ -1,17 +1,17 @@
-package com.hybridflow.notification.service;
+package com.hybridflow.notification.client;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
-import org.springframework.stereotype.Service;
+import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.util.Map;
 
-@Service
+@Component
 public class TelegramApiClient {
     @Value("${telegram.bot.token:}")
     private String botToken;

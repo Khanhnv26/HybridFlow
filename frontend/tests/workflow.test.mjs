@@ -57,3 +57,45 @@ test('editing uses the actual column position and escapes tab names', () => {
   assert.equal(cellRange("O'Brien", 2, 5), "'O''Brien'!C7");
   assert.equal(cellRange('Data', 27, 0), "'Data'!AB2");
 });
+
+test('multi-sheet configuration binds two or more sheets without storage', async () => {
+  const nodes = [
+    { id: 'sheet1', type: 'sheetsTrigger', data: { label: 'Bảng A', spreadsheetId: 'sheet-1', sheetName: 'Tab1' } },
+    { id: 'sheet2', type: 'sheetsTrigger', data: { label: 'Bảng B', spreadsheetId: 'sheet-2', sheetName: 'Tab2' } },
+    { id: 'diff', type: 'diffEngine', data: { uniqueKey: 'code', conflictPolicy: 'ASK_TELEGRAM' } },
+  ];
+  const edges = [
+    { source: 'sheet1', target: 'diff', sourceHandle: 'out', targetHandle: 'in' },
+    { source: 'diff', target: 'sheet2', sourceHandle: 'clean', targetHandle: 'in' },
+  ];
+  const config = workflowConfig(nodes, edges);
+  assert.equal(config.storageName, 'multi_sheet');
+  assert.equal(config.idColumn, 'code');
+  assert.equal(config.sheets?.length, 2);
+  assert.equal(config.sheets[0].spreadsheetId, 'sheet-1');
+  assert.equal(config.sheets[1].spreadsheetId, 'sheet-2');
+
+  const flowId = await flowIdFor(config);
+  assert.ok(flowId.startsWith('flow-'));
+
+  const differentNodes = [
+    { id: 'sheet1', type: 'sheetsTrigger', data: { label: 'Bảng A', spreadsheetId: 'sheet-1', sheetName: 'Tab1' } },
+    { id: 'sheet2', type: 'sheetsTrigger', data: { label: 'Bảng B', spreadsheetId: 'sheet-3', sheetName: 'Tab2' } },
+    { id: 'diff', type: 'diffEngine', data: { uniqueKey: 'code', conflictPolicy: 'ASK_TELEGRAM' } },
+  ];
+  const diffConfig = workflowConfig(differentNodes, edges);
+  const diffFlowId = await flowIdFor(diffConfig);
+  assert.notEqual(flowId, diffFlowId);
+});
+
+test('multi-sheet requires all sheet nodes to be connected to the diff engine', () => {
+  const nodes = [
+    { id: 'sheet1', type: 'sheetsTrigger', data: { spreadsheetId: 'sheet-1', sheetName: 'Tab1' } },
+    { id: 'sheet2', type: 'sheetsTrigger', data: { spreadsheetId: 'sheet-2', sheetName: 'Tab2' } },
+    { id: 'diff', type: 'diffEngine', data: { uniqueKey: 'code', conflictPolicy: 'ASK_TELEGRAM' } },
+  ];
+  const edges = [
+    { source: 'sheet1', target: 'diff', sourceHandle: 'out', targetHandle: 'in' },
+  ];
+  assert.throws(() => workflowConfig(nodes, edges), /Hãy nối khối/);
+});

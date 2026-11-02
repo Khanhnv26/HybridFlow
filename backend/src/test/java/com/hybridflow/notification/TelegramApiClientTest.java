@@ -1,7 +1,7 @@
 package com.hybridflow.notification;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.hybridflow.notification.service.TelegramApiClient;
+import com.hybridflow.notification.client.TelegramApiClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
