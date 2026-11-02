@@ -18,6 +18,45 @@ body {
   overflow: hidden;
 }
 
+/* Keep the block library's native scrollbar consistent with the dark panel. */
+.palette-scrollbar {
+  color-scheme: dark;
+  scrollbar-width: thin;
+  scrollbar-color: #465166 #11151c;
+  scrollbar-gutter: stable;
+}
+
+.palette-scrollbar:hover {
+  scrollbar-color: #64748b #11151c;
+}
+
+/* Fallback for browsers that use the WebKit scrollbar styling API. */
+@supports not (scrollbar-width: thin) {
+  .palette-scrollbar::-webkit-scrollbar {
+    width: 8px;
+  }
+
+  .palette-scrollbar::-webkit-scrollbar-track {
+    background: #11151c;
+  }
+
+  .palette-scrollbar::-webkit-scrollbar-thumb {
+    border: 2px solid #11151c;
+    border-radius: 999px;
+    background: #465166;
+  }
+
+  .palette-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #64748b;
+  }
+
+  .palette-scrollbar::-webkit-scrollbar-button {
+    display: none;
+    width: 0;
+    height: 0;
+  }
+}
+
 /* React Flow Custom Dark Theme Overrides */
 .react-flow__background {
   background-color: #0d1117;

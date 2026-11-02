@@ -20,21 +20,79 @@ export interface UpdateCellResponse {
   message: string;
 }
 
-export interface ActivityEvent {
+export interface RunHistoryItem {
   id: string;
   time: string;
-  type: 'success' | 'warning' | 'info';
-  title: string;
-  description: string;
+  type: 'success' | 'conflict' | 'error';
+  message: string;
+  details?: string;
+  latency?: string;
+  recordsCount?: number;
 }
 
-export interface SyncConflictItem {
+// Backward compatibility types for older components
+export interface ExecutionLog {
   id: string;
-  entityId: string;
-  fieldName: string;
-  baseValue: string;
-  sourceValue: string;
-  destinationValue: string;
-  status: 'PENDING' | 'RESOLVED';
-  resolvedChoice?: string;
+  timestamp: string;
+  level: 'INFO' | 'WARN' | 'ERROR' | 'SUCCESS';
+  message: string;
+  details?: any;
+}
+
+export interface ActivityEvent {
+  id: string;
+  timestamp?: string;
+  time?: string;
+  type: string;
+  title: string;
+  description: string;
+  details?: any;
+  status: 'SUCCESS' | 'WARNING' | 'ERROR';
+}
+
+export interface WorkflowNodeData extends Record<string, unknown> {
+  label: string;
+  status?: string;
+  sheetName?: string;
+  spreadsheetId?: string;
+  tableName?: string;
+  chatId?: string;
+  conflictPolicy?: string;
+}
+
+export type OrchestrationNodeType =
+  // Nhóm 1: Nguồn dữ liệu (Triggers)
+  | 'sheetsTrigger'
+  | 'scheduleTrigger'
+  | 'webhookTrigger'
+  // Nhóm 2: Bộ não điều phối (Logic)
+  | 'diffEngine'
+  | 'routerCondition'
+  | 'dataTransform'
+  // Nhóm 3: Hành động (Actions)
+  | 'storageAction'
+  | 'telegramAction'
+  | 'sheetWriteAction';
+
+export interface OrchestrationNodeData extends Record<string, unknown> {
+  label: string;
+  category: 'trigger' | 'logic' | 'action';
+  type: OrchestrationNodeType;
+  subtitle: string;
+  icon?: string;
+  status?: string;
+  isRunning?: boolean;
+  recordsCount?: number;
+  hasConflict?: boolean;
+  onOpenConflict?: () => void;
+  // Natural language parameters
+  uniqueKey?: string;
+  conflictPolicy?: string;
+  spreadsheetId?: string;
+  sheetName?: string;
+  chatId?: string;
+  tableName?: string;
+  scheduleTime?: string;
+  userAccount?: string;
+  botName?: string;
 }

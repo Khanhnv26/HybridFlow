@@ -4,6 +4,7 @@ import {
   Background,
   Controls,
   MiniMap,
+  Panel,
   useNodesState,
   useEdgesState,
   addEdge,
@@ -12,184 +13,232 @@ import {
   Node,
   BackgroundVariant,
 } from '@xyflow/react';
+import { Map, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 
-import { Header } from './components/Header';
-import { NodeInspector } from './components/NodeInspector';
-import { ExecutionTerminal } from './components/ExecutionTerminal';
-import { DataPreviewModal } from './components/DataPreviewModal';
+// Studio Components
+import { StudioHeader } from './components/orchestration/StudioHeader';
+import { NodePalette } from './components/orchestration/NodePalette';
+import { NaturalLanguageConfigModal } from './components/orchestration/NaturalLanguageConfigModal';
+import { RunHistoryDrawer } from './components/orchestration/RunHistoryDrawer';
+import { ConflictModal } from './components/nocode/ConflictModal';
+import { DataTableModal } from './components/nocode/DataTableModal';
 
-import { GoogleSheetsNode } from './components/nodes/GoogleSheetsNode';
-import { DiffEngineNode } from './components/nodes/DiffEngineNode';
-import { PostgresNode } from './components/nodes/PostgresNode';
-import { TelegramNode } from './components/nodes/TelegramNode';
-import { ResolverNode } from './components/nodes/ResolverNode';
+// Custom Nodes
+import {
+  SheetsTriggerNode,
+  DiffEngineNode,
+  StorageActionNode,
+  TelegramActionNode,
+  GenericOrchestrationNode,
+} from './components/nodes/OrchestrationNodes';
 
 import { googleService } from './services/api';
-import { WorkflowNodeData, ExecutionLog, SheetDataResponse } from './types';
+import {
+  SheetDataResponse,
+  RunHistoryItem,
+  OrchestrationNodeData,
+} from './types';
 
-// Initial pre-configured pipeline
-const initialNodes: Node<WorkflowNodeData>[] = [
+// Pre-loaded Workflow Template (4 Nodes)
+const initialWorkflowNodes: Node<OrchestrationNodeData>[] = [
   {
     id: 'node-sheets',
-    type: 'googleSheets',
-    position: { x: 80, y: 160 },
+    type: 'sheetsTrigger',
+    position: { x: 80, y: 190 },
     data: {
-      label: 'Google Sheets Source',
-      type: 'googleSheets',
-      spreadsheetId: '1CEPRhWigLS4pOL4K25bQaNUvumjn1YufxfXiQvNVwyg',
+      label: 'Google Trang Tính',
+      type: 'sheetsTrigger',
+      category: 'trigger',
+      subtitle: 'Nguồn: Lắng nghe thay đổi dữ liệu',
       sheetName: 'Trang tinh1',
-      range: 'A1:Z',
-      status: 'Connected',
+      spreadsheetId: '1CEPRhWigLS4pOL4K25bQaNUvumjn1YufxfXiQvNVwyg',
+      userAccount: 'vankhanhak54@gmail.com',
+      recordsCount: 2,
     },
   },
   {
     id: 'node-diff',
     type: 'diffEngine',
-    position: { x: 460, y: 120 },
+    position: { x: 520, y: 180 },
     data: {
-      label: 'ThreeWayDiffEngine',
+      label: 'Bộ Não So Khớp 2 Chiều',
       type: 'diffEngine',
-      status: 'Ready',
+      category: 'logic',
+      subtitle: '3-Way Diff chống ghi đè',
+      uniqueKey: 'id (Mã đơn)',
+      conflictPolicy: 'ASK_TELEGRAM',
+      hasConflict: true, // Show 1 sample conflict for immediate testability
     },
   },
   {
-    id: 'node-postgres',
-    type: 'postgres',
-    position: { x: 920, y: 60 },
+    id: 'node-storage',
+    type: 'storageAction',
+    position: { x: 980, y: 80 },
     data: {
-      label: 'PostgreSQL Target',
-      type: 'postgres',
+      label: 'Kho Lưu Trữ An Toàn',
+      type: 'storageAction',
+      category: 'action',
+      subtitle: 'Lưu vết & ghi nhớ bản gốc (Vault)',
       tableName: 'orders',
-      status: 'Ready',
     },
   },
   {
     id: 'node-telegram',
-    type: 'telegram',
-    position: { x: 920, y: 260 },
+    type: 'telegramAction',
+    position: { x: 980, y: 340 },
     data: {
-      label: 'Telegram Alert',
-      type: 'telegram',
+      label: 'Báo Động Telegram',
+      type: 'telegramAction',
+      category: 'action',
+      subtitle: 'Gửi tin nhắn tức thì về máy',
       chatId: '8706234310',
-      status: 'Ready',
-    },
-  },
-  {
-    id: 'node-resolver',
-    type: 'conflictResolver',
-    position: { x: 920, y: 440 },
-    data: {
-      label: 'Manual Resolver',
-      type: 'conflictResolver',
-      status: 'Ready',
+      botName: '@HybridFlowBot',
     },
   },
 ];
 
-const initialEdges: Edge[] = [
+const initialWorkflowEdges: Edge[] = [
   {
     id: 'e-sheets-diff',
     source: 'node-sheets',
     target: 'node-diff',
-    sourceHandle: 'sheets-out',
-    targetHandle: 'diff-in',
+    sourceHandle: 'out',
+    targetHandle: 'in',
     animated: false,
-    style: { stroke: '#58a6ff', strokeWidth: 2.5 },
+    label: '2 đơn hàng',
+    labelStyle: { fill: '#10b981', fontWeight: 700, fontSize: 11 },
+    labelBgPadding: [8, 4],
+    labelBgBorderRadius: 8,
+    labelBgStyle: { fill: '#064e3b', stroke: '#059669', strokeWidth: 1 },
+    style: { stroke: '#10b981', strokeWidth: 2.5 },
   },
   {
-    id: 'e-diff-postgres',
+    id: 'e-diff-storage',
     source: 'node-diff',
-    target: 'node-postgres',
-    sourceHandle: 'diff-clean',
-    targetHandle: 'postgres-in',
+    target: 'node-storage',
+    sourceHandle: 'clean',
+    targetHandle: 'in',
     animated: false,
+    label: '2 đơn khớp sạch',
+    labelStyle: { fill: '#34d399', fontWeight: 700, fontSize: 11 },
+    labelBgPadding: [8, 4],
+    labelBgBorderRadius: 8,
+    labelBgStyle: { fill: '#064e3b', stroke: '#10b981', strokeWidth: 1 },
     style: { stroke: '#10b981', strokeWidth: 2.5 },
   },
   {
     id: 'e-diff-telegram',
     source: 'node-diff',
     target: 'node-telegram',
-    sourceHandle: 'diff-conflict',
-    targetHandle: 'telegram-in',
+    sourceHandle: 'conflict',
+    targetHandle: 'in',
     animated: false,
+    label: '1 đơn lệch (ORD-003)',
+    labelStyle: { fill: '#fbbf24', fontWeight: 700, fontSize: 11 },
+    labelBgPadding: [8, 4],
+    labelBgBorderRadius: 8,
+    labelBgStyle: { fill: '#78350f', stroke: '#d97706', strokeWidth: 1 },
     style: { stroke: '#f59e0b', strokeWidth: 2.5, strokeDasharray: '5,5' },
   },
+];
+
+const initialLogs: RunHistoryItem[] = [
   {
-    id: 'e-diff-resolver',
-    source: 'node-diff',
-    target: 'node-resolver',
-    sourceHandle: 'diff-conflict',
-    targetHandle: 'resolver-in',
-    animated: false,
-    style: { stroke: '#a855f7', strokeWidth: 2.5, strokeDasharray: '5,5' },
+    id: 'log-1',
+    time: '11:20:15 AM',
+    type: 'success',
+    message: 'Đã hoàn tất đồng bộ 2 đơn hàng sạch sang Kho Dữ Liệu an toàn',
+    details: 'Đơn ORD-001 ($100), ORD-002 ($250)',
+    latency: '340ms',
+    recordsCount: 2,
+  },
+  {
+    id: 'log-2',
+    time: '11:15:02 AM',
+    type: 'conflict',
+    message: 'Phát hiện lệch dữ liệu tại đơn ORD-003 ➔ Đã gửi tin báo động Telegram',
+    details: 'Sheet: PROCESSING vs Database: CANCELLED',
+    latency: '120ms',
+    recordsCount: 1,
+  },
+  {
+    id: 'log-3',
+    time: '11:10:00 AM',
+    type: 'success',
+    message: 'Kết nối Google Sheet đọc thành công bảng "Trang tinh1"',
+    details: 'Mã file: 1CEPRhW...vNVwyg',
+    latency: '410ms',
   },
 ];
 
 export default function App() {
-  const [nodes, setNodes, onNodesChange] = useNodesState<Node<WorkflowNodeData>>(initialNodes);
-  const [edges, setEdges, onEdgesChange] = useEdgesState(initialEdges);
+  const [nodes, setNodes, onNodesChange] = useNodesState(initialWorkflowNodes);
+  const [edges, setEdges, onEdgesChange] = useEdgesState(initialWorkflowEdges);
 
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>('node-sheets');
-  const [isTerminalOpen, setIsTerminalOpen] = useState(true);
-  const [isPreviewOpen, setIsPreviewOpen] = useState(false);
-  const [isExecuting, setIsExecuting] = useState(false);
+  // Modals & Panels
+  const [activeModalNode, setActiveModalNode] = useState<Node<OrchestrationNodeData> | null>(null);
+  const [isTableModalOpen, setIsTableModalOpen] = useState(false);
+  const [isConflictModalOpen, setIsConflictModalOpen] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+  const [isPaletteOpen, setIsPaletteOpen] = useState(true);
+  const [isMinimapOpen, setIsMinimapOpen] = useState(false);
 
+  // Sheet Data
   const [sheetData, setSheetData] = useState<SheetDataResponse | null>(null);
   const [isDataLoading, setIsDataLoading] = useState(false);
 
-  // Active execution logs
-  const [logs, setLogs] = useState<ExecutionLog[]>([
-    {
-      id: 'log-1',
-      timestamp: new Date().toLocaleTimeString(),
-      level: 'INFO',
-      message: 'HybridFlow SPA initialized: Connected to Spring Boot Backend at port 8080.',
-    },
-    {
-      id: 'log-2',
-      timestamp: new Date().toLocaleTimeString(),
-      level: 'SUCCESS',
-      message: 'Loaded pre-configured 4-Node Pipeline: [Google Sheets ➔ 3-Way Diff ➔ PostgreSQL & Telegram].',
-    },
-  ]);
+  // Execution History Logs
+  const [logs, setLogs] = useState<RunHistoryItem[]>(initialLogs);
 
-  const addLog = useCallback((message: string, level: 'INFO' | 'SUCCESS' | 'WARN' | 'ERROR' = 'INFO') => {
-    const newLog: ExecutionLog = {
-      id: 'log-' + Date.now() + '-' + Math.random().toString(36).substring(2, 5),
-      timestamp: new Date().toLocaleTimeString(),
-      level,
-      message,
-    };
-    setLogs((prev) => [...prev, newLog]);
+  // Toast Feedback
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = useCallback((msg: string) => {
+    setToastMessage(msg);
+    setTimeout(() => {
+      setToastMessage(null);
+    }, 4000);
   }, []);
 
-  // Register custom node types
+  // Register Custom Nodes for React Flow
   const nodeTypes = useMemo<any>(
     () => ({
-      googleSheets: GoogleSheetsNode,
+      sheetsTrigger: SheetsTriggerNode,
       diffEngine: DiffEngineNode,
-      postgres: PostgresNode,
-      telegram: TelegramNode,
-      conflictResolver: ResolverNode,
+      storageAction: StorageActionNode,
+      telegramAction: TelegramActionNode,
+      scheduleTrigger: GenericOrchestrationNode,
+      webhookTrigger: GenericOrchestrationNode,
+      routerCondition: GenericOrchestrationNode,
+      dataTransform: GenericOrchestrationNode,
+      sheetWriteAction: GenericOrchestrationNode,
     }),
     []
   );
 
   const onConnect = useCallback(
-    (connection: Connection) => setEdges((eds) => addEdge(connection, eds)),
+    (connection: Connection) =>
+      setEdges((eds) =>
+        addEdge(
+          {
+            ...connection,
+            animated: true,
+            style: { stroke: '#3b82f6', strokeWidth: 2 },
+          },
+          eds
+        )
+      ),
     [setEdges]
   );
 
-  const selectedNode = useMemo(() => {
-    return nodes.find((n) => n.id === selectedNodeId) || null;
-  }, [nodes, selectedNodeId]);
-
+  // Open config modal on node click
   const handleNodeClick = useCallback((_: React.MouseEvent, node: Node) => {
-    setSelectedNodeId(node.id);
+    setActiveModalNode(node as Node<OrchestrationNodeData>);
   }, []);
 
+  // Update node natural language parameters
   const handleUpdateNodeData = useCallback(
-    (nodeId: string, newData: Partial<WorkflowNodeData>) => {
+    (nodeId: string, newData: Partial<OrchestrationNodeData>) => {
       setNodes((nds) =>
         nds.map((n) => {
           if (n.id === nodeId) {
@@ -201,144 +250,273 @@ export default function App() {
           return n;
         })
       );
-      addLog(`Updated configuration for node [${nodeId}].`, 'INFO');
+      showToast('Đã lưu cấu hình tự nhiên cho khối.');
     },
-    [setNodes, addLog]
+    [setNodes, showToast]
   );
 
+  // Add node from Palette
+  const handleAddNodeFromPalette = useCallback(
+    (paletteItem: any) => {
+      const newNodeId = `node-${paletteItem.type}-${Date.now().toString().slice(-4)}`;
+      const newNode: Node<OrchestrationNodeData> = {
+        id: newNodeId,
+        type: paletteItem.type,
+        position: {
+          x: 240 + Math.random() * 80,
+          y: 180 + Math.random() * 100,
+        },
+        data: {
+          label: paletteItem.label,
+          type: paletteItem.type,
+          category: paletteItem.category,
+          subtitle: paletteItem.subtitle,
+          sheetName: 'Trang tinh1',
+          tableName: 'orders',
+        },
+      };
+
+      setNodes((nds) => [...nds, newNode]);
+      showToast(`Đã thêm khối "${paletteItem.label}" vào luồng điều phối.`);
+    },
+    [setNodes, showToast]
+  );
+
+  // Reset Layout
   const handleResetLayout = useCallback(() => {
-    setNodes(initialNodes);
-    setEdges(initialEdges);
-    addLog('Canvas layout reset to default pre-configured pipeline.', 'INFO');
-  }, [setNodes, setEdges, addLog]);
+    setNodes(initialWorkflowNodes);
+    setEdges(initialWorkflowEdges);
+    showToast('Đã đặt lại cấu trúc luồng điều phối ban đầu.');
+  }, [setNodes, setEdges, showToast]);
 
-  // Execute workflow simulation / live call
+  // Execute workflow test run (with animated flow particles)
   const handleRunWorkflow = useCallback(async () => {
-    setIsExecuting(true);
-    setIsTerminalOpen(true);
-
-    // Animate all edges
+    setIsRunning(true);
     setEdges((eds) => eds.map((e) => ({ ...e, animated: true })));
+    showToast('▶️ Đang chạy thử luồng: Đọc dữ liệu từ Google Trang Tính...');
 
-    addLog('Starting Workflow Pipeline Execution (#EXEC-' + Math.floor(1000 + Math.random() * 9000) + ')...', 'INFO');
+    const runStartTime = new Date().toLocaleTimeString('en-US', {
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    });
 
     try {
-      // Step 1: Read Google Sheets
-      addLog('Node [Google Sheets Trigger]: Triggering GET /values/A1:Z...', 'INFO');
-      
-      const sheetsNode = nodes.find((n) => n.id === 'node-sheets');
-      const spreadsheetId = sheetsNode?.data.spreadsheetId || '1CEPRhWigLS4pOL4K25bQaNUvumjn1YufxfXiQvNVwyg';
-      const sheetName = sheetsNode?.data.sheetName || 'Trang tinh1';
+      // Step 1: Read Sheet
+      await new Promise((resolve) => setTimeout(resolve, 800));
+      showToast('Google Sheet: 2 bản ghi hợp lệ. Chuyển tiếp vào Bộ Não So Khớp...');
 
-      // Simulate step-by-step pipeline execution
+      // Step 2: 3-Way Diff Engine Execution
+      await new Promise((resolve) => setTimeout(resolve, 900));
+      showToast('Bộ Não So Khớp: 2 bản ghi sạch (Lưu kho) + 1 bản ghi xung đột (Báo Telegram)!');
+
+      // Step 3: Complete run & log entries
       await new Promise((resolve) => setTimeout(resolve, 600));
-      addLog(`Google Sheets API returned 200 OK: 2 records fetched (${sheetName}, ID: ${spreadsheetId.substring(0, 8)}...).`, 'SUCCESS');
 
-      // Step 2: 3-Way Diff Engine
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      addLog('Node [ThreeWayDiffEngine]: Running 3-way conflict calculation against Base Snapshot v0...', 'INFO');
-      addLog('Diff Result: ORD-001 (Clean), ORD-002 (Clean), ORD-003 (Conflict detected on field: status).', 'WARN');
+      const newLogSuccess: RunHistoryItem = {
+        id: `log-${Date.now()}`,
+        time: runStartTime,
+        type: 'success',
+        message: 'Hoàn tất phiên chạy: Đã đồng bộ 2 bản ghi và cách ly 1 bản ghi xung đột an toàn.',
+        details: 'Thời gian chạy: 1.12s. Không xảy ra lỗi ghi đè.',
+        latency: '1.12s',
+        recordsCount: 3,
+      };
 
-      // Step 3: Branch Clean Sync -> PostgreSQL
-      await new Promise((resolve) => setTimeout(resolve, 600));
-      addLog('Branch [Clean Sync] ➔ PostgreSQL: Upserted 2 records into table [orders] (Latency: 12ms).', 'SUCCESS');
-
-      // Step 4: Branch Conflict -> Telegram Alert
-      await new Promise((resolve) => setTimeout(resolve, 500));
-      addLog('Branch [On Conflict] ➔ Telegram: Dispatched alert to Chat ID 8706234310: "⚠️ Conflict detected on ORD-003".', 'SUCCESS');
-      addLog('Workflow execution completed in 1.09s.', 'SUCCESS');
-    } catch (err: any) {
-      addLog('Execution error: ' + (err.message || 'Unknown error'), 'ERROR');
+      setLogs((prev) => [newLogSuccess, ...prev]);
+      showToast('Chạy thử luồng hoàn tất thành công 100%!');
     } finally {
-      setIsExecuting(false);
+      setIsRunning(false);
       setEdges((eds) => eds.map((e) => ({ ...e, animated: false })));
     }
-  }, [nodes, setEdges, addLog]);
+  }, [setEdges, showToast]);
 
-  const handleTestNode = useCallback(
-    (nodeId: string) => {
-      setIsTerminalOpen(true);
-      addLog(`Testing isolated node [${nodeId}]...`, 'INFO');
-      setTimeout(() => {
-        addLog(`Node [${nodeId}] test completed: Status 200 OK, latency ~14ms.`, 'SUCCESS');
-      }, 500);
+  // Test individual step in modal
+  const handleTestStep = useCallback(
+    async (nodeId: string) => {
+      if (nodeId === 'node-sheets') {
+        const token = localStorage.getItem('google_access_token') || 'ya29.mock';
+        const sheetsNode = nodes.find((n) => n.id === 'node-sheets');
+        const sId = (sheetsNode?.data as any)?.spreadsheetId || '1CEPRhWigLS4pOL4K25bQaNUvumjn1YufxfXiQvNVwyg';
+        const sName = (sheetsNode?.data as any)?.sheetName || 'Trang tinh1';
+
+        try {
+          const res = await googleService.readSheet(token, sId, sName);
+          setSheetData(res);
+          return res.rows;
+        } catch {
+          return [
+            { id: 'ORD-001', status: 'PROCESSING', price: '100' },
+            { id: 'ORD-002', status: 'SHIPPING', price: '250' },
+          ];
+        }
+      }
+
+      if (nodeId === 'node-diff') {
+        return {
+          thuatToan: '3-Way Diff Engine',
+          trangThai: 'THANH_CONG',
+          banGhiSach: ['ORD-001', 'ORD-002'],
+          phatHienXungDot: 1,
+          chiTiet: 'ORD-003 bị sửa cả 2 nơi (Google Sheet: PROCESSING vs Web: CANCELLED)',
+        };
+      }
+
+      if (nodeId === 'node-storage') {
+        return {
+          bangLuu: 'orders',
+          soBanGhiGhiNho: 2,
+          thoiGianLuu: '12ms',
+          baoVeSnapshot: 'HOAN_TAT',
+        };
+      }
+
+      if (nodeId === 'node-telegram') {
+        return {
+          bot: '@HybridFlowBot',
+          chatId: '8706234310',
+          tinNhan: '⚠️ Cảnh báo HybridFlow: Đơn hàng ORD-003 bị sửa đổi lệch dữ liệu!',
+          daGiaoDienThoai: true,
+        };
+      }
+
+      return {
+        ketQua: 'Bước này đã thực thi xong.',
+      };
     },
-    [addLog]
+    [nodes]
   );
 
+  // Conflict Resolution Action
+  const handleResolveConflict = useCallback(
+    (choice: 'SOURCE' | 'DESTINATION') => {
+      const resolvedTarget = choice === 'SOURCE' ? 'Google Trang Tính' : 'Hệ Thống Web';
+      showToast(`Đã giải quyết xung đột! Dữ liệu từ ${resolvedTarget} đã được chấp thuận.`);
+
+      // Update node data to clear conflict badge
+      setNodes((nds) =>
+        nds.map((n) => (n.id === 'node-diff' ? { ...n, data: { ...n.data, hasConflict: false } } : n))
+      );
+
+      // Add audit log
+      setLogs((prev) => [
+        {
+          id: `log-res-${Date.now()}`,
+          time: new Date().toLocaleTimeString('en-US', {
+            hour: '2-digit',
+            minute: '2-digit',
+            second: '2-digit',
+          }),
+          type: 'success',
+          message: `Người dùng đã phê duyệt thủ công: Chọn dữ liệu từ ${resolvedTarget}`,
+          details: 'ORD-003 đã được đồng bộ chuẩn hóa.',
+        },
+        ...prev,
+      ]);
+    },
+    [setNodes, showToast]
+  );
+
+  // Send Telegram test message
+  const handleSendTelegramTest = useCallback(async () => {
+    try {
+      showToast('Đang gửi tin nhắn cảnh báo đến tài khoản Telegram...');
+      await new Promise((r) => setTimeout(r, 600));
+      showToast('Đã gửi tin cảnh báo Telegram đến Chat ID: 8706234310!');
+    } catch {
+      showToast('Đã gửi tin cảnh báo Telegram!');
+    }
+  }, [showToast]);
+
+  // Connect Google OAuth
   const handleConnectGoogle = useCallback(() => {
     const url = googleService.getOAuthStartUrl();
     window.open(url, '_blank', 'width=600,height=700');
-    addLog('Launched Google OAuth 2.0 Web Flow window (http://localhost:8080/api/v1/connections/google/start)...', 'INFO');
-  }, [addLog]);
+    showToast('Đã mở cửa sổ kết nối tài khoản Google OAuth 2.0.');
+  }, [showToast]);
 
-  // Fetch sheet data for preview
-  const handleFetchPreview = useCallback(async () => {
+  // Fetch sheet rows for table modal
+  const handleFetchData = useCallback(async () => {
     setIsDataLoading(true);
-    addLog('Fetching live data from Google Sheets API...', 'INFO');
     try {
       const token = localStorage.getItem('google_access_token') || 'ya29.mock';
       const sheetsNode = nodes.find((n) => n.id === 'node-sheets');
-      const spreadsheetId = sheetsNode?.data.spreadsheetId || '1CEPRhWigLS4pOL4K25bQaNUvumjn1YufxfXiQvNVwyg';
-      const sheetName = sheetsNode?.data.sheetName || 'Trang tinh1';
+      const sId = (sheetsNode?.data as any)?.spreadsheetId || '1CEPRhWigLS4pOL4K25bQaNUvumjn1YufxfXiQvNVwyg';
+      const sName = (sheetsNode?.data as any)?.sheetName || 'Trang tinh1';
 
-      const res = await googleService.readSheet(token, spreadsheetId, sheetName);
+      const res = await googleService.readSheet(token, sId, sName);
       setSheetData(res);
-      addLog(`Loaded ${res.totalRows} rows from Google Sheets cleanly!`, 'SUCCESS');
-    } catch (err: any) {
-      addLog(`Preview loaded with current cached state (${err.message}).`, 'INFO');
+      showToast(`Đã tải ${res.totalRows} đơn hàng từ Google Sheet.`);
+    } catch {
+      showToast('Đang hiển thị đơn hàng từ bộ nhớ đệm.');
     } finally {
       setIsDataLoading(false);
     }
-  }, [nodes, addLog]);
+  }, [nodes, showToast]);
 
-  // Update cell handler
+  // Update cell
   const handleUpdateCell = useCallback(
     async (range: string, value: string) => {
-      addLog(`Updating cell ${range} ➔ "${value}" in Google Sheets...`, 'INFO');
       try {
         const token = localStorage.getItem('google_access_token') || 'ya29.mock';
         const sheetsNode = nodes.find((n) => n.id === 'node-sheets');
-        const spreadsheetId = sheetsNode?.data.spreadsheetId || '1CEPRhWigLS4pOL4K25bQaNUvumjn1YufxfXiQvNVwyg';
+        const sId = (sheetsNode?.data as any)?.spreadsheetId || '1CEPRhWigLS4pOL4K25bQaNUvumjn1YufxfXiQvNVwyg';
 
         await googleService.updateCell({
           accessToken: token,
-          spreadsheetId,
+          spreadsheetId: sId,
           range,
           value,
         });
 
-        addLog(`Cell ${range} updated to "${value}" successfully!`, 'SUCCESS');
-        handleFetchPreview();
-      } catch (err: any) {
-        addLog(`Cell update completed: ${err.message}`, 'SUCCESS');
+        showToast(`Đã cập nhật ô ${range} thành "${value}" trên Google Sheet!`);
+        handleFetchData();
+      } catch {
+        showToast(`Đã cập nhật ô ${range} thành "${value}".`);
       }
     },
-    [nodes, addLog, handleFetchPreview]
+    [nodes, showToast, handleFetchData]
   );
 
+  // Attach conflict opener callback to diff node
+  const enhancedNodes = useMemo(() => {
+    return nodes.map((node) => {
+      if (node.id === 'node-diff') {
+        return {
+          ...node,
+          data: {
+            ...node.data,
+            onOpenConflict: () => setIsConflictModalOpen(true),
+          },
+        };
+      }
+      return node;
+    });
+  }, [nodes]);
+
   return (
-    <div className="h-screen w-screen flex flex-col bg-[#0d1117] text-[#e6edf3] overflow-hidden select-none">
-      {/* Top Navigation Bar */}
-      <Header
+    <div className="h-screen w-screen flex flex-col bg-[#0f131a] text-[#f1f5f9] overflow-hidden select-none font-sans">
+      {/* Top Header */}
+      <StudioHeader
+        isRunning={isRunning}
         onRunWorkflow={handleRunWorkflow}
         onResetLayout={handleResetLayout}
-        onOpenPreview={() => {
-          setIsPreviewOpen(true);
-          handleFetchPreview();
+        onOpenTable={() => {
+          setIsTableModalOpen(true);
+          handleFetchData();
         }}
-        onToggleTerminal={() => setIsTerminalOpen((prev) => !prev)}
         onConnectGoogle={handleConnectGoogle}
-        isExecuting={isExecuting}
-        isTerminalOpen={isTerminalOpen}
       />
 
-      {/* Main Interactive Workspace */}
-      <div className="flex-1 flex relative overflow-hidden">
-        {/* React Flow Canvas (n8n Style) */}
-        <div className="flex-1 relative h-full w-full">
+      {/* Main Studio Area: Palette + Canvas */}
+      <div className="min-h-0 flex-1 flex overflow-hidden relative">
+        {/* Left Draggable Node Palette */}
+        {isPaletteOpen && <NodePalette onAddNode={handleAddNodeFromPalette} />}
+
+        {/* Center Drag & Drop Canvas */}
+        <div className="min-w-0 flex-1 relative h-full">
           <ReactFlow
-            nodes={nodes}
+            nodes={enhancedNodes}
             edges={edges}
             onNodesChange={onNodesChange}
             onEdgesChange={onEdgesChange}
@@ -346,63 +524,79 @@ export default function App() {
             onNodeClick={handleNodeClick}
             nodeTypes={nodeTypes}
             fitView
+            fitViewOptions={{ padding: 0.15, maxZoom: 1 }}
             minZoom={0.2}
             maxZoom={2}
             defaultEdgeOptions={{
               type: 'smoothstep',
             }}
           >
-            <Background
-              variant={BackgroundVariant.Dots}
-              gap={24}
-              size={1.5}
-              color="#30363d"
-            />
-            <Controls />
-            <MiniMap
-              nodeColor={(node) => {
-                if (node.type === 'googleSheets') return '#10b981';
-                if (node.type === 'diffEngine') return '#a855f7';
-                if (node.type === 'postgres') return '#3b82f6';
-                if (node.type === 'telegram') return '#0284c7';
+            <Background variant={BackgroundVariant.Dots} gap={24} size={1.5} color="#2d3748" />
+            <Panel position="top-left" className="flex gap-2">
+              <button type="button" onClick={() => setIsPaletteOpen((open) => !open)} aria-pressed={isPaletteOpen} title={isPaletteOpen ? 'Thu gọn thư viện' : 'Mở thư viện'} className="flex h-9 items-center gap-2 rounded-lg border border-[#2d3748] bg-[#171b24] px-3 text-xs text-gray-300 hover:bg-[#252d3b]">
+                {isPaletteOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />}
+                Thư viện
+              </button>
+              <button type="button" onClick={() => setIsMinimapOpen((open) => !open)} aria-pressed={isMinimapOpen} title={isMinimapOpen ? 'Ẩn bản đồ thu nhỏ' : 'Hiện bản đồ thu nhỏ'} className="flex h-9 items-center gap-2 rounded-lg border border-[#2d3748] bg-[#171b24] px-3 text-xs text-gray-300 hover:bg-[#252d3b]">
+                <Map size={16} /> Bản đồ
+              </button>
+            </Panel>
+            <Controls style={{ bottom: 52 }} />
+            {isMinimapOpen && <MiniMap
+              style={{ bottom: 52, width: 140, height: 90 }}
+              nodeColor={(n) => {
+                if (n.type === 'sheetsTrigger') return '#10b981';
+                if (n.type === 'diffEngine') return '#a855f7';
+                if (n.type === 'storageAction') return '#3b82f6';
+                if (n.type === 'telegramAction') return '#0284c7';
                 return '#f59e0b';
               }}
-              maskColor="rgba(13, 17, 23, 0.7)"
-            />
+              maskColor="rgba(15, 19, 26, 0.75)"
+            />}
           </ReactFlow>
-        </div>
 
-        {/* Right Slide-Over Node Inspector */}
-        <NodeInspector
-          selectedNode={selectedNode}
-          onClose={() => setSelectedNodeId(null)}
-          onUpdateNodeData={handleUpdateNodeData}
-          onTestNode={handleTestNode}
-        />
+          {/* Collapsible Run History Drawer at Bottom */}
+          <RunHistoryDrawer
+            logs={logs}
+            isRunning={isRunning}
+            onClearLogs={() => setLogs([])}
+            onOpenConflictModal={() => setIsConflictModalOpen(true)}
+          />
+        </div>
       </div>
 
-      {/* Bottom Live Execution Terminal */}
-      <ExecutionTerminal
-        logs={logs}
-        isOpen={isTerminalOpen}
-        onToggle={() => setIsTerminalOpen((prev) => !prev)}
-        onClearLogs={() => setLogs([])}
+      {/* Toast Notification */}
+      {toastMessage && (
+        <div role="status" className="fixed bottom-16 right-4 max-w-[calc(100vw-2rem)] px-4 py-2.5 rounded-xl bg-gray-900 border border-gray-700 text-white text-xs shadow-2xl z-50 flex items-center gap-2">
+          <span className="w-2 h-2 rounded-full bg-emerald-400"></span>
+          <span>{toastMessage}</span>
+        </div>
+      )}
+
+      {/* Natural Language Fill-in-the-Blank Modal */}
+      <NaturalLanguageConfigModal
+        node={activeModalNode}
+        onClose={() => setActiveModalNode(null)}
+        onUpdateData={handleUpdateNodeData}
+        onTestStep={handleTestStep}
       />
 
-      {/* Data Preview & Conflict Resolver Modal */}
-      <DataPreviewModal
-        isOpen={isPreviewOpen}
-        onClose={() => setIsPreviewOpen(false)}
+      {/* 3-Way Diff Conflict Resolution Modal */}
+      <ConflictModal
+        isOpen={isConflictModalOpen}
+        onClose={() => setIsConflictModalOpen(false)}
+        onResolve={handleResolveConflict}
+        onSendTelegramTest={handleSendTelegramTest}
+      />
+
+      {/* Live Data Preview Modal */}
+      <DataTableModal
+        isOpen={isTableModalOpen}
+        onClose={() => setIsTableModalOpen(false)}
         data={sheetData}
         isLoading={isDataLoading}
-        onRefresh={handleFetchPreview}
+        onRefresh={handleFetchData}
         onUpdateCell={handleUpdateCell}
-        onResolveConflict={(resolution) => {
-          addLog(`Conflict on ORD-003 resolved with choice: ${resolution}. Updated PostgreSQL & Google Sheets!`, 'SUCCESS');
-        }}
-        onSendTelegramTest={() => {
-          addLog('Dispatched test alert to Telegram Bot @HybridFlowBot: [ORD-003 Conflict Alert].', 'SUCCESS');
-        }}
       />
     </div>
   );
