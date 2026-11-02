@@ -29,11 +29,12 @@ export interface UpdateCellResponse {
 export interface RunHistoryItem {
   id: string;
   time: string;
-  type: 'success' | 'conflict' | 'error';
+  type: 'success' | 'conflict' | 'error' | 'info';
   message: string;
   details?: string;
   latency?: string;
   recordsCount?: number;
+  conflictIds?: number[];
 }
 
 // Backward compatibility types for older components

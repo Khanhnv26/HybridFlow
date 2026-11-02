@@ -29,13 +29,12 @@ import {
 } from './components/nodes/OrchestrationNodes';
 import { googleService, syncService, workflowService, telegramService } from './services/api';
 import { flowIdFor, workflowConfig } from './services/workflow';
+import { historyLog } from './services/history';
 import type {
   SheetDataResponse,
   RunHistoryItem,
   OrchestrationNodeData,
   SyncConflictDto,
-  ExecutionHistoryDto,
-  RunSyncResponse,
 } from './types';
 
 const initialNodes: Node<OrchestrationNodeData>[] = [
@@ -120,37 +119,6 @@ function message(error: unknown) {
   const err = error as { response?: { data?: { message?: string } }; message?: string };
   return err.response?.data?.message || err.message || 'Không thể kết nối máy chủ.';
 }
-function historyLog(item: ExecutionHistoryDto): RunHistoryItem {
-  let result: RunSyncResponse | null = null;
-  try {
-    result = item.result ? JSON.parse(item.result) : null;
-  } catch {
-    /* Keep the persisted status visible. */
-  }
-  return {
-    id: item.id,
-    time: new Date(item.started_at).toLocaleString('vi-VN'),
-    type:
-      item.status === 'ERROR'
-        ? 'error'
-        : item.status === 'CONFLICT' || item.status === 'AWAITING_CONFIRMATION'
-          ? 'conflict'
-          : 'success',
-    message:
-      item.status === 'ERROR'
-        ? item.error || 'Đồng bộ thất bại.'
-        : item.status === 'RUNNING'
-          ? 'Phiên đang chạy.'
-          : item.status === 'AWAITING_CONFIRMATION'
-            ? 'Chờ xác nhận khởi tạo snapshot từ Sheet.'
-            : `Đồng bộ ${result?.cleanRecordIds.length ?? 0} bản ghi; ${result?.conflicts.length ?? 0} xung đột.`,
-    details: result
-      ? `Telegram: gửi ${result.notificationsSent}, lỗi ${result.notificationsFailed}.`
-      : undefined,
-    latency: result?.latency,
-    recordsCount: result?.totalRowsProcessed,
-  };
-}
 
 export default function App() {
   const [startingDraft] = useState(draft);
@@ -175,6 +143,10 @@ export default function App() {
   const [isDataLoading, setIsDataLoading] = useState(false);
   const [logs, setLogs] = useState<RunHistoryItem[]>([]);
   const [conflicts, setConflicts] = useState<SyncConflictDto[]>([]);
+  const refreshRevision = useRef(0);
+  useEffect(() => {
+    if (conflicts.length === 0) setIsConflictModalOpen(false);
+  }, [conflicts.length]);
   const [flowId, setFlowId] = useState('');
   const [bootstrapRequired, setBootstrapRequired] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -250,6 +222,7 @@ export default function App() {
   }, [sourceKey]);
   useEffect(() => {
     let live = true;
+    const revision = ++refreshRevision.current;
     setFlowId('');
     currentFlow.current = '';
     setConflicts([]);
@@ -265,7 +238,7 @@ export default function App() {
             syncService.getOpenConflicts(id),
             syncService.getHistory(id),
           ]);
-          if (live) {
+          if (live && revision === refreshRevision.current) {
             setConflicts(open);
             setLogs(history.map(historyLog));
           }
@@ -278,11 +251,12 @@ export default function App() {
     };
   }, [configKey, showToast]);
   const refreshRunData = useCallback(async (id: string) => {
+    const revision = ++refreshRevision.current;
     const [open, history] = await Promise.all([
       syncService.getOpenConflicts(id),
       syncService.getHistory(id),
     ]);
-    if (currentFlow.current === id) {
+    if (currentFlow.current === id && revision === refreshRevision.current) {
       setConflicts(open);
       setLogs(history.map(historyLog));
     }
@@ -389,6 +363,7 @@ export default function App() {
       const value = choice === 'SOURCE' ? conflict.valueA : conflict.valueB;
       if (value === undefined) throw new Error('Xung đột thiếu giá trị. Tải lại danh sách.');
       await syncService.resolveConflict(conflict.id, value, token());
+      refreshRevision.current++;
       setConflicts((items) => items.filter((item) => item.id !== conflict.id));
       setSheetData(null);
       showToast('Đã ghi giá trị đã chọn vào Sheet, Vault và snapshot.');
@@ -464,7 +439,10 @@ export default function App() {
       edges.map((edge) => ({
         ...edge,
         animated: isRunning,
-        label: edge.sourceHandle === 'conflict' ? `${conflicts.length} xung đột` : undefined,
+        label:
+          edge.sourceHandle === 'conflict' && conflicts.length > 0
+            ? `${conflicts.length} xung đột`
+            : undefined,
       })),
     [edges, isRunning, conflicts.length],
   );
@@ -629,6 +607,7 @@ export default function App() {
           </ReactFlow>
           <RunHistoryDrawer
             logs={logs}
+            activeConflictIds={conflicts.map((conflict) => conflict.id)}
             isRunning={isRunning}
             onClearLogs={() => setLogs([])}
             onOpenConflictModal={() => setIsConflictModalOpen(true)}

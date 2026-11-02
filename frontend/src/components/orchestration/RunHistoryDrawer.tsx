@@ -1,9 +1,19 @@
 import React, { useState } from 'react';
-import { ChevronUp, ChevronDown, CheckCircle2, AlertTriangle, Clock, Trash2, Terminal } from 'lucide-react';
-import { RunHistoryItem } from '../../types';
+import {
+  ChevronUp,
+  ChevronDown,
+  CheckCircle2,
+  AlertTriangle,
+  Clock,
+  Trash2,
+  Terminal,
+} from 'lucide-react';
+import type { RunHistoryItem } from '../../types';
+import { logConflictState } from '../../services/history';
 
 interface RunHistoryDrawerProps {
   logs: RunHistoryItem[];
+  activeConflictIds: number[];
   isRunning: boolean;
   onClearLogs: () => void;
   onOpenConflictModal: () => void;
@@ -11,6 +21,7 @@ interface RunHistoryDrawerProps {
 
 export const RunHistoryDrawer: React.FC<RunHistoryDrawerProps> = ({
   logs,
+  activeConflictIds,
   isRunning,
   onClearLogs,
   onOpenConflictModal,
@@ -18,6 +29,13 @@ export const RunHistoryDrawer: React.FC<RunHistoryDrawerProps> = ({
   const [isOpen, setIsOpen] = useState(false);
 
   const latestLog = logs[0];
+  const activeIds = new Set(activeConflictIds);
+  const hasOpenConflicts = activeIds.size > 0;
+  const latestMessage = hasOpenConflicts
+    ? `${activeIds.size} xung đột đang chờ xử lý.`
+    : latestLog?.type === 'conflict'
+      ? 'Không còn xung đột cần xử lý.'
+      : latestLog?.message;
 
   return (
     <div className="absolute bottom-0 left-0 right-0 z-30 flex flex-col select-none transition-all duration-300">
@@ -27,8 +45,12 @@ export const RunHistoryDrawer: React.FC<RunHistoryDrawerProps> = ({
           <div className="flex items-center gap-2">
             {isRunning ? (
               <span className="w-2.5 h-2.5 rounded-full bg-blue-400 animate-ping"></span>
-            ) : latestLog?.type === 'conflict' ? (
+            ) : hasOpenConflicts ? (
               <span className="w-2.5 h-2.5 rounded-full bg-amber-400"></span>
+            ) : latestLog?.type === 'error' ? (
+              <span className="w-2.5 h-2.5 rounded-full bg-red-400"></span>
+            ) : !latestLog || latestLog.type === 'info' ? (
+              <span className="w-2.5 h-2.5 rounded-full bg-gray-500"></span>
             ) : (
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400"></span>
             )}
@@ -38,19 +60,21 @@ export const RunHistoryDrawer: React.FC<RunHistoryDrawerProps> = ({
           </div>
 
           <div className="hidden md:flex items-center gap-2 text-gray-400 border-l border-gray-700/60 pl-3">
-            {latestLog ? (
+            {latestLog || hasOpenConflicts ? (
               <>
-                <span className="text-[11px] text-gray-500">{latestLog.time}</span>
-                <span className="text-gray-300 truncate max-w-[420px]">{latestLog.message}</span>
+                {latestLog && <span className="text-[11px] text-gray-500">{latestLog.time}</span>}
+                <span className="text-gray-300 truncate max-w-[420px]">{latestMessage}</span>
               </>
             ) : (
-              <span className="text-gray-500 italic">Chưa có phiên chạy nào. Bấm "Chạy Thử Luồng" để bắt đầu.</span>
+              <span className="text-gray-500 italic">
+                Chưa có phiên chạy nào. Bấm "Chạy Thử Luồng" để bắt đầu.
+              </span>
             )}
           </div>
         </div>
 
         <div className="flex items-center gap-2">
-          {latestLog?.type === 'conflict' && (
+          {hasOpenConflicts && (
             <button
               onClick={onOpenConflictModal}
               className="px-2.5 py-1 rounded-lg bg-amber-500/20 text-amber-300 border border-amber-500/40 hover:bg-amber-500/30 text-[11px] font-bold flex items-center gap-1.5 animate-pulse transition"
@@ -77,7 +101,9 @@ export const RunHistoryDrawer: React.FC<RunHistoryDrawerProps> = ({
           <div className="flex items-center justify-between pb-2 border-b border-[#21262d] mb-2 text-xs">
             <div className="flex items-center gap-2 text-gray-400">
               <Clock size={13} />
-              <span className="font-semibold text-gray-300">Chi tiết các phiên điều phối tự động &amp; lưu vết audit</span>
+              <span className="font-semibold text-gray-300">
+                Chi tiết các phiên điều phối tự động &amp; lưu vết audit
+              </span>
               <span className="px-2 py-0.5 rounded-full bg-[#161b22] text-gray-400 text-[10px]">
                 {logs.length} bản ghi
               </span>
@@ -98,44 +124,52 @@ export const RunHistoryDrawer: React.FC<RunHistoryDrawerProps> = ({
                 Chưa có dữ liệu lịch sử
               </div>
             ) : (
-              logs.map((log) => (
-                <div
-                  key={log.id}
-                  className={`p-2.5 rounded-xl border flex items-center justify-between transition ${
-                    log.type === 'conflict'
-                      ? 'bg-amber-950/20 border-amber-800/40 text-amber-200'
-                      : log.type === 'error'
-                      ? 'bg-red-950/20 border-red-800/40 text-red-200'
-                      : 'bg-[#161b22] border-[#21262d] text-gray-300 hover:border-gray-600'
-                  }`}
-                >
-                  <div className="flex items-center gap-3">
-                    <span className="text-[11px] text-gray-500">{log.time}</span>
-                    <div className="flex items-center gap-2">
-                      {log.type === 'conflict' ? (
-                        <AlertTriangle size={14} className="text-amber-400 shrink-0" />
-                      ) : log.type === 'error' ? (
-                        <AlertTriangle size={14} className="text-red-400 shrink-0" />
-                      ) : (
-                        <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+              logs.map((log) => {
+                const state = logConflictState(log, activeIds);
+                return (
+                  <div
+                    key={log.id}
+                    className={`p-2.5 rounded-xl border flex items-center justify-between transition ${
+                      state.displayType === 'conflict'
+                        ? 'bg-amber-950/20 border-amber-800/40 text-amber-200'
+                        : state.displayType === 'error'
+                          ? 'bg-red-950/20 border-red-800/40 text-red-200'
+                          : 'bg-[#161b22] border-[#21262d] text-gray-300 hover:border-gray-600'
+                    }`}
+                  >
+                    <div className="flex items-center gap-3">
+                      <span className="text-[11px] text-gray-500">{log.time}</span>
+                      <div className="flex items-center gap-2">
+                        {state.displayType === 'conflict' ? (
+                          <AlertTriangle size={14} className="text-amber-400 shrink-0" />
+                        ) : state.displayType === 'error' ? (
+                          <AlertTriangle size={14} className="text-red-400 shrink-0" />
+                        ) : state.displayType === 'info' && !state.resolved ? (
+                          <Clock size={14} className="text-gray-400 shrink-0" />
+                        ) : (
+                          <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+                        )}
+                        <span className="font-sans font-medium text-xs">{log.message}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3 text-[11px] font-sans">
+                      {state.pendingIds.length > 0 && (
+                        <button
+                          onClick={onOpenConflictModal}
+                          className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold border border-amber-500/40 text-[10px]"
+                        >
+                          Xử lý ngay
+                        </button>
                       )}
-                      <span className="font-sans font-medium text-xs">{log.message}</span>
+                      {state.resolved && <span className="text-emerald-400">Đã xử lý</span>}
+                      {log.details && (
+                        <span className="text-gray-500 hidden sm:inline">{log.details}</span>
+                      )}
                     </div>
                   </div>
-
-                  <div className="flex items-center gap-3 text-[11px] font-sans">
-                    {log.type === 'conflict' && (
-                      <button
-                        onClick={onOpenConflictModal}
-                        className="px-2 py-0.5 rounded bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold border border-amber-500/40 text-[10px]"
-                      >
-                        Xử lý ngay
-                      </button>
-                    )}
-                    {log.details && <span className="text-gray-500 hidden sm:inline">{log.details}</span>}
-                  </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         </div>

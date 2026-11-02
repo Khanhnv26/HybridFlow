@@ -97,6 +97,31 @@ class SyncApiIntegrationTest {
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM sync_executions WHERE status='ERROR'", Integer.class));
     }
 
+    @Test void resolvedConflictsDisappearAndDoNotSendAnotherTelegramAlert() throws Exception {
+        run("flow-one");
+        source("SHIPPING");
+        jdbc.update("UPDATE vault_records SET data=jsonb_set(data,'{status}','\"CANCELLED\"') WHERE flow_id='flow-one'");
+        when(telegram.sendConflictAlert(any(), eq("123"))).thenReturn(true);
+        String notifyingRequest = request("flow-one").replace("\"notifyConflicts\":false", "\"notifyConflicts\":true,\"chatId\":\"123\"");
+        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(notifyingRequest))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.notificationsSent").value(1));
+        Long id = jdbc.queryForObject("SELECT id FROM sync_conflicts WHERE status='OPEN'", Long.class);
+        mvc.perform(post("/api/v1/conflicts/" + id + "/resolve").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"resolvedValue\":\"CANCELLED\",\"accessToken\":\"test-token\"}"))
+                .andExpect(status().isOk());
+        mvc.perform(get("/api/v1/conflicts").param("flowId", "flow-one"))
+                .andExpect(status().isOk()).andExpect(content().json("[]"));
+        mvc.perform(post("/api/v1/conflicts/" + id + "/notify").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"chatId\":\"123\"}"))
+                .andExpect(status().isBadRequest());
+        // The next read reflects the value that the successful resolution wrote to Google Sheets.
+        source("CANCELLED");
+        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(notifyingRequest))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.conflicts.length()").value(0))
+                .andExpect(jsonPath("$.notificationsSent").value(0));
+        verify(telegram, times(1)).sendConflictAlert(any(), eq("123"));
+    }
+
     @Test void flowBindingsRejectRepointingAndIsolateIdenticalRecordIds() throws Exception {
         run("flow-one");
         source("SECOND"); run("flow-two");
