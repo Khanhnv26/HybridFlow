@@ -38,7 +38,7 @@ class SyncApiIntegrationTest {
     @MockBean TelegramNotificationService telegram;
 
     @BeforeEach void cleanDatabase() {
-        jdbc.execute("TRUNCATE sync_conflicts,sync_snapshots,vault_records,sync_flow_bindings,sync_executions,workflow_definitions RESTART IDENTITY");
+        jdbc.execute("TRUNCATE sheet_write_journal,sync_conflicts,sync_snapshots,vault_records,sync_flow_bindings,sync_executions,workflow_definitions RESTART IDENTITY");
         source("NEW");
     }
     private void source(String status) {
@@ -141,5 +141,75 @@ class SyncApiIntegrationTest {
                 .andExpect(status().isOk());
         mvc.perform(get("/api/v1/workflows/editor-id/definition"))
                 .andExpect(status().isOk()).andExpect(content().json(definition));
+    }
+    private String multiRequest() {
+        return """
+                {"flowId":"multi","accessToken":"test-token","idColumn":"id","syncColumns":["status"],
+                "bootstrapConfirmed":true,"sheets":[
+                {"spreadsheetId":"a","sheetName":"Data","label":"Same"},
+                {"spreadsheetId":"b","sheetName":"Data","label":"Same"},
+                {"spreadsheetId":"c","sheetName":"Data","label":"Same"}]}
+                """;
+    }
+    private Map<String, String> multiSources() {
+        Map<String, String> live = new HashMap<>(Map.of("a", "NEW", "b", "NEW", "c", "NEW"));
+        when(sheets.readSheet(any())).thenAnswer(inv -> {
+            com.hybridflow.connector.google.dto.request.ReadSheetRequest request = inv.getArgument(0);
+            return SheetDataResponse.builder().spreadsheetId(request.getSpreadsheetId()).sheetName("Data")
+                    .headers(List.of("id", "status")).rows(List.of(Map.of("id", "1", "status", live.get(request.getSpreadsheetId())))).build();
+        });
+        doAnswer(inv -> {
+            Map<String, String> cells = inv.getArgument(2);
+            live.put(inv.getArgument(1), cells.get("'Data'!B2"));
+            return null;
+        }).when(sheets).updateCells(anyString(), anyString(), anyMap());
+        return live;
+    }
+    private void runMulti() throws Exception {
+        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(multiRequest()))
+                .andExpect(status().isOk());
+    }
+    @Test void threeSheetsRetainIdenticalLabelsAndRejectStaleApproval() throws Exception {
+        Map<String, String> live = multiSources();
+        runMulti();
+        live.put("a", "SOURCE"); live.put("b", "OTHER");
+        runMulti();
+        Long conflictId = jdbc.queryForObject("SELECT id FROM sync_conflicts WHERE status='OPEN'", Long.class);
+        assertEquals(3, jdbc.queryForObject("SELECT count(*) FROM sync_conflicts, jsonb_object_keys(candidates_json)", Integer.class));
+        live.put("c", "LATER_EDIT");
+        mvc.perform(post("/api/v1/conflicts/" + conflictId + "/resolve").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"resolvedValue\":\"SOURCE\",\"accessToken\":\"test-token\"}"))
+                .andExpect(status().isBadRequest());
+        verify(sheets, never()).updateCells(anyString(), anyString(), anyMap());
+        runMulti();
+        Long currentId = jdbc.queryForObject("SELECT id FROM sync_conflicts WHERE status='OPEN'", Long.class);
+        assertNotEquals(conflictId, currentId);
+        mvc.perform(post("/api/v1/conflicts/" + currentId + "/resolve").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"resolvedValue\":\"SOURCE\",\"accessToken\":\"test-token\"}"))
+                .andExpect(status().isOk());
+        assertEquals(Map.of("a", "SOURCE", "b", "SOURCE", "c", "SOURCE"), live);
+        assertEquals("SOURCE", statusOf("sync_snapshots", "multi"));
+        runMulti();
+        mvc.perform(get("/api/v1/conflicts").param("flowId", "multi")).andExpect(content().json("[]"));
+    }
+    @Test void multiSheetFailureRollsBackRemoteWritesAndCheckpointThenCanRetry() throws Exception {
+        Map<String, String> live = multiSources();
+        runMulti();
+        live.put("a", "EDITED");
+        java.util.concurrent.atomic.AtomicBoolean failOnce = new java.util.concurrent.atomic.AtomicBoolean(true);
+        doAnswer(inv -> {
+            Map<String, String> cells = inv.getArgument(2);
+            live.put("c", cells.get("'Data'!B2"));
+            if (failOnce.getAndSet(false)) throw new IllegalStateException("ambiguous timeout");
+            return null;
+        }).when(sheets).updateCells(anyString(), eq("c"), anyMap());
+        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(multiRequest()))
+                .andExpect(status().isInternalServerError());
+        assertEquals(Map.of("a", "EDITED", "b", "NEW", "c", "NEW"), live);
+        assertEquals("NEW", statusOf("sync_snapshots", "multi"));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM sheet_write_journal WHERE status='PENDING'", Integer.class));
+        runMulti();
+        assertEquals(Map.of("a", "EDITED", "b", "EDITED", "c", "EDITED"), live);
+        assertEquals("EDITED", statusOf("sync_snapshots", "multi"));
     }
 }

@@ -58,4 +58,14 @@ class SyncStateServiceTest {
         service.bind("flow", "sheet", "Data", "id", List.of("id", "status"), "vault");
         verify(bindingRepository, never()).save(any());
     }
+    @Test void changingLabelsAndCanvasNodeIdsDoesNotChangeSheetIdentity() {
+        com.hybridflow.sync.dto.request.SheetEndpointRequest first = com.hybridflow.sync.dto.request.SheetEndpointRequest.builder()
+                .nodeId("old-node").label("Old label").spreadsheetId("a").sheetName("Data").build();
+        com.hybridflow.sync.dto.request.SheetEndpointRequest renamed = com.hybridflow.sync.dto.request.SheetEndpointRequest.builder()
+                .nodeId("new-node").label("New label").spreadsheetId("a").sheetName("Data").build();
+        when(bindingRepository.findByFlowId("flow")).thenReturn(Optional.of(
+                new SyncFlowBinding("flow", "a", "Data", "id", List.of("id", "status"), "multi_sheet", List.of(first))));
+        service.bindMultiSheets("flow", List.of(renamed), "id", List.of("id", "status"));
+        verify(bindingRepository, never()).save(any());
+    }
 }

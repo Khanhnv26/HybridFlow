@@ -13,6 +13,7 @@ public interface SyncStateService {
     void saveVaultRecord(String flowId, String recordId, Map<String, String> data);
     void bind(String flowId, String spreadsheetId, String sheetName, String idColumn, List<String> headers, String storageName);
     void bindMultiSheets(String flowId, List<SheetEndpointRequest> endpoints, String idColumn, List<String> commonColumns);
+    List<String> getSnapshotRecordIds(String flowId);
     boolean hasSnapshots(String flowId);
     List<Map<String, String>> getVaultRecords(String flowId);
 }

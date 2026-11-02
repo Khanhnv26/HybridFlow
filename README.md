@@ -1,6 +1,6 @@
 # HybridFlow
 
-Đồng bộ Google Sheets ↔ Vault bằng 3-Way Diff, lưu snapshot và xử lý xung đột theo từng luồng.
+Đồng bộ nhiều Google Sheet theo từng bản ghi/cột, lưu snapshot và phê duyệt xung đột theo từng luồng. Vẫn hỗ trợ luồng Google Sheet ↔ Vault cũ.
 
 ## Chạy ứng dụng
 
@@ -15,7 +15,7 @@ Backend đọc các biến môi trường:
 
 File `client_secret.json` của Google OAuth đặt trong `backend/src/main/resources/` và được Git bỏ qua. Các thiết lập riêng đã có được giữ trong `backend/application-local.properties` (cũng được Git bỏ qua). Khi chạy từ thư mục `backend` hoặc gốc repo, Spring tự đọc file local này; biến môi trường có thể ghi đè các giá trị được chuyển sang đó. Không commit token hay file local. Nếu token từng được đưa lên Git, cần thay token tại nhà cung cấp.
 
-Chạy backend từ `backend`: `mvn spring-boot:run`. Khởi động lại backend sau khi cập nhật mã để Flyway áp dụng migration V3/V4. Không sửa/xóa lịch sử migration trong database đang dùng.
+Chạy backend từ `backend`: `mvn spring-boot:run`. Khởi động lại backend sau khi cập nhật mã để Flyway áp dụng các migration đến V6. Không sửa/xóa lịch sử migration trong database đang dùng.
 
 Chạy frontend từ `frontend`: `npm install`, sau đó `npm run dev`. Vite chạy ở cổng 3000 và proxy `/api` sang backend 8080. Khi deploy, cấu hình reverse proxy `/api` hoặc đặt `VITE_API_BASE_URL` theo `frontend/.env.example` trước khi build. Nếu cổng 3000 bận, cấu hình `FRONTEND_ORIGIN` theo origin thực tế.
 
@@ -65,3 +65,17 @@ Quy ước backend: controller chỉ nhận tham số HTTP, gọi interface serv
 - Trên môi trường hạn chế fork/attach của JVM, có thể dùng `mvn -DforkCount=0 test` với Byte Buddy agent được nạp sẵn bằng `MAVEN_OPTS=-javaagent:<đường-dẫn-byte-buddy-agent.jar>`.
 
 Các test API kiểm tra Spring MVC/JPA/Flyway trên PostgreSQL thật; Google Sheets/OAuth/Telegram được thay ở biên dịch vụ, vì vậy vẫn cần kết nối tài khoản Google của bạn để xác minh end-to-end trên Sheet thật.
+
+## Đồng bộ nhiều Google Sheet và an toàn khi ghi
+
+Nối từ hai khối Google Trang Tính vào khối So khớp; bỏ khối Vault khỏi luồng nhiều Sheet. Trong khối So khớp, nhập cột khóa và **các cột được chia sẻ**, cách nhau bằng dấu phẩy. Danh sách này bắt buộc với luồng nhiều Sheet; hệ thống không tự chia sẻ tất cả cột trùng tên. Mọi cột được chọn phải có mặt trên tất cả các Sheet. Đây là cấu hình phạm vi chia sẻ, không phải cơ chế cấp quyền truy cập cho người dùng. Quyền đọc/ghi file vẫn phụ thuộc tài khoản Google được kết nối.
+
+API nhiều Sheet nhận `sheets: [{nodeId,label,spreadsheetId,sheetName}, ...]` và `syncColumns`. Đổi danh sách cột chia sẻ tạo ngữ cảnh mới trên frontend và cần xác nhận khởi tạo; đổi nhãn/node ID không thay đổi nguồn dữ liệu. Chính sách ưu tiên nguồn/đích dùng thứ tự endpoints trong cấu hình, không dùng vị trí kéo thả trên canvas.
+
+Dòng mới có mã chưa từng đồng bộ được sao chép sang các Sheet còn thiếu, chỉ ghi mã và các cột được phép. Nếu các bản sao của dòng mới đang khác nhau và chưa có dòng trên mọi Sheet, luồng dừng để người dùng thống nhất giá trị trước. Không tự lan truyền xóa dòng: nếu dòng đã có snapshot bị thiếu trên một Sheet, cần khôi phục dòng. Khi Sheet hết số dòng được cấp sẵn, cần thêm dòng trống trên Google Sheets rồi chạy lại.
+
+Conflict mới lưu giá trị quan sát riêng theo định danh file/tab, nên các Sheet trùng tên vẫn giữ đủ lựa chọn. Phê duyệt đọc và kiểm tra tất cả nguồn trước khi ghi; dữ liệu thay đổi, thiếu dòng hoặc mất cột sẽ bị từ chối. Conflict cũ chưa lưu giá trị từng nguồn cần chạy lại đồng bộ. Khi các Sheet đã thống nhất, conflict cũ chuyển `SUPERSEDED` và không còn trong danh sách đang mở. Chạy lại cùng conflict đang mở không gửi lặp cảnh báo tự động; nút gửi lại vẫn là thao tác chủ động.
+
+Khóa database theo file (theo thứ tự cố định) ngăn các luồng HybridFlow cùng ghi chồng lên một Sheet. Khóa này không khóa thao tác chỉnh sửa của người dùng trên Google Sheets. Đọc kiểm tra rồi ghi qua Google API vẫn có khoảng thời gian giữa hai thao tác, nên không cam kết chống mọi chỉnh sửa đồng thời hay giao dịch nguyên tử giữa nhiều file.
+
+Mỗi đợt ghi nhiều Sheet lưu một intent bền vững vào `sheet_write_journal` trước khi gọi Google, không lưu access token. Trạng thái hoàn tất commit cùng transaction snapshot/conflict. Khi transaction rollback, hệ thống thử khôi phục các ô đã ghi; intent chưa phục hồi được giữ `PENDING`. Lần chạy tiếp phải đối soát/khôi phục intent trước khi tạo kế hoạch mới, kể cả sau khi tiến trình khởi động lại. Nếu có chỉnh sửa mới hoặc dòng đổi vị trí, hệ thống dừng thay vì khôi phục đè lên dữ liệu đó. Luồng khác có chung file cũng bị chặn; chạy lại luồng gốc có đủ các file liên quan để đối soát. Không xóa intent `PENDING` để bỏ qua lỗi.

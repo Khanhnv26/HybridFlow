@@ -11,11 +11,15 @@ import com.hybridflow.sync.dto.response.RunSyncResponse;
 import com.hybridflow.sync.engine.ThreeWayDiffEngine;
 import com.hybridflow.sync.entity.SyncConflict;
 import com.hybridflow.sync.model.SyncDiffResult;
+import com.hybridflow.sync.model.SheetWritePlan;
+import com.hybridflow.sync.model.SheetCellChange;
+import com.hybridflow.sync.service.SheetWriteService;
 import com.hybridflow.sync.service.ExecutionHistoryService;
 import com.hybridflow.sync.service.SyncConflictService;
 import com.hybridflow.sync.service.SyncExecutionService;
 import com.hybridflow.sync.service.SyncStateService;
 import com.hybridflow.sync.util.SheetRowUtils;
+import com.hybridflow.sync.util.SheetEndpointUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -33,6 +37,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
     private final TelegramNotificationService telegramNotificationService;
     private final SyncStateService store;
     private final ExecutionHistoryService history;
+    private final SheetWriteService writes;
 
     @Override
     @Transactional
@@ -74,200 +79,117 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             long start
     ) {
         List<SheetEndpointRequest> endpoints = request.getSheets();
-        List<SheetDataResponse> sheetDataList = new ArrayList<>();
-        List<Map<String, Integer>> indexList = new ArrayList<>();
-        Set<String> uniqueTargets = new HashSet<>();
-
-        for (int i = 0; i < endpoints.size(); i++) {
-            SheetEndpointRequest ep = endpoints.get(i);
-            require(ep.getSpreadsheetId(), "Spreadsheet ID của Sheet " + (i + 1));
-            SheetDataResponse data = googleSheetsService.readSheet(ReadSheetRequest.builder()
-                    .accessToken(request.getAccessToken())
-                    .spreadsheetId(ep.getSpreadsheetId())
-                    .sheetname(ep.getSheetName())
-                    .build());
-            ep.setSheetName(data.getSheetName());
-            if (ep.getLabel() == null || ep.getLabel().isBlank()) {
-                ep.setLabel("Sheet " + (i + 1) + " (" + data.getSheetName() + ")");
-            }
-            String targetKey = ep.getSpreadsheetId() + "::" + data.getSheetName();
-            if (!uniqueTargets.add(targetKey)) {
-                throw new IllegalArgumentException("Không được nối 2 khối trỏ vào cùng một file và cùng một tab: " + data.getSheetName());
-            }
-            sheetDataList.add(data);
-            indexList.add(SheetRowUtils.index(data, idColumn));
+        List<String> spreadsheetIds = endpoints.stream().map(SheetEndpointRequest::getSpreadsheetId).peek(id -> require(id, "Spreadsheet ID"))
+                .distinct().sorted().toList();
+        spreadsheetIds.forEach(id -> store.lock("sheet:" + id));
+        writes.recover(request.getAccessToken(), spreadsheetIds);
+        List<SheetDataResponse> data = new ArrayList<>();
+        List<Map<String, Integer>> indexes = new ArrayList<>();
+        List<SheetWritePlan> plans = new ArrayList<>();
+        Set<String> targets = new HashSet<>();
+        for (SheetEndpointRequest endpoint : endpoints) {
+            SheetDataResponse sheet = googleSheetsService.readSheet(ReadSheetRequest.builder().accessToken(request.getAccessToken())
+                    .spreadsheetId(endpoint.getSpreadsheetId()).sheetname(endpoint.getSheetName()).build());
+            endpoint.setSheetName(sheet.getSheetName());
+            if (!targets.add(SheetEndpointUtils.identity(endpoint)))
+                throw new IllegalArgumentException("Không được nối hai khối vào cùng file và trang tính.");
+            data.add(sheet);
+            indexes.add(SheetRowUtils.index(sheet, idColumn));
+            plans.add(new SheetWritePlan(endpoint.getSpreadsheetId(), sheet.getSheetName(), idColumn, sheet.getHeaders(), new ArrayList<>()));
         }
-
-        Set<String> commonHeaders = new LinkedHashSet<>(sheetDataList.get(0).getHeaders());
-        for (int i = 1; i < sheetDataList.size(); i++) {
-            commonHeaders.retainAll(sheetDataList.get(i).getHeaders());
-        }
-
-        Set<String> columns = new LinkedHashSet<>(
-                request.getSyncColumns() == null || request.getSyncColumns().isEmpty()
-                        ? commonHeaders
-                        : request.getSyncColumns()
-        );
-        if (!commonHeaders.containsAll(columns)) {
-            throw new IllegalArgumentException("Cột đồng bộ phải tồn tại ở tất cả các bảng Google Sheet.");
-        }
+        if (request.getSyncColumns() == null || request.getSyncColumns().isEmpty())
+            throw new IllegalArgumentException("Chọn rõ các cột được phép đồng bộ trong khối So khớp. Cột trùng tên không tự động được chia sẻ.");
+        Set<String> columns = new TreeSet<>(request.getSyncColumns());
         columns.remove(idColumn);
-        if (columns.isEmpty()) {
-            throw new IllegalArgumentException("Các bảng cần có ít nhất 1 cột dữ liệu trùng tên ngoài cột khóa '" + idColumn + "'.");
-        }
-
-        List<String> boundColumns = new ArrayList<>();
-        boundColumns.add(idColumn);
+        if (columns.isEmpty() || data.stream().anyMatch(sheet -> !sheet.getHeaders().containsAll(columns)))
+            throw new IllegalArgumentException("Chọn ít nhất một cột dữ liệu có mặt trên tất cả trang tính.");
+        List<String> boundColumns = new ArrayList<>(List.of(idColumn));
         boundColumns.addAll(columns);
         store.bindMultiSheets(flow, endpoints, idColumn, boundColumns);
-
-        boolean hasAnyRow = indexList.stream().anyMatch(idx -> !idx.isEmpty());
-        boolean initial = !store.hasSnapshots(flow);
-        if (initial && hasAnyRow && !request.isBootstrapConfirmed()) {
-            RunSyncResponse result = RunSyncResponse.builder()
-                    .flowId(flow)
-                    .executionId(executionId)
-                    .status("AWAITING_CONFIRMATION")
-                    .bootstrapRequired(true)
-                    .sheetName(sheetDataList.get(0).getSheetName())
-                    .totalRowsProcessed(0)
-                    .cleanRecordIds(List.of())
-                    .conflicts(List.of())
-                    .comparedColumns(columns)
-                    .latency((System.currentTimeMillis() - start) + " ms")
-                    .build();
+        if (!store.hasSnapshots(flow) && indexes.stream().anyMatch(index -> !index.isEmpty()) && !request.isBootstrapConfirmed()) {
+            RunSyncResponse result = RunSyncResponse.builder().flowId(flow).executionId(executionId).status("AWAITING_CONFIRMATION")
+                    .bootstrapRequired(true).sheetName(data.getFirst().getSheetName()).totalRowsProcessed(0).cleanRecordIds(List.of())
+                    .conflicts(List.of()).comparedColumns(columns).latency((System.currentTimeMillis() - start) + " ms").build();
             completeAfterCommit(executionId, result);
             return result;
         }
-
+        Set<Long> previouslyOpen = new HashSet<>(syncConflictService.getOpenConflicts(flow).stream().map(SyncConflict::getId).toList());
         Set<String> allIds = new LinkedHashSet<>();
-        for (Map<String, Integer> idx : indexList) {
-            allIds.addAll(idx.keySet());
-        }
-
-        Map<String, Map<String, String>> snapshotWrites = new LinkedHashMap<>();
-        List<Map<String, String>> writesPerSheet = new ArrayList<>();
-        for (int i = 0; i < endpoints.size(); i++) {
-            writesPerSheet.add(new LinkedHashMap<>());
-        }
-
+        indexes.forEach(index -> allIds.addAll(index.keySet()));
+        if (!allIds.containsAll(store.getSnapshotRecordIds(flow)))
+            throw new IllegalArgumentException("Có bản ghi đã bị xóa khỏi mọi trang tính. Khôi phục dòng hoặc tạo luồng mới để khởi tạo lại.");
+        List<Integer> nextRows = new ArrayList<>(data.stream().map(sheet -> sheet.getRows().size()).toList());
+        Map<String, Map<String, String>> checkpoints = new LinkedHashMap<>();
         List<String> clean = new ArrayList<>();
         List<SyncConflict> detected = new ArrayList<>();
-
         for (String id : allIds) {
-            List<Map<String, String>> rowsAtId = new ArrayList<>();
-            for (int i = 0; i < endpoints.size(); i++) {
-                Integer rIdx = indexList.get(i).get(id);
-                if (rIdx == null) {
-                    throw new IllegalArgumentException(
-                            "Bản ghi '" + id + "' chưa có trên '" + endpoints.get(i).getLabel() + "'. Hãy đảm bảo mã '" + id + "' có mặt trên các bảng."
-                    );
-                }
-                rowsAtId.add(sheetDataList.get(i).getRows().get(rIdx));
-            }
-
             Map<String, String> base = store.getSnapshot(flow, id);
-            boolean isFirstSeen = (base == null);
-            if (base == null) {
-                base = new LinkedHashMap<>();
+            List<Integer> positions = new ArrayList<>();
+            boolean missing = false;
+            for (int i = 0; i < endpoints.size(); i++) {
+                Integer position = indexes.get(i).get(id);
+                if (position == null) {
+                    if (base != null) throw new IllegalArgumentException("Bản ghi '" + id + "' đã mất khỏi một trang tính. Khôi phục dòng trước khi đồng bộ; hệ thống chưa tự lan truyền thao tác xóa.");
+                    missing = true;
+                    position = nextRows.get(i);
+                    nextRows.set(i, position + 1);
+                    plans.get(i).getChanges().add(new SheetCellChange(position, idColumn, id, "", id));
+                }
+                positions.add(position);
             }
-
-            Map<String, String> checkpoint = new LinkedHashMap<>(base);
+            Map<String, String> checkpoint = base == null ? new LinkedHashMap<>() : new LinkedHashMap<>(base);
             checkpoint.put(idColumn, id);
-            Set<String> unresolvedColumns = new HashSet<>();
-
-            for (String col : columns) {
-                List<String> currentValues = new ArrayList<>();
-                for (Map<String, String> r : rowsAtId) {
-                    currentValues.add(r.getOrDefault(col, ""));
-                }
-
-                String baseVal = base.get(col);
-                if (isFirstSeen && currentValues.stream().distinct().count() == 1) {
-                    baseVal = currentValues.get(0);
-                }
-
-                Map<String, List<String>> changedByValue = new LinkedHashMap<>();
+            boolean unresolved = false;
+            for (String column : columns) {
+                List<String> values = new ArrayList<>();
+                Map<String, List<String>> changed = new LinkedHashMap<>();
+                String baseValue = base == null ? null : base.get(column);
                 for (int i = 0; i < endpoints.size(); i++) {
-                    String val = currentValues.get(i);
-                    if (!Objects.equals(val, baseVal)) {
-                        changedByValue.computeIfAbsent(val, k -> new ArrayList<>()).add(endpoints.get(i).getLabel());
-                    }
+                    Integer originalPosition = indexes.get(i).get(id);
+                    String current = originalPosition == null ? "" : data.get(i).getRows().get(originalPosition).getOrDefault(column, "");
+                    values.add(current);
+                    if (originalPosition != null && !Objects.equals(current, baseValue))
+                        changed.computeIfAbsent(current, key -> new ArrayList<>()).add(endpoints.get(i).getLabel());
                 }
-
-                if (changedByValue.isEmpty()) {
-                    checkpoint.put(col, baseVal != null ? baseVal : currentValues.get(0));
-                } else if (changedByValue.size() == 1) {
-                    String winningValue = changedByValue.keySet().iterator().next();
-                    for (int i = 0; i < endpoints.size(); i++) {
-                        if (!Objects.equals(currentValues.get(i), winningValue)) {
-                            int rIdx = indexList.get(i).get(id);
-                            writesPerSheet.get(i).put(SheetRowUtils.range(sheetDataList.get(i), rIdx, col), winningValue);
-                        }
-                    }
-                    checkpoint.put(col, winningValue);
-                } else {
-                    if ("SOURCE_WINS".equals(request.getConflictPolicy())) {
-                        String winVal = currentValues.get(0);
-                        for (int i = 1; i < endpoints.size(); i++) {
-                            if (!Objects.equals(currentValues.get(i), winVal)) {
-                                int rIdx = indexList.get(i).get(id);
-                                writesPerSheet.get(i).put(SheetRowUtils.range(sheetDataList.get(i), rIdx, col), winVal);
-                            }
-                        }
-                        checkpoint.put(col, winVal);
-                    } else if ("DESTINATION_WINS".equals(request.getConflictPolicy())) {
-                        String winVal = currentValues.get(endpoints.size() - 1);
-                        for (int i = 0; i < endpoints.size() - 1; i++) {
-                            if (!Objects.equals(currentValues.get(i), winVal)) {
-                                int rIdx = indexList.get(i).get(id);
-                                writesPerSheet.get(i).put(SheetRowUtils.range(sheetDataList.get(i), rIdx, col), winVal);
-                            }
-                        }
-                        checkpoint.put(col, winVal);
+                String winner = baseValue;
+                if (changed.size() == 1) winner = changed.keySet().iterator().next();
+                else if (changed.size() > 1) {
+                    if ("SOURCE_WINS".equals(request.getConflictPolicy()) || "DESTINATION_WINS".equals(request.getConflictPolicy())) {
+                        int preferred = "SOURCE_WINS".equals(request.getConflictPolicy()) ? 0 : endpoints.size() - 1;
+                        if (!indexes.get(preferred).containsKey(id))
+                            throw new IllegalArgumentException("Bảng ưu tiên chưa có mã '" + id + "'. Không thể tự chọn giá trị cho dòng mới.");
+                        winner = values.get(preferred);
                     } else {
-                        unresolvedColumns.add(col);
-                        SyncConflict saved = syncConflictService.saveMultiSheetConflict(
-                                request, endpoints, id, col, baseVal, changedByValue, currentValues
-                        );
-                        detected.add(saved);
+                        if (missing) throw new IllegalArgumentException("Dòng mới '" + id + "' có nhiều giá trị khác nhau. Thống nhất dòng trên các bảng đang có trước khi tạo bản sao.");
+                        detected.add(syncConflictService.saveMultiSheetConflict(request, endpoints, id, column, baseValue, changed, values));
+                        unresolved = true;
+                        continue;
                     }
                 }
+                if (winner == null) winner = "";
+                checkpoint.put(column, winner);
+                for (int i = 0; i < endpoints.size(); i++) {
+                    if (!Objects.equals(values.get(i), winner)) plans.get(i).getChanges().add(
+                            new SheetCellChange(positions.get(i), column, id, values.get(i), winner));
+                }
             }
-
-            snapshotWrites.put(id, checkpoint);
-            if (unresolvedColumns.isEmpty()) clean.add(id);
+            checkpoints.put(id, checkpoint);
+            if (!unresolved) clean.add(id);
         }
-
-        for (int i = 0; i < endpoints.size(); i++) {
-            Map<String, String> writes = writesPerSheet.get(i);
-            if (!writes.isEmpty()) {
-                googleSheetsService.updateCells(request.getAccessToken(), endpoints.get(i).getSpreadsheetId(), writes);
-            }
-        }
-        snapshotWrites.forEach((id, row) -> store.saveSnapshot(flow, id, row));
-
+        writes.apply(request.getAccessToken(), plans);
+        checkpoints.forEach((id, row) -> store.saveSnapshot(flow, id, row));
+        syncConflictService.retainOpenConflicts(flow, detected.stream().map(SyncConflict::getId).toList());
         int sent = 0, failed = 0;
         if (request.isNotifyConflicts()) {
             for (SyncConflict conflict : detected) {
-                if (telegramNotificationService.sendConflictAlert(conflict, request.getChatId())) sent++;
-                else failed++;
+                if (previouslyOpen.contains(conflict.getId())) continue;
+                if (telegramNotificationService.sendConflictAlert(conflict, request.getChatId())) sent++; else failed++;
             }
         }
-
-        RunSyncResponse result = RunSyncResponse.builder()
-                .flowId(flow)
-                .sheetName(sheetDataList.get(0).getSheetName())
-                .executionId(executionId)
-                .status(detected.isEmpty() ? "SUCCESS" : "CONFLICT")
-                .totalRowsProcessed(allIds.size())
-                .cleanRecordIds(clean)
-                .conflicts(detected)
-                .comparedColumns(columns)
-                .notificationsSent(sent)
-                .notificationsFailed(failed)
-                .latency((System.currentTimeMillis() - start) + " ms")
-                .build();
+        RunSyncResponse result = RunSyncResponse.builder().flowId(flow).executionId(executionId).sheetName(data.getFirst().getSheetName())
+                .status(detected.isEmpty() ? "SUCCESS" : "CONFLICT").totalRowsProcessed(allIds.size()).cleanRecordIds(clean)
+                .conflicts(detected).comparedColumns(columns).notificationsSent(sent).notificationsFailed(failed)
+                .latency((System.currentTimeMillis() - start) + " ms").build();
         completeAfterCommit(executionId, result);
         return result;
     }
@@ -281,6 +203,8 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
     ) {
         require(request.getSpreadsheetId(), "Spreadsheet ID");
         require(request.getStorageName(), "Vùng lưu trữ");
+        store.lock("sheet:" + request.getSpreadsheetId());
+        writes.recover(request.getAccessToken(), List.of(request.getSpreadsheetId()));
         SheetDataResponse sheet = googleSheetsService.readSheet(ReadSheetRequest.builder()
                 .accessToken(request.getAccessToken()).spreadsheetId(request.getSpreadsheetId())
                 .sheetname(request.getSheetName()).build());

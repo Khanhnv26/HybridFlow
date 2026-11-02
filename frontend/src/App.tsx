@@ -363,13 +363,7 @@ export default function App() {
     [nodes, fetchData, flowId, configState.error, conflicts],
   );
   const resolveConflict = useCallback(
-    async (choice: 'SOURCE' | 'DESTINATION' | string, conflict: SyncConflictDto) => {
-      const value =
-        choice === 'SOURCE'
-          ? conflict.valueA
-          : choice === 'DESTINATION'
-          ? conflict.valueB
-          : choice;
+    async (value: string, conflict: SyncConflictDto) => {
       if (value === undefined) throw new Error('Xung đột thiếu giá trị. Tải lại danh sách.');
       await syncService.resolveConflict(conflict.id, value, token());
       refreshRevision.current++;

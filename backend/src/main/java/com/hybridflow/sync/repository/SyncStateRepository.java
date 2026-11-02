@@ -46,6 +46,10 @@ public class SyncStateRepository {
                 flowId, recordId, codec.encode(data));
     }
 
+    public List<String> findSnapshotRecordIds(String flowId) {
+        return jdbc.queryForList("SELECT record_id FROM sync_snapshots WHERE flow_id=?", String.class, flowId);
+    }
+
     public boolean hasSnapshots(String flowId) {
         return Boolean.TRUE.equals(jdbc.queryForObject(
                 "SELECT EXISTS(SELECT 1 FROM sync_snapshots WHERE flow_id=?)", Boolean.class, flowId));

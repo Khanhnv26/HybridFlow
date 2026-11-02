@@ -29,6 +29,7 @@ class SyncConflictServiceTest {
     @Mock SyncConflictRepository repository;
     @Mock SyncStateService store;
     @Mock GoogleSheetsService sheets;
+    @Mock SheetWriteService writes;
     @Mock TelegramNotificationService notifications;
     @Spy SyncJsonCodec codec = new SyncJsonCodec(new ObjectMapper());
     @InjectMocks SyncConflictServiceImpl service;
@@ -124,6 +125,7 @@ class SyncConflictServiceTest {
         assertEquals("V2", saved.getValueB());
         assertNotNull(saved.getCandidatesJson());
         assertNotNull(saved.getEndpointsJson());
+        assertEquals(Map.of("2:s1Tab1", "V1", "2:s2Tab2", "V2"), codec.decodeCandidates(saved.getObservationsJson()));
     }
 
     @Test
@@ -142,6 +144,7 @@ class SyncConflictServiceTest {
                 .columnName("status")
                 .endpointsJson(codec.encode(endpoints))
                 .candidatesJson(codec.encode(candidates))
+                .observationsJson(codec.encode(Map.of("2:s1Tab1", "V1", "2:s2Tab2", "V2")))
                 .valueA("V1")
                 .valueB("V2")
                 .status("OPEN")
@@ -166,8 +169,43 @@ class SyncConflictServiceTest {
         assertEquals("RESOLVED", resolved.getStatus());
         assertEquals("V2", resolved.getResolvedValue());
 
-        verify(sheets).updateCells("test-token", "s1", Map.of("'Tab1'!B2", "V2"));
-        verify(sheets).updateCells("test-token", "s2", Map.of("'Tab2'!B2", "V2"));
+        verify(writes).apply(eq("test-token"), argThat(plans -> plans.size() == 2
+                && plans.get(0).getChanges().getFirst().getAfter().equals("V2")
+                && plans.get(1).getChanges().isEmpty()));
         verify(store).saveSnapshot("flow", "rec-1", Map.of("id", "rec-1", "status", "V2"));
+    }
+    @Test void identicalLabelsDoNotLoseCandidateValues() {
+        when(repository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+        List<SheetEndpointRequest> endpoints = List.of(
+                SheetEndpointRequest.builder().spreadsheetId("a").sheetName("Data").label("Same").build(),
+                SheetEndpointRequest.builder().spreadsheetId("b").sheetName("Data").label("Same").build());
+        SyncConflict saved = service.saveMultiSheetConflict(RunSyncRequest.builder().flowId("f").idColumn("id").build(),
+                endpoints, "1", "status", "BASE", Map.of("A", List.of("Same"), "B", List.of("Same")), List.of("A", "B"));
+        assertEquals(2, codec.decodeCandidates(saved.getCandidatesJson()).size());
+    }
+
+    @Test void aLateEditOnTheLastSheetRejectsApprovalBeforeAnyWrite() {
+        List<SheetEndpointRequest> endpoints = List.of(
+                SheetEndpointRequest.builder().spreadsheetId("a").sheetName("Data").build(),
+                SheetEndpointRequest.builder().spreadsheetId("b").sheetName("Data").build());
+        SyncConflict conflict = conflict();
+        conflict.setEndpointsJson(codec.encode(endpoints));
+        conflict.setObservationsJson(codec.encode(Map.of("1:aData", "SHIPPING", "1:bData", "CANCELLED")));
+        when(repository.findFlowIdById(1L)).thenReturn(Optional.of("flow"));
+        when(repository.findLockedById(1L)).thenReturn(Optional.of(conflict));
+        when(sheets.readSheet(any())).thenAnswer(inv -> {
+            com.hybridflow.connector.google.dto.request.ReadSheetRequest request = inv.getArgument(0);
+            return SheetDataResponse.builder().sheetName("Data").headers(List.of("id", "status"))
+                    .rows(List.of(Map.of("id", "1", "status", request.getSpreadsheetId().equals("a") ? "SHIPPING" : "LATER_EDIT"))).build();
+        });
+        assertThrows(IllegalArgumentException.class, () -> service.resolveConflict(1L, "CANCELLED", "test-token"));
+        verify(writes, never()).apply(anyString(), anyList());
+        verify(store, never()).saveSnapshot(anyString(), anyString(), anyMap());
+    }
+
+    @Test void cleanMultiSheetRunsRetireOldConflictWarnings() {
+        when(repository.findByFlowIdAndStatus("flow", "OPEN")).thenReturn(List.of(conflict()));
+        service.retainOpenConflicts("flow", List.of());
+        verify(repository).save(argThat(c -> "SUPERSEDED".equals(c.getStatus())));
     }
 }

@@ -25,6 +25,7 @@ import static org.mockito.Mockito.*;
 @ExtendWith(MockitoExtension.class)
 class SyncExecutionServiceTest {
     @Mock GoogleSheetsService sheets;
+    @Mock SheetWriteService writes;
     @Mock SyncStateService store;
     @Mock ExecutionHistoryService history;
     @Mock SyncConflictService conflicts;
@@ -154,7 +155,7 @@ class SyncExecutionServiceTest {
                 .flowId("multi-flow")
                 .accessToken("test-token")
                 .idColumn("id")
-                .sheets(List.of(ep1, ep2))
+                .sheets(List.of(ep1, ep2)).syncColumns(java.util.Set.of("status"))
                 .bootstrapConfirmed(true)
                 .build();
 
@@ -162,7 +163,8 @@ class SyncExecutionServiceTest {
 
         assertEquals("SUCCESS", response.getStatus());
         assertEquals(List.of("1"), response.getCleanRecordIds());
-        verify(sheets).updateCells("test-token", "s2", Map.of("'Tab2'!B2", "PROCESSING"));
+        verify(writes).apply(eq("test-token"), argThat(plans -> plans.get(0).getChanges().isEmpty()
+                && plans.get(1).getChanges().getFirst().getAfter().equals("PROCESSING")));
         verify(store).saveSnapshot("multi-flow", "1", Map.of("id", "1", "status", "PROCESSING"));
     }
 
@@ -190,7 +192,7 @@ class SyncExecutionServiceTest {
                 .flowId("multi-flow")
                 .accessToken("test-token")
                 .idColumn("id")
-                .sheets(List.of(ep1, ep2))
+                .sheets(List.of(ep1, ep2)).syncColumns(java.util.Set.of("status"))
                 .bootstrapConfirmed(true)
                 .build();
 
@@ -213,10 +215,31 @@ class SyncExecutionServiceTest {
                 .flowId("multi-flow")
                 .accessToken("test-token")
                 .idColumn("id")
-                .sheets(List.of(ep1, ep2))
+                .sheets(List.of(ep1, ep2)).syncColumns(java.util.Set.of("status"))
                 .bootstrapConfirmed(true)
                 .build();
 
         assertThrows(IllegalArgumentException.class, () -> service.executeSync(request));
+    }
+    @Test void newRowsCopyOnlyExplicitSharedColumns() {
+        when(store.getSnapshot("f", "1")).thenReturn(null);
+        List<SheetEndpointRequest> endpoints = List.of(
+                SheetEndpointRequest.builder().spreadsheetId("a").sheetName("Data").build(),
+                SheetEndpointRequest.builder().spreadsheetId("b").sheetName("Data").build());
+        when(sheets.readSheet(any())).thenAnswer(inv -> {
+            com.hybridflow.connector.google.dto.request.ReadSheetRequest request = inv.getArgument(0);
+            return SheetDataResponse.builder().sheetName("Data").headers(List.of("id", "status", "secret"))
+                    .rows(request.getSpreadsheetId().equals("a") ? List.of(Map.of("id", "1", "status", "NEW", "secret", "PRIVATE")) : List.of()).build();
+        });
+        RunSyncResponse result = service.executeSync(RunSyncRequest.builder().flowId("f").accessToken("test-token")
+                .sheets(endpoints).syncColumns(java.util.Set.of("status")).bootstrapConfirmed(true).build());
+        assertEquals("SUCCESS", result.getStatus());
+        verify(writes).apply(eq("test-token"), argThat(plans -> plans.get(1).getChanges().size() == 2
+                && plans.stream().flatMap(plan -> plan.getChanges().stream()).noneMatch(cell -> cell.getColumn().equals("secret"))));
+        verify(store).saveSnapshot("f", "1", Map.of("id", "1", "status", "NEW"));
+        org.mockito.InOrder locks = inOrder(store, sheets);
+        locks.verify(store).lock("sheet:a");
+        locks.verify(store).lock("sheet:b");
+        locks.verify(sheets, times(2)).readSheet(any());
     }
 }

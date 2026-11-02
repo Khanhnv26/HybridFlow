@@ -20,6 +20,7 @@ public interface SyncConflictService {
             Map<String, List<String>> changedByValue,
             List<String> currentValuesPerSheet
     );
+    void retainOpenConflicts(String flowId, List<Long> retainedIds);
     SyncConflict resolveConflict(Long conflictId, String finalValue, String accessToken);
     TelegramAlertResponse resendTelegramAlert(Long conflictId, String chatId);
     SyncConflict getConflictById(Long conflictId);

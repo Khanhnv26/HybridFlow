@@ -108,6 +108,15 @@ export const NaturalLanguageConfigModal: React.FC<Props> = ({
             {node.type === 'diffEngine' && (
               <>
                 {input('Tên cột khóa duy nhất', 'uniqueKey', 'Nhập đúng tên cột trên Sheet')}
+                {input(
+                  'Các cột được chia sẻ giữa các Sheet',
+                  'sharedColumns',
+                  'Ví dụ: status, quantity, note',
+                )}
+                <p className="text-xs text-gray-400">
+                  Nhập tên cột, ngăn cách bằng dấu phẩy. Chỉ các cột này được đồng bộ giữa các
+                  Sheet; không chọn cột chứa thông tin riêng.
+                </p>
                 <label className="block space-y-2">
                   <span>Khi dữ liệu hai bên xung đột</span>
                   <select
@@ -122,8 +131,8 @@ export const NaturalLanguageConfigModal: React.FC<Props> = ({
                     <option value="ASK_TELEGRAM">
                       Chờ phê duyệt (gửi Telegram nếu đã nối khối)
                     </option>
-                    <option value="SOURCE_WINS">Ưu tiên Google Sheet</option>
-                    <option value="DESTINATION_WINS">Ưu tiên Vault</option>
+                    <option value="SOURCE_WINS">Ưu tiên nguồn đầu tiên</option>
+                    <option value="DESTINATION_WINS">Ưu tiên đích cuối cùng</option>
                   </select>
                 </label>
                 <p className="text-xs text-gray-400">

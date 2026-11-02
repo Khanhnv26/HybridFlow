@@ -2,6 +2,7 @@ package com.hybridflow.sync.service.impl;
 
 import com.hybridflow.sync.dto.request.SheetEndpointRequest;
 import com.hybridflow.sync.model.SyncFlowBinding;
+import com.hybridflow.sync.util.SheetEndpointUtils;
 import com.hybridflow.sync.repository.SyncFlowBindingRepository;
 import com.hybridflow.sync.repository.SyncStateRepository;
 import com.hybridflow.sync.service.SyncStateService;
@@ -70,7 +71,8 @@ public class SyncStateServiceImpl implements SyncStateService {
             if (!Objects.equals(binding.getIdColumn(), idColumn)
                     || !Objects.equals(binding.getStorageName(), "multi_sheet")
                     || !Objects.equals(binding.getHeaders(), commonColumns)
-                    || !Objects.equals(binding.getEndpoints(), endpoints)) {
+                    || !Objects.equals(binding.getEndpoints() == null ? null : binding.getEndpoints().stream().map(SheetEndpointUtils::identity).toList(),
+                            endpoints.stream().map(SheetEndpointUtils::identity).toList())) {
                 throw new IllegalArgumentException("Nguồn hoặc cấu trúc cột chung giữa các Sheet đã đổi. Tạo luồng mới và xác nhận khởi tạo lại.");
             }
             return;
@@ -84,6 +86,11 @@ public class SyncStateServiceImpl implements SyncStateService {
                 "multi_sheet",
                 endpoints
         ));
+    }
+
+    @Override
+    public List<String> getSnapshotRecordIds(String flowId) {
+        return repository.findSnapshotRecordIds(flowId);
     }
 
     @Override

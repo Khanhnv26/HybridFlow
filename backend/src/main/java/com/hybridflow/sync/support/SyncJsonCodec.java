@@ -4,6 +4,7 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hybridflow.sync.dto.request.SheetEndpointRequest;
+import com.hybridflow.sync.model.SheetWritePlan;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Component;
 
@@ -50,6 +51,14 @@ public class SyncJsonCodec {
             });
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Danh sách Sheet lưu không hợp lệ.", exception);
+        }
+    }
+
+    public List<SheetWritePlan> decodeWritePlans(String value) {
+        try {
+            return mapper.readValue(value, new TypeReference<List<SheetWritePlan>>() {});
+        } catch (JsonProcessingException exception) {
+            throw new IllegalStateException("Nhật ký ghi Sheet không hợp lệ.", exception);
         }
     }
 

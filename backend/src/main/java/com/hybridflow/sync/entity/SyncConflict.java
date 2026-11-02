@@ -34,6 +34,10 @@ public class SyncConflict {
     @Column(name = "candidates_json", columnDefinition = "jsonb")
     private String candidatesJson;
 
+    @JdbcTypeCode(SqlTypes.JSON)
+    @Column(name = "observations_json", columnDefinition = "jsonb")
+    private String observationsJson;
+
     @Column(name = "record_id", nullable = false)
     private String recordId;
 

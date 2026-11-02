@@ -7,7 +7,7 @@ interface Props {
   onClose: () => void;
   conflict: SyncConflictDto | null;
   remainingCount: number;
-  onResolve: (choice: 'SOURCE' | 'DESTINATION' | string, conflict: SyncConflictDto) => Promise<void>;
+  onResolve: (value: string, conflict: SyncConflictDto) => Promise<void>;
   onSendTelegramTest: (conflictId: number) => Promise<void>;
 }
 
@@ -25,7 +25,7 @@ export const ConflictModal: React.FC<Props> = ({
   const candidateEntries = useMemo(() => {
     if (!conflict?.candidatesJson) return null;
     try {
-      const parsed = JSON.parse(conflict.candidatesJson) as Record<string, string>;
+      const parsed = JSON.parse(conflict.candidatesJson) as { [label: string]: string };
       const entries = Object.entries(parsed);
       return entries.length > 0 ? entries : null;
     } catch {
@@ -71,7 +71,8 @@ export const ConflictModal: React.FC<Props> = ({
           ) : (
             <>
               <p className="text-sm">
-                Bản ghi <strong>{conflict.recordId}</strong> · Cột <strong>{conflict.columnName}</strong>
+                Bản ghi <strong>{conflict.recordId}</strong> · Cột{' '}
+                <strong>{conflict.columnName}</strong>
               </p>
 
               {candidateEntries ? (
@@ -79,21 +80,24 @@ export const ConflictModal: React.FC<Props> = ({
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-sm">
                     <div className="p-3 rounded border border-gray-700">
                       <p className="text-xs text-gray-400 mb-2">Snapshot (Bản gốc)</p>
-                      <pre className="whitespace-pre-wrap">
-                        {conflict.baseValue === '' ? '(trống)' : conflict.baseValue ?? '(chưa có)'}
+                      <pre className="whitespace-pre-wrap break-words">
+                        {conflict.baseValue === ''
+                          ? '(trống)'
+                          : (conflict.baseValue ?? '(chưa có)')}
                       </pre>
                     </div>
                     {candidateEntries.map(([sheetLabel, val]) => (
                       <div key={sheetLabel} className="p-3 rounded border border-gray-700">
-                        <p className="text-xs text-emerald-400 mb-2">{sheetLabel}</p>
-                        <pre className="whitespace-pre-wrap">
-                          {val === '' ? '(trống)' : val ?? '(không có giá trị)'}
+                        <p className="text-xs text-emerald-400 mb-2 break-words">{sheetLabel}</p>
+                        <pre className="whitespace-pre-wrap break-words">
+                          {val === '' ? '(trống)' : (val ?? '(không có giá trị)')}
                         </pre>
                       </div>
                     ))}
                   </div>
                   <p className="text-xs text-gray-400">
-                    Giá trị bạn chọn sẽ được đồng bộ phủ xuống toàn bộ các bảng Google Sheet và lưu vào Snapshot.
+                    Giá trị bạn chọn sẽ được đồng bộ phủ xuống toàn bộ các bảng Google Sheet và lưu
+                    vào Snapshot.
                   </p>
                   <div className="flex flex-wrap gap-3">
                     {candidateEntries.map(([sheetLabel, val], idx) => (
@@ -120,26 +124,27 @@ export const ConflictModal: React.FC<Props> = ({
                     ].map(([label, value]) => (
                       <div key={label} className="p-3 rounded border border-gray-700">
                         <p className="text-xs text-gray-400 mb-2">{label}</p>
-                        <pre className="whitespace-pre-wrap">
-                          {value === '' ? '(trống)' : value ?? '(không có giá trị)'}
+                        <pre className="whitespace-pre-wrap break-words">
+                          {value === '' ? '(trống)' : (value ?? '(không có giá trị)')}
                         </pre>
                       </div>
                     ))}
                   </div>
                   <p className="text-xs text-gray-400">
-                    Giá trị được chọn sẽ ghi vào Google Sheet, Vault và snapshot. Nếu dữ liệu đã đổi, hệ thống yêu cầu chạy lại đồng bộ.
+                    Giá trị được chọn sẽ ghi vào Google Sheet, Vault và snapshot. Nếu dữ liệu đã
+                    đổi, hệ thống yêu cầu chạy lại đồng bộ.
                   </p>
                   <div className="flex gap-3">
                     <button
                       disabled={pending || conflict.valueA === undefined}
-                      onClick={() => void act(() => onResolve('SOURCE', conflict))}
+                      onClick={() => void act(() => onResolve(conflict.valueA!, conflict))}
                       className="bg-blue-600 px-4 py-2 rounded text-sm disabled:opacity-40"
                     >
                       Giữ Google Sheet
                     </button>
                     <button
                       disabled={pending || conflict.valueB === undefined}
-                      onClick={() => void act(() => onResolve('DESTINATION', conflict))}
+                      onClick={() => void act(() => onResolve(conflict.valueB!, conflict))}
                       className="bg-purple-600 px-4 py-2 rounded text-sm disabled:opacity-40"
                     >
                       Giữ Vault
@@ -156,7 +161,11 @@ export const ConflictModal: React.FC<Props> = ({
                 <Send size={14} />
                 Gửi lại cảnh báo Telegram
               </button>
-              {pending && <p role="status" className="text-xs text-gray-400">Đang chờ kết quả máy chủ...</p>}
+              {pending && (
+                <p role="status" className="text-xs text-gray-400">
+                  Đang chờ kết quả máy chủ...
+                </p>
+              )}
             </>
           )}
         </div>

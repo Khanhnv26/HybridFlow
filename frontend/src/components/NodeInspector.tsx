@@ -129,7 +129,7 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
               <label className="block text-gray-400 mb-1 text-[11px]">Target Telegram Chat ID</label>
               <input
                 type="text"
-                value={data.chatId || '8706234310'}
+                value={data.chatId || ''}
                 onChange={(e) => onUpdateNodeData(selectedNode.id, { chatId: e.target.value })}
                 className="w-full p-2 rounded-lg bg-[#0d1117] border border-[#30363d] text-sky-300 font-mono text-xs focus:border-blue-500 outline-none"
               />
@@ -137,7 +137,7 @@ export const NodeInspector: React.FC<NodeInspectorProps> = ({
             <div>
               <label className="block text-gray-400 mb-1 text-[11px]">Bot Token (Configured in backend)</label>
               <div className="p-2 rounded-lg bg-[#0d1117] border border-[#30363d] text-gray-400 font-mono text-[11px] truncate">
-                9223690617:AAHonVwiPIsQz0CDhSTykcQjEpmeg09Mqo8
+                Được cấu hình trên máy chủ
               </div>
             </div>
           </>

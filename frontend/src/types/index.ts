@@ -95,6 +95,7 @@ export interface OrchestrationNodeData extends Record<string, unknown> {
   onOpenConflict?: () => void;
   // Natural language parameters
   uniqueKey?: string;
+  sharedColumns?: string;
   conflictPolicy?: string;
   spreadsheetId?: string;
   spreadsheetUrl?: string;
