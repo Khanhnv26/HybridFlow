@@ -12,4 +12,5 @@ public interface GoogleSheetsService {
 
     SheetDataResponse readSheet(ReadSheetRequest request);
     UpdateCellResponse updateCell(UpdateCellRequest request);
+    void updateCells(String accessToken, String spreadsheetId, Map<String, String> cells);
 }

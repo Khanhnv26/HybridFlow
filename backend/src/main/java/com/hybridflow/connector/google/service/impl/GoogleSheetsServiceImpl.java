@@ -6,6 +6,7 @@ import com.google.api.services.sheets.v4.Sheets;
 import com.google.api.services.sheets.v4.model.Sheet;
 import com.google.api.services.sheets.v4.model.Spreadsheet;
 import com.google.api.services.sheets.v4.model.ValueRange;
+import com.google.api.services.sheets.v4.model.BatchUpdateValuesRequest;
 import com.google.auth.http.HttpCredentialsAdapter;
 import com.google.auth.oauth2.AccessToken;
 import com.google.auth.oauth2.GoogleCredentials;
@@ -27,12 +28,18 @@ import java.util.Map;
 public class GoogleSheetsServiceImpl implements GoogleSheetsService {
 
     private Sheets createSheetsClient(String accessToken) {
+        if (accessToken == null || accessToken.isBlank() || "ya29.mock".equals(accessToken))
+            throw new IllegalArgumentException("Cần access token Google hợp lệ.");
         try {
             GoogleCredentials credentials = GoogleCredentials.create(new AccessToken(accessToken, null));
             return new Sheets.Builder(
                     GoogleNetHttpTransport.newTrustedTransport(),
                     GsonFactory.getDefaultInstance(),
-                    new HttpCredentialsAdapter(credentials))
+                    httpRequest -> {
+                        new HttpCredentialsAdapter(credentials).initialize(httpRequest);
+                        httpRequest.setConnectTimeout(10000);
+                        httpRequest.setReadTimeout(30000);
+                    })
                     .setApplicationName("HybridFlow")
                     .build();
         } catch (GeneralSecurityException | IOException e) {
@@ -42,6 +49,7 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
 
     @Override
     public SheetDataResponse readSheet(ReadSheetRequest request) {
+        requireText(request.getSpreadsheetId(), "Spreadsheet ID");
         Sheets sheets = createSheetsClient(request.getAccessToken());
 
         try {
@@ -79,7 +87,7 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
             }
 
             String safeSheetName = targetSheetName.replace("'", "''");
-            String range = "'" + safeSheetName + "'!A1:Z";
+            String range = "'" + safeSheetName + "'";
 
             ValueRange response = sheets.spreadsheets().values()
                     .get(request.getSpreadsheetId(), range)
@@ -129,13 +137,16 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
 
     @Override
     public UpdateCellResponse updateCell(UpdateCellRequest request) {
+        requireText(request.getSpreadsheetId(), "Spreadsheet ID");
+        requireText(request.getRange(), "Vị trí ô");
+        if (request.getValue() == null) throw new IllegalArgumentException("Giá trị ô không được null. Dùng chuỗi trống để xóa nội dung.");
         Sheets sheets = createSheetsClient(request.getAccessToken());
 
         try {
             ValueRange body = new ValueRange().setValues(List.of(List.of(request.getValue())));
             sheets.spreadsheets().values()
                     .update(request.getSpreadsheetId(), request.getRange(), body)
-                    .setValueInputOption("USER_ENTERED")
+                    .setValueInputOption("RAW")
                     .execute();
 
             return UpdateCellResponse.builder()
@@ -148,5 +159,22 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
         } catch (IOException e) {
             throw new RuntimeException("Lỗi cập nhật ô trong Google Sheets: " + e.getMessage(), e);
         }
+    }
+
+    @Override
+    public void updateCells(String accessToken, String spreadsheetId, Map<String, String> cells) {
+        if (cells.isEmpty()) return;
+        var ranges = cells.entrySet().stream().map(cell -> new ValueRange()
+                .setRange(cell.getKey()).setValues(List.of(List.of(cell.getValue() == null ? "" : cell.getValue())))).toList();
+        try {
+            createSheetsClient(accessToken).spreadsheets().values().batchUpdate(spreadsheetId,
+                    new BatchUpdateValuesRequest().setValueInputOption("RAW").setData(ranges)).execute();
+        } catch (IOException e) {
+            throw new IllegalStateException("Không thể ghi dữ liệu đồng bộ vào Google Sheets.", e);
+        }
+    }
+
+    private static void requireText(String value, String label) {
+        if (value == null || value.isBlank()) throw new IllegalArgumentException(label + " không được để trống.");
     }
 }

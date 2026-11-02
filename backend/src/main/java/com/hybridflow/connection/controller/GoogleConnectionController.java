@@ -15,6 +15,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.client.RestClient;
 import org.springframework.web.servlet.view.RedirectView;
+import org.springframework.beans.factory.annotation.Value;
+import java.net.URI;
 
 @RestController
 @RequestMapping("/api/v1/connections/google")
@@ -23,6 +25,18 @@ public class GoogleConnectionController {
 
     private final GoogleOAuthService googleOAuthService;
     private final GoogleSheetsService googleSheetsService;
+
+    @Value("${google.oauth.redirect-uri}")
+    private String redirectUri;
+
+    @Value("${app.frontend-origin:http://localhost:3000}")
+    private String frontendOrigin;
+
+    @GetMapping("/config")
+    public java.util.Map<String, String> config() {
+        URI uri = URI.create(redirectUri);
+        return java.util.Map.of("callbackOrigin", uri.getScheme() + "://" + uri.getAuthority());
+    }
 
     @GetMapping("/start")
     public RedirectView startGoogleOAuth() {
@@ -45,13 +59,13 @@ public class GoogleConnectionController {
                             window.opener.postMessage({
                                 type: 'GOOGLE_OAUTH_SUCCESS',
                                 accessToken: '%s'
-                            }, '*');
+                            }, '%s');
                         }
                         setTimeout(() => window.close(), 1000);
                     </script>
                 </body>
                 </html>
-                """.formatted(accessToken);
+                """.formatted(accessToken, frontendOrigin);
         return ResponseEntity.ok(html);
 
 

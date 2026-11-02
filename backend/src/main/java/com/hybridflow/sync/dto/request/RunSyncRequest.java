@@ -21,4 +21,11 @@ public class RunSyncRequest {
     @Builder.Default
     private String idColumn = "id";
     private Set<String> syncColumns;
+    private boolean bootstrapConfirmed;
+    private boolean notifyConflicts;
+    private String chatId;
+    @Builder.Default
+    private String conflictPolicy = "ASK_TELEGRAM";
+    @Builder.Default
+    private String storageName = "vault";
 }

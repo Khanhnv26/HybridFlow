@@ -47,23 +47,23 @@ export const SheetsTriggerNode: React.FC<any> = ({ data, selected }) => {
         {/* Connected account chip */}
         <div className="px-2 py-1 rounded-lg bg-emerald-950/40 border border-emerald-800/50 flex items-center justify-between gap-3 text-[11px]">
           <span className="min-w-0 text-emerald-300 font-medium truncate">
-            {nodeData.userAccount || 'vankhanhak54@gmail.com'}
+            {nodeData.userAccount || 'Chưa kết nối Google'}
           </span>
-          <span className="text-emerald-400 font-bold text-[10px] shrink-0">Đã kết nối</span>
+          <span className="text-emerald-400 font-bold text-[10px] shrink-0">{nodeData.userAccount ? 'Đã nhận token' : 'Cần đăng nhập'}</span>
         </div>
 
         <div className="space-y-1 text-gray-400 text-[11px]">
           <div className="flex justify-between">
             <span>Trang tính:</span>
             <span className="text-gray-200 font-mono font-medium truncate max-w-[120px]">
-              {nodeData.sheetName || 'Trang tinh1'}
+              {nodeData.sheetName || 'Chưa chọn tab'}
             </span>
           </div>
           <div className="flex justify-between">
             <span>Dữ liệu đọc:</span>
             <span className="text-gray-200 font-medium flex items-center gap-1">
               <CheckCircle2 size={12} className="text-emerald-400" />
-              {nodeData.recordsCount ?? 2} đơn hàng
+              {nodeData.recordsCount === undefined ? 'Chưa đọc dữ liệu' : `${nodeData.recordsCount} dòng`}
             </span>
           </div>
         </div>
@@ -109,7 +109,7 @@ export const DiffEngineNode: React.FC<any> = ({ data, selected }) => {
         <div className="text-gray-400 text-[11px] flex justify-between items-center">
           <span>Khóa so sánh:</span>
           <span className="text-purple-300 font-mono font-bold bg-[#121620] px-2 py-0.5 rounded border border-[#2d3748]">
-            {nodeData.uniqueKey || 'id (Mã đơn)'}
+            {nodeData.uniqueKey || 'Chưa chọn khóa'}
           </span>
         </div>
 
@@ -118,7 +118,7 @@ export const DiffEngineNode: React.FC<any> = ({ data, selected }) => {
           <div className="p-2.5 rounded-xl bg-amber-950/40 border border-amber-600/60 flex items-center justify-between gap-3">
             <div className="flex items-center gap-2 text-amber-300">
               <AlertTriangle size={14} className="shrink-0" />
-              <span className="font-bold text-[11px]">Phát hiện 1 xung đột!</span>
+              <span className="font-bold text-[11px]">Phát hiện {nodeData.conflictCount} xung đột</span>
             </div>
             <button
               onClick={(e) => {
@@ -182,7 +182,7 @@ export const StorageActionNode: React.FC<any> = ({ data, selected }) => {
         <div className="flex justify-between items-center">
           <span>Vùng lưu trữ:</span>
           <span className="text-blue-300 font-mono font-medium bg-[#121620] px-2 py-0.5 rounded border border-[#2d3748] text-[11px]">
-            {nodeData.tableName || 'hybridflow_vault'}
+            {nodeData.tableName || 'Chưa chọn vùng'}
           </span>
         </div>
       </div>
@@ -219,11 +219,11 @@ export const TelegramActionNode: React.FC<any> = ({ data, selected }) => {
       <div className="p-3 text-xs space-y-2">
         <div className="flex items-center justify-between gap-3 text-[11px]">
           <span className="text-gray-400">Bot:</span>
-          <span className="text-sky-300 font-medium">{nodeData.botName || '@HybridFlowBot'}</span>
+          <span className="text-sky-300 font-medium">{nodeData.botName || 'Theo cấu hình máy chủ'}</span>
         </div>
         <div className="flex justify-between text-gray-400 text-[11px]">
           <span>Chat ID:</span>
-          <span className="text-sky-300 font-mono">{nodeData.chatId || '8706234310'}</span>
+          <span className="text-sky-300 font-mono">{nodeData.chatId || 'Chưa cấu hình'}</span>
         </div>
       </div>
     </div>

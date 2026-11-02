@@ -84,6 +84,7 @@ export interface OrchestrationNodeData extends Record<string, unknown> {
   isRunning?: boolean;
   recordsCount?: number;
   hasConflict?: boolean;
+  conflictCount?: number;
   onOpenConflict?: () => void;
   // Natural language parameters
   uniqueKey?: string;
@@ -99,6 +100,10 @@ export interface OrchestrationNodeData extends Record<string, unknown> {
 
 export interface SyncConflictDto {
   id: number;
+  flowId?: string;
+  spreadsheetId?: string;
+  sheetName?: string;
+  idColumn?: string;
   recordId: string;
   columnName: string;
   baseValue?: string;
@@ -111,12 +116,17 @@ export interface SyncConflictDto {
 }
 
 export interface RunSyncRequestPayload {
-  flowId?: string;
+  flowId: string;
   accessToken: string;
   spreadsheetId: string;
   sheetName?: string;
   idColumn?: string;
   syncColumns?: string[];
+  bootstrapConfirmed?: boolean;
+  notifyConflicts: boolean;
+  chatId?: string;
+  conflictPolicy: 'ASK_TELEGRAM' | 'SOURCE_WINS' | 'DESTINATION_WINS';
+  storageName: string;
 }
 
 export interface RunSyncResponse {
@@ -126,6 +136,21 @@ export interface RunSyncResponse {
   conflicts: SyncConflictDto[];
   comparedColumns: string[];
   latency: string;
+  executionId: string;
+  status: string;
+  sheetName: string;
+  bootstrapRequired: boolean;
+  notificationsSent: number;
+  notificationsFailed: number;
+}
+
+export interface ExecutionHistoryDto {
+  id: string;
+  status: string;
+  result: string | null;
+  error: string | null;
+  started_at: string;
+  finished_at: string | null;
 }
 
 export interface TelegramAlertResponse {

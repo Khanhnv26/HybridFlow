@@ -21,23 +21,27 @@ public class SyncConflictController {
     private final TelegramNotificationService telegramNotificationService;
 
     @GetMapping
-    public ResponseEntity<List<SyncConflict>> getOpenConflicts() {
-        List<SyncConflict> openConflicts = syncConflictService.getOpenConflicts();
+    public ResponseEntity<List<SyncConflict>> getOpenConflicts(@RequestParam String flowId) {
+        List<SyncConflict> openConflicts = syncConflictService.getOpenConflicts(flowId);
         return ResponseEntity.ok(openConflicts);
     }
 
     @PostMapping("/{id}/resolve")
     public ResponseEntity<SyncConflict> resolveConflict(@PathVariable("id") Long conflictId,
                                                         @RequestBody ResolveConflictRequest request) {
-        syncConflictService.resolveConflict(conflictId, request.getResolvedValue());
+        syncConflictService.resolveConflict(conflictId, request.getResolvedValue(), request.getAccessToken());
         SyncConflict updatedConflict = syncConflictService.getConflictById(conflictId);
         return ResponseEntity.ok(updatedConflict);
     }
 
     @PostMapping("/{id}/notify")
-    public ResponseEntity<TelegramAlertResponse> resendTelegramAlert(@PathVariable("id") Long conflictId) {
+    public ResponseEntity<TelegramAlertResponse> resendTelegramAlert(@PathVariable("id") Long conflictId,
+                                                                  @RequestBody Map<String, String> request) {
         SyncConflict conflict = syncConflictService.getConflictById(conflictId);
-        boolean sent = telegramNotificationService.sendConflictAlert(conflict);
+        if (!"OPEN".equals(conflict.getStatus())) throw new IllegalArgumentException("Xung đột đã được xử lý.");
+        String chatId = request.get("chatId");
+        if (chatId == null || chatId.isBlank()) throw new IllegalArgumentException("Cần Telegram Chat ID.");
+        boolean sent = telegramNotificationService.sendConflictAlert(conflict, chatId);
         return ResponseEntity.ok(TelegramAlertResponse.builder()
                 .id(conflictId)
                 .success(sent)

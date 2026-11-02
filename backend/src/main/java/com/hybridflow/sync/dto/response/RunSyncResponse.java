@@ -22,4 +22,10 @@ public class RunSyncResponse {
     private List<SyncConflict> conflicts;
     private Set<String> comparedColumns;
     private String latency;
+    private String executionId;
+    private String status;
+    private int notificationsSent;
+    private int notificationsFailed;
+    private boolean bootstrapRequired;
+    private String sheetName;
 }

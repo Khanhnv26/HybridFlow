@@ -1,1 +1,58 @@
-"# HybridFlow" 
+# HybridFlow
+
+Đồng bộ Google Sheets ↔ Vault bằng 3-Way Diff, lưu snapshot và xử lý xung đột theo từng luồng.
+
+## Chạy ứng dụng
+
+Yêu cầu JDK 21, Maven, Node.js và PostgreSQL. `docker compose up -d postgres` có thể dùng để tạo database phát triển theo `docker-compose.yml`.
+
+Backend đọc các biến môi trường:
+
+- `DB_URL`, `DB_USER`, `DB_PASSWORD`: kết nối PostgreSQL. Mặc định phát triển là `localhost:5432/hybridflow`, user `postgres`.
+- `TELEGRAM_BOT_TOKEN`: token bot Telegram; Chat ID gửi cảnh báo lấy từ khối Telegram trên giao diện.
+- `GOOGLE_REDIRECT_URI`: mặc định `http://localhost:8080/api/v1/connections/google/callback`; phải khớp OAuth client trên Google Cloud.
+- `FRONTEND_ORIGIN`: mặc định `http://localhost:3000`, dùng cho CORS và đích nhận kết quả OAuth popup. Đổi khi dùng cổng/origin khác.
+
+File `client_secret.json` của Google OAuth đặt trong `backend/src/main/resources/` và được Git bỏ qua. Các thiết lập riêng đã có được giữ trong `backend/application-local.properties` (cũng được Git bỏ qua). Khi chạy từ thư mục `backend` hoặc gốc repo, Spring tự đọc file local này; biến môi trường có thể ghi đè các giá trị được chuyển sang đó. Không commit token hay file local. Nếu token từng được đưa lên Git, cần thay token tại nhà cung cấp.
+
+Chạy backend từ `backend`: `mvn spring-boot:run`. Khởi động lại backend sau khi cập nhật mã để Flyway áp dụng migration V3/V4. Không sửa/xóa lịch sử migration trong database đang dùng.
+
+Chạy frontend từ `frontend`: `npm install`, sau đó `npm run dev`. Vite chạy ở cổng 3000 và proxy `/api` sang backend 8080. Khi deploy, cấu hình reverse proxy `/api` hoặc đặt `VITE_API_BASE_URL` theo `frontend/.env.example` trước khi build. Nếu cổng 3000 bận, cấu hình `FRONTEND_ORIGIN` theo origin thực tế.
+
+## Sử dụng dữ liệu thật
+
+1. Kết nối Google bằng nút góc phải.
+2. Điền mã file, tên tab chính xác và tên cột khóa duy nhất. Header phải không trống/không trùng; các dòng có dữ liệu phải có khóa, không trùng khóa.
+3. Nối Google Sheet → So khớp (`out` → `in`) → Kho lưu trữ (`clean` → `in`). Tên vùng lưu trữ là một phân vùng dữ liệu trong Vault, không phải tên bảng SQL tùy ý.
+4. Nếu cần Telegram, điền Chat ID và nối cổng `conflict` của khối so khớp vào khối Telegram. Bỏ dây nối thì không gửi cảnh báo.
+5. Chạy luồng. Với nguồn mới, hệ thống yêu cầu bấm **Xác nhận khởi tạo** trước khi sao chép Sheet vào Vault/snapshot.
+6. Chọn chính sách chờ duyệt, ưu tiên Sheet hoặc ưu tiên Vault. Chờ duyệt sẽ giữ nguyên checkpoint của riêng các trường đang xung đột; các trường sạch vẫn đồng bộ.
+7. Phê duyệt conflict chỉ thành công sau khi ghi Google Sheet, Vault và snapshot. Nếu dữ liệu đã đổi kể từ lúc phát hiện, chạy lại đối soát trước khi chọn.
+
+Nguồn file, tab, cột khóa và vùng lưu trữ tạo thành mã luồng ổn định. Đổi một trong các giá trị này tạo ngữ cảnh mới; backend kiểm tra binding để không dùng nhầm checkpoint. Cấu hình đang chỉnh được giữ ở trình duyệt; **Lưu cấu hình** và mỗi lần chạy sẽ lưu định nghĩa luồng lên backend. Lịch sử chạy và xung đột lấy từ backend theo mã luồng, không dựng mẫu khi API lỗi.
+
+Đồng bộ hỗ trợ thêm dòng và cập nhật trường trên các dòng đã có. Dòng bị xóa khỏi Sheet trong khi vẫn có ở Vault sẽ báo lỗi để tránh xóa dữ liệu ngầm; cần khôi phục dòng hoặc chủ động khởi tạo một luồng mới. Các khối hẹn giờ backend, webhook, rẽ nhánh, biến đổi và ghi Sheet độc lập chưa có bộ thực thi nên bị vô hiệu hóa. Tùy chọn **Tự động khi mở trang** thực sự chạy theo chu kỳ trong trình duyệt; mặc định tắt và dừng khi đóng trang. Token Google hết hạn cần đăng nhập lại.
+
+Các lần ghi nhiều ô dùng [Google Sheets values.batchUpdate](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/batchUpdate) với [RAW](https://developers.google.com/workspace/sheets/api/reference/rest/v4/ValueInputOption). Google Sheets và PostgreSQL không có giao dịch phân tán: nếu Sheet ghi xong nhưng database lỗi sau đó, phiên được báo lỗi và cần chạy lại để đối soát; hệ thống không báo thành công trước khi cập nhật checkpoint.
+
+## API chính
+
+- `POST /api/v1/sync/run`: `flowId`, `accessToken`, `spreadsheetId`, `sheetName`, `idColumn`, `storageName`, `conflictPolicy`, `notifyConflicts`, `chatId` (khi bật thông báo), `bootstrapConfirmed`. Có thể truyền `syncColumns` để chọn cột.
+- Kết quả gồm `executionId`, `status`, `bootstrapRequired`, `cleanRecordIds`, `conflicts`, `notificationsSent`, `notificationsFailed`, `totalRowsProcessed`, `comparedColumns`, `latency`.
+- `GET /api/v1/conflicts?flowId=...`: chỉ xung đột đang mở của luồng.
+- `POST /api/v1/conflicts/{id}/resolve`: `resolvedValue`, `accessToken`. Chỉ chấp nhận giá trị một trong hai bên của conflict hiện tại.
+- `POST /api/v1/conflicts/{id}/notify`: `chatId`; trả `success` theo kết quả nhà cung cấp.
+- `GET /api/v1/workflows/{flowId}/history`, `GET /api/v1/workflows/{flowId}/vault`.
+- `GET/PUT /api/v1/workflows/{workflowId}/definition`: đọc/lưu `{nodes, edges}`.
+- `GET /api/v1/connections/google/config`: origin callback OAuth để frontend xác minh thông điệp popup khi đi qua proxy.
+
+Các conflict cũ thiếu thông tin nguồn không được phê duyệt mù; cần chạy lại với luồng mới. Chúng không bị xóa khỏi database.
+
+## Kiểm thử
+
+- Frontend: `npm test`, `npm run build` trong `frontend`.
+- Backend: `mvn test` trong `backend`. Test Telegram dùng HTTP giả lập của Spring, không gửi tin thật.
+- Kiểm thử API + PostgreSQL được bật khi `HYBRIDFLOW_TEST_DB_URL=jdbc:postgresql://127.0.0.1:15432/hybridflow_test`. Chỉ dùng database tạm, user/password `hybridflow_test`; test sẽ truncate các bảng ứng dụng trong database này. Tạo container riêng không mount volume: `docker run --rm --name hybridflow-sync-verify -d -e POSTGRES_DB=hybridflow_test -e POSTGRES_USER=hybridflow_test -e POSTGRES_PASSWORD=hybridflow_test -p 127.0.0.1:15432:5432 postgres:16-alpine`. Dừng container bằng `docker stop hybridflow-sync-verify` sau khi test.
+- Trên môi trường hạn chế fork/attach của JVM, có thể dùng `mvn -DforkCount=0 test` với Byte Buddy agent được nạp sẵn bằng `MAVEN_OPTS=-javaagent:<đường-dẫn-byte-buddy-agent.jar>`.
+
+Các test API kiểm tra Spring MVC/JPA/Flyway trên PostgreSQL thật; Google Sheets/OAuth/Telegram được thay ở biên dịch vụ, vì vậy vẫn cần kết nối tài khoản Google của bạn để xác minh end-to-end trên Sheet thật.

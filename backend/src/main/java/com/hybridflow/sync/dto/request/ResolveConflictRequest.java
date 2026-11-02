@@ -13,4 +13,5 @@ import lombok.Setter;
 @Builder
 public class ResolveConflictRequest {
     private String resolvedValue;
+    private String accessToken;
 }

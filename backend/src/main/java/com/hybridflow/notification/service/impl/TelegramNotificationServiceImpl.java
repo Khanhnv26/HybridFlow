@@ -6,6 +6,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 
 import java.util.Map;
 
@@ -13,16 +14,28 @@ import java.util.Map;
 @RequiredArgsConstructor
 public class TelegramNotificationServiceImpl implements TelegramNotificationService {
 
-    @Value("${telegram.bot.token}")
+    @Value("${telegram.bot.token:}")
     private String botToken;
 
-    @Value("${telegram.bot.chat-id}")
+    @Value("${telegram.bot.chat-id:}")
     private String chatId;
 
-    private final RestClient restClient = RestClient.create();
+    private final RestClient restClient = createRestClient();
+
+    private static RestClient createRestClient() {
+        var factory = new SimpleClientHttpRequestFactory();
+        factory.setConnectTimeout(10000);
+        factory.setReadTimeout(15000);
+        return RestClient.builder().requestFactory(factory).build();
+    }
 
     @Override
     public boolean sendConflictAlert(SyncConflict conflict) {
+        return sendConflictAlert(conflict, chatId);
+    }
+
+    @Override
+    public boolean sendConflictAlert(SyncConflict conflict, String targetChatId) {
 
         String message = """
                 *[HYBRIDFLOW CẢNH BÁO XUNG ĐỘT]*
@@ -40,27 +53,31 @@ public class TelegramNotificationServiceImpl implements TelegramNotificationServ
                 conflict.getValueB()
         );
 
-        return sendMessage(message);
+        return sendMessage(message, targetChatId);
     }
 
     @Override
     public boolean sendMessage(String message) {
+        return sendMessage(message, chatId);
+    }
+
+    private boolean sendMessage(String message, String targetChatId) {
+        if (botToken == null || botToken.isBlank() || targetChatId == null || targetChatId.isBlank()) return false;
         String url = "https://api.telegram.org/bot" + botToken + "/sendMessage";
 
         try {
-            restClient.post()
+            var response = restClient.post()
                     .uri(url)
                     .body(Map.of(
-                            "chat_id", chatId,
-                            "text", message,
-                            "parse_mode", "Markdown"
+                            "chat_id", targetChatId,
+                            "text", message
                     ))
                     .retrieve()
-                    .toBodilessEntity();
+                    .body(Map.class);
+            return response != null && Boolean.TRUE.equals(response.get("ok"));
         } catch (Exception e) {
             return false;
         }
 
-        return true;
     }
 }

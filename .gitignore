@@ -57,3 +57,6 @@ tokens/
 .DS_Store
 Thumbs.db
 Desktop.ini
+
+# Private backend settings
+/backend/application-local.properties

@@ -19,6 +19,11 @@ public class SyncConflict {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
+    private String flowId;
+    private String spreadsheetId;
+    private String sheetName;
+    private String idColumn;
+
     @Column(name = "record_id", nullable = false)
     private String recordId;
 
