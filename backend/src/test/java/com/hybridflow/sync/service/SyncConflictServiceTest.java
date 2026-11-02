@@ -2,6 +2,7 @@ package com.hybridflow.sync.service;
 
 import com.hybridflow.connector.google.dto.response.SheetDataResponse;
 import com.hybridflow.connector.google.service.GoogleSheetsService;
+import com.hybridflow.notification.service.TelegramNotificationService;
 import com.hybridflow.sync.dto.request.RunSyncRequest;
 import com.hybridflow.sync.entity.SyncConflict;
 import com.hybridflow.sync.model.SyncDiffResult;
@@ -12,7 +13,9 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+
 import java.util.*;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
@@ -22,12 +25,13 @@ class SyncConflictServiceTest {
     @Mock SyncConflictRepository repository;
     @Mock SyncStore store;
     @Mock GoogleSheetsService sheets;
+    @Mock TelegramNotificationService notifications;
     @InjectMocks SyncConflictServiceImpl service;
     private SyncConflict conflict() { return SyncConflict.builder().id(1L).flowId("flow").spreadsheetId("sheet")
             .sheetName("Data").idColumn("id").recordId("1").columnName("status")
             .baseValue("NEW").valueA("SHIPPING").valueB("CANCELLED").status("OPEN").build(); }
     private void givenConflict(String actualSheetStatus) {
-        var conflict = conflict();
+        SyncConflict conflict = conflict();
         when(repository.findFlowIdById(1L)).thenReturn(Optional.of("flow"));
         when(repository.findLockedById(1L)).thenReturn(Optional.of(conflict));
         when(sheets.readSheet(any())).thenReturn(SheetDataResponse.builder().sheetName("Data")
@@ -38,7 +42,7 @@ class SyncConflictServiceTest {
     @Test void resolvingWritesSheetVaultAndCheckpointBeforeMarkingResolved() {
         givenConflict("SHIPPING");
         service.resolveConflict(1L, "CANCELLED", "test-token");
-        var order = inOrder(sheets, store, repository);
+        org.mockito.InOrder order = inOrder(sheets, store, repository);
         order.verify(sheets).updateCells("test-token", "sheet", Map.of("'Data'!B2", "CANCELLED"));
         order.verify(store).write("vault_records", "flow", "1", Map.of("id", "1", "status", "CANCELLED"));
         order.verify(store).write("sync_snapshots", "flow", "1", Map.of("id", "1", "status", "CANCELLED"));
@@ -59,8 +63,8 @@ class SyncConflictServiceTest {
     }
     @Test void rerunningTheSameConflictReusesTheExistingId() {
         when(repository.findByFlowIdAndStatus("flow", "OPEN")).thenReturn(List.of(conflict()));
-        var diff = new SyncDiffResult("1"); diff.addConflict("status", "NEW", "SHIPPING", "CANCELLED");
-        var saved = service.saveConflicts(diff, RunSyncRequest.builder().flowId("flow").spreadsheetId("sheet").idColumn("id").build(), "Data");
+        SyncDiffResult diff = new SyncDiffResult("1"); diff.addConflict("status", "NEW", "SHIPPING", "CANCELLED");
+        List<SyncConflict> saved = service.saveConflicts(diff, RunSyncRequest.builder().flowId("flow").spreadsheetId("sheet").idColumn("id").build(), "Data");
         assertEquals(1L, saved.getFirst().getId());
         verify(repository, never()).save(any());
     }
@@ -68,5 +72,20 @@ class SyncConflictServiceTest {
         when(repository.findByFlowIdAndStatus("flow", "OPEN")).thenReturn(List.of(conflict()));
         assertTrue(service.saveConflicts(new SyncDiffResult("1"), RunSyncRequest.builder().flowId("flow").build(), "Data").isEmpty());
         verify(repository).save(argThat(c -> "SUPERSEDED".equals(c.getStatus())));
+    }
+
+    @Test void resolvedConflictsCannotSendAlerts() {
+        SyncConflict resolved = conflict();
+        resolved.setStatus("RESOLVED");
+        when(repository.findById(1L)).thenReturn(Optional.of(resolved));
+        assertThrows(IllegalArgumentException.class, () -> service.resendTelegramAlert(1L, "123"));
+        verifyNoInteractions(notifications);
+    }
+
+    @Test void failedResendIsReportedByTheService() {
+        SyncConflict open = conflict();
+        when(repository.findById(1L)).thenReturn(Optional.of(open));
+        when(notifications.sendConflictAlert(open, "123")).thenReturn(false);
+        assertFalse(service.resendTelegramAlert(1L, "123").isSuccess());
     }
 }

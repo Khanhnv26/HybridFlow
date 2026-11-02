@@ -1,0 +1,446 @@
+import { useEffect, useState } from 'react';
+import {
+  CheckCircle2,
+  ExternalLink,
+  MessageCircle,
+  RefreshCw,
+  Save,
+  Send,
+  User,
+  Users,
+  X,
+} from 'lucide-react';
+import { telegramService } from '../../services/api';
+import type {
+  OrchestrationNodeData,
+  TelegramBotInfo,
+  TelegramLink,
+  TelegramRecipient,
+} from '../../types';
+
+interface Props {
+  data: OrchestrationNodeData;
+  disabled: boolean;
+  notificationConnected: boolean;
+  onClose: () => void;
+  onSave: (data: Partial<OrchestrationNodeData>) => Promise<void>;
+}
+function errorMessage(error: unknown) {
+  const detail = error as {
+    response?: { data?: { message?: string } };
+    message?: string;
+    code?: string;
+  };
+  if (detail.response?.data?.message) return detail.response.data.message;
+  if (detail.response)
+    return 'Chưa tải được thông tin Telegram. Thử lại hoặc liên hệ quản trị viên.';
+  if (detail.code === 'ERR_NETWORK' || detail.code === 'ECONNABORTED')
+    return 'Không thể kết nối máy chủ. Kiểm tra mạng rồi thử lại.';
+  return detail.message || 'Không thể kết nối Telegram. Vui lòng thử lại.';
+}
+
+export function TelegramConfig({ data, disabled, notificationConnected, onClose, onSave }: Props) {
+  const [type, setType] = useState<TelegramRecipient['recipientType']>(
+    data.telegramRecipientType || (data.chatId?.startsWith('-') ? 'GROUP' : 'PRIVATE'),
+  );
+  const [bot, setBot] = useState<TelegramBotInfo | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [retry, setRetry] = useState(0);
+  const [recipient, setRecipient] = useState<TelegramRecipient | null>(null);
+  const [chatId, setChatId] = useState(data.chatId || '');
+  const [session, setSession] = useState<TelegramLink | null>(null);
+  const [error, setError] = useState('');
+  const [success, setSuccess] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [waitingError, setWaitingError] = useState('');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setLoading(true);
+    setError('');
+    setBot(null);
+    void telegramService
+      .getBot(controller.signal)
+      .then(async (info) => {
+        if (controller.signal.aborted) return;
+        setBot(info);
+        if (info.configured && data.chatId) {
+          const savedType =
+            data.telegramRecipientType || (data.chatId.startsWith('-') ? 'GROUP' : 'PRIVATE');
+          const saved = await telegramService.checkRecipient(
+            data.chatId,
+            savedType,
+            controller.signal,
+          );
+          if (!controller.signal.aborted) setRecipient(saved);
+        }
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) setError(errorMessage(error));
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setLoading(false);
+      });
+    return () => controller.abort();
+  }, [retry, data.chatId, data.telegramRecipientType]);
+
+  useEffect(() => {
+    if (!session || session.status !== 'WAITING') return;
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout>;
+    const poll = async () => {
+      if (Date.now() >= Date.parse(session.expiresAt)) {
+        setSession({ ...session, status: 'EXPIRED' });
+        return;
+      }
+      try {
+        const result = await telegramService.pollLink(session.id, controller.signal);
+        if (controller.signal.aborted) return;
+        if (result.status === 'CONNECTED' && result.recipient) {
+          setRecipient(result.recipient);
+          setChatId(result.recipient.chatId);
+          setSession(result);
+          setWaitingError('');
+          setError('');
+          return;
+        }
+        if (result.status === 'EXPIRED') {
+          setSession(result);
+          return;
+        }
+        setWaitingError('');
+      } catch (error) {
+        if (!controller.signal.aborted) setWaitingError(errorMessage(error));
+      }
+      if (!controller.signal.aborted) timer = setTimeout(() => void poll(), 3000);
+    };
+    timer = setTimeout(() => void poll(), 1500);
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [session]);
+
+  const locked = disabled || busy || saving || loading;
+  const canUseRecipient = !!bot?.configured && !!recipient && !locked;
+  const selectType = (next: TelegramRecipient['recipientType']) => {
+    setType(next);
+    setSession(null);
+    setRecipient(null);
+    setChatId('');
+    setSuccess('');
+    setError('');
+    setWaitingError('');
+  };
+  const createLink = async () => {
+    setBusy(true);
+    setSession(null);
+    setRecipient(null);
+    setChatId('');
+    setError('');
+    setSuccess('');
+    setWaitingError('');
+    try {
+      setSession(await telegramService.startLink(type));
+    } catch (error) {
+      setError(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const checkManual = async () => {
+    setBusy(true);
+    setSession(null);
+    setRecipient(null);
+    setError('');
+    setSuccess('');
+    try {
+      setRecipient(await telegramService.checkRecipient(chatId.trim(), type));
+    } catch (error) {
+      setError(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const sendTest = async () => {
+    if (!recipient) return;
+    setBusy(true);
+    setError('');
+    setSuccess('');
+    try {
+      const result = await telegramService.sendTest(recipient.chatId, type);
+      if (!result.success) throw new Error(result.message);
+      setRecipient(result.recipient);
+      setSuccess(result.message);
+    } catch (error) {
+      setError(errorMessage(error));
+    } finally {
+      setBusy(false);
+    }
+  };
+  const save = async () => {
+    if (!recipient || !bot) return;
+    setSaving(true);
+    setError('');
+    try {
+      await onSave({
+        chatId: recipient.chatId,
+        telegramRecipientType: type,
+        telegramRecipientName: recipient.name,
+        botName: bot.username ? `@${bot.username}` : undefined,
+      });
+    } catch (error) {
+      setError(errorMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <div
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="telegram-title"
+      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
+    >
+      <div className="bg-[#171b24] border border-gray-700 rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
+        <div className="p-5 border-b border-gray-700 flex items-start justify-between gap-4">
+          <div>
+            <h3 id="telegram-title" className="font-semibold flex items-center gap-2">
+              <MessageCircle size={18} className="text-sky-400" />
+              Nhận cảnh báo qua Telegram
+            </h3>
+            <p className="text-xs text-gray-400 mt-2">
+              Chọn nơi nhận để được báo khi dữ liệu cần bạn xử lý.
+            </p>
+          </div>
+          <button
+            disabled={busy || saving}
+            onClick={onClose}
+            aria-label="Đóng"
+            className="text-gray-400 hover:text-white disabled:opacity-40"
+          >
+            <X size={20} />
+          </button>
+        </div>
+        <div className="p-5 space-y-5 overflow-y-auto text-sm">
+          {loading ? (
+            <p role="status" className="text-gray-400 text-xs flex items-center gap-2">
+              <RefreshCw size={14} className="animate-spin" />
+              Đang kiểm tra bot Telegram...
+            </p>
+          ) : bot?.configured ? (
+            <p className="text-xs text-gray-400">
+              Bot gửi cảnh báo: <span className="text-sky-300">@{bot.username}</span>
+            </p>
+          ) : (
+            <p className="text-xs text-amber-200">
+              {bot?.message || 'Chưa kiểm tra được kết nối bot.'}
+            </p>
+          )}
+          {!loading && !bot?.configured && (
+            <button
+              onClick={() => setRetry((value) => value + 1)}
+              className="text-xs text-blue-300 underline"
+            >
+              Kiểm tra lại bot
+            </button>
+          )}
+          <fieldset disabled={locked || !bot?.configured} className="space-y-3">
+            <legend className="font-medium mb-3">1. Bạn muốn nhận tin ở đâu?</legend>
+            <div className="grid grid-cols-2 gap-3">
+              {(
+                [
+                  ['PRIVATE', 'Gửi cho tôi', 'Nhận riêng trong Telegram', User],
+                  ['GROUP', 'Gửi vào nhóm', 'Cả nhóm cùng nhận cảnh báo', Users],
+                ] as const
+              ).map(([value, label, detail, Icon]) => (
+                <label
+                  key={value}
+                  className={`p-3 rounded-lg border cursor-pointer ${type === value ? 'border-sky-500 bg-sky-950/20' : 'border-gray-700'}`}
+                >
+                  <span className="flex items-center gap-2">
+                    <input
+                      type="radio"
+                      name="telegram-recipient"
+                      value={value}
+                      checked={type === value}
+                      disabled={
+                        locked || !bot?.configured || (value === 'GROUP' && !bot.canJoinGroups)
+                      }
+                      onChange={() => selectType(value)}
+                    />
+                    <Icon size={15} />
+                    <span className="text-sm font-medium">{label}</span>
+                  </span>
+                  <span className="block mt-2 text-xs text-gray-400">{detail}</span>
+                </label>
+              ))}
+            </div>
+          </fieldset>
+          <section className="space-y-3">
+            <h4 className="font-medium">2. Kết nối nơi nhận</h4>
+            <p className="text-xs text-gray-400 leading-relaxed">
+              {type === 'PRIVATE'
+                ? 'Mở bot trên Telegram và bấm Start (Bắt đầu). Sau đó quay lại đây; ứng dụng sẽ tự nhận tài khoản của bạn.'
+                : 'Mở liên kết bên dưới, chọn nhóm và thêm bot. Bạn cần có quyền thêm bot vào nhóm; bot cần được phép gửi tin nhắn.'}
+            </p>
+            <button
+              disabled={locked || !bot?.configured}
+              onClick={() => void createLink()}
+              className="px-3 py-2 rounded-lg border border-gray-600 text-xs disabled:opacity-40"
+            >
+              {session
+                ? 'Tạo liên kết mới'
+                : type === 'PRIVATE'
+                  ? 'Kết nối với bot'
+                  : 'Kết nối nhóm Telegram'}
+            </button>
+            {session?.status === 'WAITING' && (
+              <div className="space-y-3 rounded-lg border border-gray-700 p-3">
+                <a
+                  href={session.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center gap-2 rounded-lg bg-sky-600 px-3 py-2 text-xs font-medium"
+                >
+                  <ExternalLink size={14} />
+                  {type === 'PRIVATE' ? 'Mở bot trên Telegram' : 'Chọn nhóm trên Telegram'}
+                </a>
+                <p role="status" className="text-xs text-gray-400 flex items-center gap-2">
+                  <RefreshCw size={13} className="animate-spin" />
+                  Đang chờ bạn xác nhận trong Telegram. Liên kết có hiệu lực 10 phút.
+                </p>
+                <p className="text-xs text-gray-400">
+                  Nếu bot đã có trong cuộc trò chuyện, gửi lệnh này{' '}
+                  {type === 'GROUP' ? 'vào nhóm đã chọn' : 'cho bot'}:
+                </p>
+                <code className="block text-xs text-gray-300 break-all select-all">
+                  {session.command}
+                </code>
+                {waitingError && (
+                  <p role="alert" className="text-xs text-amber-200">
+                    {waitingError}
+                  </p>
+                )}
+              </div>
+            )}
+            {session?.status === 'EXPIRED' && (
+              <p role="status" className="text-xs text-amber-200">
+                Liên kết đã hết hạn. Tạo liên kết mới để tiếp tục.
+              </p>
+            )}
+            {recipient && (
+              <div className="rounded-lg border border-emerald-800 bg-emerald-950/20 p-3 flex items-center gap-3">
+                <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
+                <div>
+                  <p className="text-xs text-gray-400">
+                    Nơi nhận đã chọn · {recipient.recipientType === 'GROUP' ? 'Nhóm' : 'Cá nhân'}
+                  </p>
+                  <p className="font-medium mt-1">{recipient.name}</p>
+                </div>
+              </div>
+            )}
+          </section>
+          <section className="space-y-3">
+            <h4 className="font-medium">3. Kiểm tra gửi tin</h4>
+            <p className="text-xs text-gray-400">
+              Gửi một tin nhắn thử đến nơi nhận đang chọn. Bạn không cần chờ có xung đột dữ liệu.
+            </p>
+            <button
+              disabled={!canUseRecipient}
+              onClick={() => void sendTest()}
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-600 text-xs disabled:opacity-40"
+            >
+              <Send size={14} />
+              Gửi tin nhắn thử
+            </button>
+            {success && (
+              <p role="status" className="text-xs text-emerald-300">
+                {success}
+              </p>
+            )}
+          </section>
+          <details className="border-t border-gray-700 pt-3">
+            <summary className="cursor-pointer text-xs text-gray-400">
+              Thiết lập nâng cao · nhập Chat ID
+            </summary>
+            <div className="mt-3 space-y-3">
+              <p className="text-xs text-gray-500">
+                Dùng khi bạn đã biết mã cuộc trò chuyện. Bot vẫn cần được mở bằng Start hoặc được
+                thêm vào nhóm.
+              </p>
+              <label className="block text-xs space-y-2">
+                <span>Telegram Chat ID</span>
+                <input
+                  value={chatId}
+                  disabled={locked || !bot?.configured}
+                  placeholder={
+                    type === 'GROUP'
+                      ? 'Mã nhóm, thường bắt đầu bằng dấu -'
+                      : 'Mã cuộc trò chuyện cá nhân'
+                  }
+                  onChange={(event) => {
+                    setChatId(event.target.value);
+                    setRecipient(null);
+                    setSession(null);
+                    setSuccess('');
+                    setError('');
+                  }}
+                  className="w-full rounded-lg border border-gray-700 bg-[#0b0e14] px-3 py-2 font-mono text-sm"
+                />
+              </label>
+              <button
+                disabled={locked || !bot?.configured || !chatId.trim()}
+                onClick={() => void checkManual()}
+                className="text-xs text-sky-300 disabled:opacity-40"
+              >
+                Kiểm tra nơi nhận
+              </button>
+            </div>
+          </details>
+          {error && (
+            <p role="alert" className="text-xs text-red-300">
+              {error}
+            </p>
+          )}
+          {(busy || saving) && (
+            <p role="status" className="text-xs text-gray-400 flex items-center gap-2">
+              <RefreshCw size={13} className="animate-spin" />
+              {saving ? 'Đang lưu nơi nhận...' : 'Đang chờ phản hồi Telegram...'}
+            </p>
+          )}
+          {!notificationConnected && (
+            <p className="text-xs text-amber-200">
+              Khối Telegram chưa được nối với nhánh xung đột. Sau khi lưu, nối nhánh này để nhận
+              cảnh báo tự động.
+            </p>
+          )}
+        </div>
+        <div className="p-4 border-t border-gray-700 flex flex-wrap items-center justify-between gap-4">
+          <p className="text-xs text-gray-500 max-w-sm">
+            Gửi thử không thay đổi cấu hình. Chỉ áp dụng nơi nhận mới sau khi lưu.
+          </p>
+          <div className="flex gap-3">
+            <button
+              disabled={busy || saving}
+              onClick={onClose}
+              className="text-xs text-gray-400 px-3 py-2"
+            >
+              Hủy
+            </button>
+            <button
+              disabled={!canUseRecipient}
+              onClick={() => void save()}
+              className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium disabled:opacity-40"
+            >
+              <Save size={14} />
+              Lưu cấu hình Telegram
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

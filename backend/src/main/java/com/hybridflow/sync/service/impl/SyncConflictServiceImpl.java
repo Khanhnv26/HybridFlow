@@ -1,8 +1,12 @@
 package com.hybridflow.sync.service.impl;
 
 import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
+import com.hybridflow.connector.google.dto.response.SheetDataResponse;
 import com.hybridflow.connector.google.service.GoogleSheetsService;
 import com.hybridflow.sync.dto.request.RunSyncRequest;
+import com.hybridflow.sync.dto.response.FieldConflict;
+import com.hybridflow.sync.dto.response.TelegramAlertResponse;
+import com.hybridflow.notification.service.TelegramNotificationService;
 import com.hybridflow.sync.entity.SyncConflict;
 import com.hybridflow.sync.model.SyncDiffResult;
 import com.hybridflow.sync.repository.SyncConflictRepository;
@@ -10,6 +14,7 @@ import com.hybridflow.sync.service.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+
 import java.time.LocalDateTime;
 import java.util.*;
 
@@ -19,16 +24,17 @@ public class SyncConflictServiceImpl implements SyncConflictService {
     private final SyncConflictRepository repository;
     private final SyncStore store;
     private final GoogleSheetsService sheets;
+    private final TelegramNotificationService notifications;
 
     @Override
     @Transactional
     public List<SyncConflict> saveConflicts(SyncDiffResult diff, RunSyncRequest context, String sheetName) {
-        var existing = repository.findByFlowIdAndStatus(context.getFlowId(), "OPEN").stream()
+        List<SyncConflict> existing = repository.findByFlowIdAndStatus(context.getFlowId(), "OPEN").stream()
                 .filter(c -> c.getRecordId().equals(diff.getRecordId())).toList();
         List<SyncConflict> result = new ArrayList<>();
         Set<Long> retained = new HashSet<>();
-        for (var field : diff.getConflicts()) {
-            var match = existing.stream().filter(c -> c.getColumnName().equals(field.getColumn())
+        for (FieldConflict field : diff.getConflicts()) {
+            Optional<SyncConflict> match = existing.stream().filter(c -> c.getColumnName().equals(field.getColumn())
                     && Objects.equals(c.getValueA(), field.getValueA()) && Objects.equals(c.getValueB(), field.getValueB())
                     && Objects.equals(c.getBaseValue(), field.getBaseValue())).findFirst();
             if (match.isPresent()) {
@@ -41,7 +47,7 @@ public class SyncConflictServiceImpl implements SyncConflictService {
                         .valueA(field.getValueA()).valueB(field.getValueB()).status("OPEN").createdAt(LocalDateTime.now()).build()));
             }
         }
-        for (var old : existing) {
+        for (SyncConflict old : existing) {
             if (!retained.contains(old.getId())) {
                 old.setStatus("SUPERSEDED");
                 old.setResolvedAt(LocalDateTime.now());
@@ -53,30 +59,30 @@ public class SyncConflictServiceImpl implements SyncConflictService {
 
     @Override
     @Transactional
-    public void resolveConflict(Long conflictId, String value, String accessToken) {
+    public SyncConflict resolveConflict(Long conflictId, String value, String accessToken) {
         if (accessToken == null || accessToken.isBlank() || accessToken.equals("ya29.mock"))
             throw new IllegalArgumentException("Cần kết nối Google để ghi giá trị đã chọn.");
-        var flowId = repository.findFlowIdById(conflictId).orElseThrow(() ->
+        String flowId = repository.findFlowIdById(conflictId).orElseThrow(() ->
                 new IllegalArgumentException("Xung đột không tồn tại hoặc thiếu nguồn dữ liệu. Chạy lại đồng bộ."));
         store.lock(flowId);
         // Reload after waiting for the flow lock so concurrent decisions cannot overwrite each other.
-        var conflict = repository.findLockedById(conflictId).orElseThrow(() -> new IllegalArgumentException("Không tìm thấy xung đột."));
+        SyncConflict conflict = repository.findLockedById(conflictId).orElseThrow(() -> new IllegalArgumentException("Không tìm thấy xung đột."));
         if (conflict.getSpreadsheetId() == null || conflict.getSheetName() == null)
             throw new IllegalArgumentException("Xung đột cũ thiếu nguồn dữ liệu. Chạy lại đồng bộ trước khi phê duyệt.");
         if (!"OPEN".equals(conflict.getStatus())) throw new IllegalArgumentException("Xung đột đã được xử lý. Tải lại danh sách.");
         if (!Objects.equals(value, conflict.getValueA()) && !Objects.equals(value, conflict.getValueB()))
             throw new IllegalArgumentException("Chỉ được chọn một trong hai giá trị đang xung đột.");
-        var sheet = sheets.readSheet(ReadSheetRequest.builder().accessToken(accessToken)
+        SheetDataResponse sheet = sheets.readSheet(ReadSheetRequest.builder().accessToken(accessToken)
                 .spreadsheetId(conflict.getSpreadsheetId()).sheetname(conflict.getSheetName()).build());
-        var index = SheetRows.index(sheet, conflict.getIdColumn());
+        Map<String, Integer> index = SheetRows.index(sheet, conflict.getIdColumn());
         Integer rowIndex = index.get(conflict.getRecordId());
-        var vault = store.read("vault_records", conflict.getFlowId(), conflict.getRecordId());
-        var base = store.read("sync_snapshots", conflict.getFlowId(), conflict.getRecordId());
+        Map<String, String> vault = store.read("vault_records", conflict.getFlowId(), conflict.getRecordId());
+        Map<String, String> base = store.read("sync_snapshots", conflict.getFlowId(), conflict.getRecordId());
         if (rowIndex == null || vault == null || base == null
                 || !Objects.equals(sheet.getRows().get(rowIndex).get(conflict.getColumnName()), conflict.getValueA())
                 || !Objects.equals(vault.get(conflict.getColumnName()), conflict.getValueB()))
             throw new IllegalArgumentException("Dữ liệu đã đổi từ lúc phát hiện xung đột. Chạy lại đồng bộ trước khi chọn.");
-        var cells = new LinkedHashMap<String, String>();
+        Map<String, String> cells = new LinkedHashMap<String, String>();
         cells.put(SheetRows.range(sheet, rowIndex, conflict.getColumnName()), value);
         sheets.updateCells(accessToken, conflict.getSpreadsheetId(), cells);
         vault = new LinkedHashMap<>(vault);
@@ -88,7 +94,24 @@ public class SyncConflictServiceImpl implements SyncConflictService {
         conflict.setResolvedValue(value);
         conflict.setStatus("RESOLVED");
         conflict.setResolvedAt(LocalDateTime.now());
-        repository.save(conflict);
+        return repository.save(conflict);
+    }
+
+    @Override
+    public TelegramAlertResponse resendTelegramAlert(Long conflictId, String chatId) {
+        SyncConflict conflict = getConflictById(conflictId);
+        if (!"OPEN".equals(conflict.getStatus())) {
+            throw new IllegalArgumentException("Xung đột đã được xử lý.");
+        }
+        if (chatId == null || chatId.isBlank()) {
+            throw new IllegalArgumentException("Cần Telegram Chat ID.");
+        }
+        boolean sent = notifications.sendConflictAlert(conflict, chatId);
+        return TelegramAlertResponse.builder()
+                .id(conflictId)
+                .success(sent)
+                .message(sent ? "Đã gửi cảnh báo Telegram thành công!" : "Gửi Telegram thất bại!")
+                .build();
     }
 
     @Override

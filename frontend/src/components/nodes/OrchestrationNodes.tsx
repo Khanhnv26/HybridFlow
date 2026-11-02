@@ -210,8 +210,8 @@ export const TelegramActionNode: React.FC<any> = ({ data, selected }) => {
             <Send size={16} />
           </div>
           <div>
-            <span className="text-xs font-bold text-white block">Báo Động Telegram</span>
-            <span className="text-[10px] text-gray-400">Gửi tin nhắn khi có lệch</span>
+            <span className="text-xs font-bold text-white block">Cảnh Báo Telegram</span>
+            <span className="text-[10px] text-gray-400">Báo khi dữ liệu cần xử lý</span>
           </div>
         </div>
       </div>
@@ -219,11 +219,11 @@ export const TelegramActionNode: React.FC<any> = ({ data, selected }) => {
       <div className="p-3 text-xs space-y-2">
         <div className="flex items-center justify-between gap-3 text-[11px]">
           <span className="text-gray-400">Bot:</span>
-          <span className="text-sky-300 font-medium">{nodeData.botName || 'Theo cấu hình máy chủ'}</span>
+          <span className="text-sky-300 font-medium">{nodeData.botName || 'Thiết lập trong khối'}</span>
         </div>
         <div className="flex justify-between text-gray-400 text-[11px]">
-          <span>Chat ID:</span>
-          <span className="text-sky-300 font-mono">{nodeData.chatId || 'Chưa cấu hình'}</span>
+          <span>Nơi nhận:</span>
+          <span className="text-sky-300 font-medium truncate max-w-[165px]">{nodeData.telegramRecipientName || (nodeData.chatId ? 'Đã có nơi nhận · mở để kiểm tra' : 'Chưa chọn nơi nhận')}</span>
         </div>
       </div>
     </div>

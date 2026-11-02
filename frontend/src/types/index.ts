@@ -6,6 +6,12 @@ export interface SheetDataResponse {
   totalRows: number;
 }
 
+export interface SpreadsheetMetadataResponse {
+  spreadsheetId: string;
+  title: string;
+  sheets: { sheetId: number; title: string }[];
+}
+
 export interface UpdateCellRequest {
   accessToken: string;
   spreadsheetId: string;
@@ -90,12 +96,36 @@ export interface OrchestrationNodeData extends Record<string, unknown> {
   uniqueKey?: string;
   conflictPolicy?: string;
   spreadsheetId?: string;
+  spreadsheetUrl?: string;
   sheetName?: string;
   chatId?: string;
   tableName?: string;
   scheduleTime?: string;
   userAccount?: string;
   botName?: string;
+  telegramRecipientType?: 'PRIVATE' | 'GROUP';
+  telegramRecipientName?: string;
+}
+
+export interface TelegramBotInfo {
+  configured: boolean;
+  username: string | null;
+  displayName: string | null;
+  canJoinGroups: boolean;
+  message: string;
+}
+export interface TelegramRecipient {
+  chatId: string;
+  name: string;
+  recipientType: 'PRIVATE' | 'GROUP';
+}
+export interface TelegramLink {
+  id: string;
+  status: 'WAITING' | 'CONNECTED' | 'EXPIRED';
+  url: string;
+  command: string;
+  expiresAt: string;
+  recipient: TelegramRecipient | null;
 }
 
 export interface SyncConflictDto {

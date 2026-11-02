@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head><meta charset="UTF-8"><title>Kết nối Google thành công</title></head>
+<body style="background:#0f131a;color:#10b981;font-family:sans-serif;display:flex;align-items:center;justify-content:center;height:100vh;">
+    <h3>Đã kết nối Google Sheets thành công! Cửa sổ sẽ tự đóng...</h3>
+    <script>
+        if (window.opener) {
+            window.opener.postMessage({
+                type: 'GOOGLE_OAUTH_SUCCESS',
+                accessToken: {{ACCESS_TOKEN}}
+            }, {{FRONTEND_ORIGIN}});
+        }
+        setTimeout(() => window.close(), 1000);
+    </script>
+</body>
+</html>

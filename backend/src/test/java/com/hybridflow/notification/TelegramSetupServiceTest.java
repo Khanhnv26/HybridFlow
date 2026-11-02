@@ -1,0 +1,96 @@
+package com.hybridflow.notification;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hybridflow.notification.dto.response.TelegramLinkResponse;
+import com.hybridflow.notification.dto.response.TelegramTestResponse;
+import com.hybridflow.notification.service.TelegramApiClient;
+import com.hybridflow.notification.service.impl.TelegramSetupServiceImpl;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InjectMocks;
+import org.mockito.Mock;
+import org.mockito.junit.jupiter.MockitoExtension;
+
+import java.time.Instant;
+import java.util.Map;
+
+import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.*;
+
+@ExtendWith(MockitoExtension.class)
+class TelegramSetupServiceTest {
+    @Mock TelegramApiClient client;
+    @InjectMocks TelegramSetupServiceImpl service;
+    private final ObjectMapper mapper = new ObjectMapper();
+    private JsonNode json(String body) throws Exception { return mapper.readTree(body); }
+    private void ready() throws Exception {
+        when(client.isConfigured()).thenReturn(true);
+        when(client.call(eq("getMe"), anyMap())).thenReturn(json("{\"username\":\"TestBot\",\"first_name\":\"Test\",\"can_join_groups\":true}"));
+        when(client.call(eq("getWebhookInfo"), anyMap())).thenReturn(json("{\"url\":\"\"}"));
+    }
+    private JsonNode update(TelegramLinkResponse link, String chatType, String command) throws Exception {
+        return json("[{\"message\":{\"date\":" + Instant.now().getEpochSecond()
+                + ",\"text\":\"" + command + "\",\"chat\":{\"id\":-10012,\"type\":\"" + chatType + "\",\"title\":\"Team\"}}}]");
+    }
+
+    @Test void missingBotConfigurationIsNotReportedAsReady() {
+        assertFalse(service.botInfo().isConfigured()); verify(client, never()).call(anyString(), anyMap());
+    }
+    @Test void createsPrivateAndGroupLinksWithoutSendingAnyMessage() throws Exception {
+        ready();
+        TelegramLinkResponse personal = service.startLink("PRIVATE");
+        TelegramLinkResponse group = service.startLink("GROUP");
+        assertTrue(personal.getUrl().startsWith("https://t.me/TestBot?start=hf_"));
+        assertTrue(group.getUrl().startsWith("https://t.me/TestBot?startgroup=hf_"));
+        assertNotEquals(personal.getId(), group.getId());
+        assertEquals("WAITING", group.getStatus());
+        verify(client, never()).call(eq("sendMessage"), anyMap());
+    }
+    @Test void onlyTheMatchingOneTimeCommandCanSelectARecipient() throws Exception {
+        ready(); TelegramLinkResponse link = service.startLink("GROUP");
+        when(client.call(eq("getUpdates"), anyMap())).thenReturn(update(link, "supergroup", link.getCommand()));
+        TelegramLinkResponse result = service.poll(link.getId());
+        assertEquals("CONNECTED", result.getStatus()); assertEquals("-10012", result.getRecipient().getChatId());
+        assertEquals("Team", result.getRecipient().getName());
+        verify(client).call("getUpdates", Map.of("timeout", 0, "limit", 100));
+        service.poll(link.getId()); verify(client, times(1)).call(eq("getUpdates"), anyMap());
+    }
+    @Test void unrelatedChatOrWrongCommandCannotConnect() throws Exception {
+        ready(); TelegramLinkResponse link = service.startLink("PRIVATE");
+        when(client.call(eq("getUpdates"), anyMap())).thenReturn(update(link, "supergroup", link.getCommand()));
+        assertNull(service.poll(link.getId()).getRecipient());
+        assertEquals("WAITING", service.poll(link.getId()).getStatus());
+    }
+    @Test void wrongPairingCodeDoesNotExposeAnotherChat() throws Exception {
+        ready(); TelegramLinkResponse link = service.startLink("GROUP");
+        when(client.call(eq("getUpdates"), anyMap())).thenReturn(update(link, "supergroup", "/start unrelated-code"));
+        assertNull(service.poll(link.getId()).getRecipient());
+    }
+    @Test void existingWebhookIsNeverChangedOrDeleted() throws Exception {
+        when(client.isConfigured()).thenReturn(true);
+        when(client.call(eq("getMe"), anyMap())).thenReturn(json("{\"username\":\"TestBot\"}"));
+        when(client.call(eq("getWebhookInfo"), anyMap())).thenReturn(json("{\"url\":\"https://another.example/hook\"}"));
+        assertThrows(IllegalArgumentException.class, () -> service.startLink("PRIVATE"));
+        verify(client, never()).call(eq("deleteWebhook"), anyMap());
+        verify(client, never()).call(eq("setWebhook"), anyMap());
+    }
+    @Test void testMessageDoesNotRequireAConflict() throws Exception {
+        when(client.call("getChat", Map.of("chat_id", "123"))).thenReturn(json("{\"id\":123,\"type\":\"private\",\"first_name\":\"User\"}"));
+        when(client.call(eq("sendMessage"), anyMap())).thenReturn(json("{\"message_id\":1}"));
+        TelegramTestResponse response = service.sendTest("123", "PRIVATE");
+        assertTrue(response.isSuccess()); assertEquals("User", response.getRecipient().getName());
+        verify(client).call(eq("sendMessage"), argThat(body -> "123".equals(body.get("chat_id"))));
+    }
+    @Test void wrongRecipientTypePreventsSending() throws Exception {
+        when(client.call(eq("getChat"), anyMap())).thenReturn(json("{\"id\":123,\"type\":\"private\"}"));
+        assertThrows(IllegalArgumentException.class, () -> service.sendTest("123", "GROUP"));
+        verify(client, never()).call(eq("sendMessage"), anyMap());
+    }
+    @Test void failedTestDeliveryIsNotReportedAsSuccess() throws Exception {
+        when(client.call(eq("getChat"), anyMap())).thenReturn(json("{\"id\":123,\"type\":\"private\"}"));
+        when(client.call(eq("sendMessage"), anyMap())).thenThrow(new IllegalArgumentException("Bot bị chặn."));
+        assertThrows(IllegalArgumentException.class, () -> service.sendTest("123", "PRIVATE"));
+    }
+}

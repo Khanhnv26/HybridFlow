@@ -4,9 +4,9 @@ import com.hybridflow.notification.service.TelegramNotificationService;
 import com.hybridflow.sync.entity.SyncConflict;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.RestClient;
-import org.springframework.http.client.SimpleClientHttpRequestFactory;
 
 import java.util.Map;
 
@@ -23,7 +23,7 @@ public class TelegramNotificationServiceImpl implements TelegramNotificationServ
     private final RestClient restClient = createRestClient();
 
     private static RestClient createRestClient() {
-        var factory = new SimpleClientHttpRequestFactory();
+        SimpleClientHttpRequestFactory factory = new SimpleClientHttpRequestFactory();
         factory.setConnectTimeout(10000);
         factory.setReadTimeout(15000);
         return RestClient.builder().requestFactory(factory).build();
@@ -38,13 +38,13 @@ public class TelegramNotificationServiceImpl implements TelegramNotificationServ
     public boolean sendConflictAlert(SyncConflict conflict, String targetChatId) {
 
         String message = """
-                *[HYBRIDFLOW CẢNH BÁO XUNG ĐỘT]*
-                • *Mã bản ghi:* `%s`
-                • *Cột bị lệch:* `%s`
-                • *Giá trị cũ (Base):* `%s`
-                • *Sheet A sửa thành:* `%s`
-                • *Sheet B sửa thành:* `%s`
-                 _Vui lòng vào web xử lý xung đột!_
+                HybridFlow: Có dữ liệu cần bạn xử lý
+                Bản ghi: %s
+                Trường dữ liệu: %s
+                Giá trị ban đầu: %s
+                Google Sheet: %s
+                Kho lưu trữ: %s
+                Mở HybridFlow để xem và chọn giá trị muốn giữ.
                 """.formatted(
                 conflict.getRecordId(),
                 conflict.getColumnName(),
@@ -66,7 +66,7 @@ public class TelegramNotificationServiceImpl implements TelegramNotificationServ
         String url = "https://api.telegram.org/bot" + botToken + "/sendMessage";
 
         try {
-            var response = restClient.post()
+            Map<?, ?> response = restClient.post()
                     .uri(url)
                     .body(Map.of(
                             "chat_id", targetChatId,

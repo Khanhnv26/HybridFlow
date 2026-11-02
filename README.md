@@ -22,9 +22,9 @@ Chạy frontend từ `frontend`: `npm install`, sau đó `npm run dev`. Vite ch�
 ## Sử dụng dữ liệu thật
 
 1. Kết nối Google bằng nút góc phải.
-2. Điền mã file, tên tab chính xác và tên cột khóa duy nhất. Header phải không trống/không trùng; các dòng có dữ liệu phải có khóa, không trùng khóa.
+2. Mở khối Google Trang Tính, dán link chia sẻ (vẫn nhận mã file cũ). Kết nối Google ngay trong modal nếu cần; dropdown tự tải danh sách trang tính thật từ file. Link có `gid` sẽ chọn sẵn tab tương ứng. Có thể xem trước dữ liệu rồi bấm **Lưu nguồn dữ liệu**; đóng hoặc Hủy không đổi nguồn đang dùng, lưu thất bại giữ nguyên cấu hình cũ. Sau đó điền tên cột khóa duy nhất tại khối so khớp. Header phải không trống/không trùng; các dòng có dữ liệu phải có khóa, không trùng khóa.
 3. Nối Google Sheet → So khớp (`out` → `in`) → Kho lưu trữ (`clean` → `in`). Tên vùng lưu trữ là một phân vùng dữ liệu trong Vault, không phải tên bảng SQL tùy ý.
-4. Nếu cần Telegram, điền Chat ID và nối cổng `conflict` của khối so khớp vào khối Telegram. Bỏ dây nối thì không gửi cảnh báo.
+4. Nếu cần Telegram, mở khối Telegram và chọn **Gửi cho tôi** hoặc **Gửi vào nhóm**. Tạo liên kết, mở bot và bấm Start / chọn nhóm để ứng dụng nhận nơi gửi. Có thể **Gửi tin nhắn thử** ngay khi chưa có xung đột. Bấm **Lưu cấu hình Telegram** mới đổi nơi nhận đang dùng; Hủy không thay đổi cấu hình. Nối cổng `conflict` của khối so khớp vào khối Telegram để bật cảnh báo tự động. Chat ID vẫn nhập được trong phần Thiết lập nâng cao.
 5. Chạy luồng. Với nguồn mới, hệ thống yêu cầu bấm **Xác nhận khởi tạo** trước khi sao chép Sheet vào Vault/snapshot.
 6. Chọn chính sách chờ duyệt, ưu tiên Sheet hoặc ưu tiên Vault. Chờ duyệt sẽ giữ nguyên checkpoint của riêng các trường đang xung đột; các trường sạch vẫn đồng bộ.
 7. Phê duyệt conflict chỉ thành công sau khi ghi Google Sheet, Vault và snapshot. Nếu dữ liệu đã đổi kể từ lúc phát hiện, chạy lại đối soát trước khi chọn.
@@ -45,10 +45,19 @@ Các lần ghi nhiều ô dùng [Google Sheets values.batchUpdate](https://devel
 - `GET /api/v1/workflows/{flowId}/history`, `GET /api/v1/workflows/{flowId}/vault`.
 - `GET/PUT /api/v1/workflows/{workflowId}/definition`: đọc/lưu `{nodes, edges}`.
 - `GET /api/v1/connections/google/config`: origin callback OAuth để frontend xác minh thông điệp popup khi đi qua proxy.
+- `POST /api/v1/connections/google/sheets/metadata`: `accessToken`, `spreadsheetId`; trả tên file cùng danh sách `{sheetId,title}` cho dropdown, không đọc dữ liệu các ô. Nguồn vẫn được đối soát theo tên tab hiện tại; đổi tên tab cần chọn/lưu lại và tạo ngữ cảnh mới.
+- `GET /api/v1/connections/telegram/bot`: trạng thái/tên bot từ Telegram, không trả token.
+- `POST /api/v1/connections/telegram/link`: `{recipientType: "PRIVATE"|"GROUP"}`; tạo liên kết xác nhận có hiệu lực 10 phút. `GET /api/v1/connections/telegram/link/{id}` kiểm tra kết quả, chỉ trả nơi nhận của đúng mã kết nối.
+- `POST /api/v1/connections/telegram/recipient`: `{chatId,recipientType}` để kiểm tra nơi nhận nâng cao.
+- `POST /api/v1/connections/telegram/test`: `{chatId,recipientType}` để gửi tin thử cố định, không cần conflict. Chỉ báo thành công khi Telegram xác nhận.
+
+Kết nối Telegram tự động dùng deep link Start và đọc `getUpdates` khi modal đang chờ. Không xóa/đổi webhook, không gửi `offset` để xác nhận/xóa các tin khác, không đổi bộ lọc cập nhật của bot. Bot đang dùng webhook hoặc có bộ đọc updates khác nên dùng Chat ID nâng cao; hàng đợi dài hơn 100 tin cũng có thể khiến xác nhận mới chưa xuất hiện. Liên kết nằm trong bộ nhớ backend, hết hạn sau 10 phút hoặc khi backend khởi động lại. Hệ thống không gửi tin khi mở modal hoặc chỉ tạo liên kết; tin thử chỉ gửi khi người dùng bấm nút tương ứng.
 
 Các conflict cũ thiếu thông tin nguồn không được phê duyệt mù; cần chạy lại với luồng mới. Chúng không bị xóa khỏi database.
 
 ## Kiểm thử
+
+Quy ước backend: controller chỉ nhận tham số HTTP, gọi interface service và trả response/redirect. Kiểm tra nghiệp vụ, điều phối tác vụ và transaction đặt ở service/implementation; truy vấn định nghĩa luồng đã tách sang repository. HTML callback OAuth nằm trong template và renderer riêng. Dùng kiểu tường minh và class DTO, không dùng `var` hoặc Java `record`. `ControllerArchitectureTest` kiểm tra ranh giới controller khi chạy test.
 
 - Frontend: `npm test`, `npm run build` trong `frontend`.
 - Backend: `mvn test` trong `backend`. Test Telegram dùng HTTP giả lập của Spring, không gửi tin thật.

@@ -1,18 +1,20 @@
 package com.hybridflow.connector.google.service.impl;
 
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
+import com.google.api.client.googleapis.json.GoogleJsonResponseException;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.services.sheets.v4.Sheets;
+import com.google.api.services.sheets.v4.model.BatchUpdateValuesRequest;
 import com.google.api.services.sheets.v4.model.Sheet;
 import com.google.api.services.sheets.v4.model.Spreadsheet;
 import com.google.api.services.sheets.v4.model.ValueRange;
-import com.google.api.services.sheets.v4.model.BatchUpdateValuesRequest;
 import com.google.auth.http.HttpCredentialsAdapter;
 import com.google.auth.oauth2.AccessToken;
 import com.google.auth.oauth2.GoogleCredentials;
 import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
 import com.hybridflow.connector.google.dto.request.UpdateCellRequest;
 import com.hybridflow.connector.google.dto.response.SheetDataResponse;
+import com.hybridflow.connector.google.dto.response.SpreadsheetMetadataResponse;
 import com.hybridflow.connector.google.dto.response.UpdateCellResponse;
 import com.hybridflow.connector.google.service.GoogleSheetsService;
 import org.springframework.stereotype.Service;
@@ -27,7 +29,7 @@ import java.util.Map;
 @Service
 public class GoogleSheetsServiceImpl implements GoogleSheetsService {
 
-    private Sheets createSheetsClient(String accessToken) {
+    protected Sheets createSheetsClient(String accessToken) {
         if (accessToken == null || accessToken.isBlank() || "ya29.mock".equals(accessToken))
             throw new IllegalArgumentException("Cần access token Google hợp lệ.");
         try {
@@ -44,6 +46,35 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
                     .build();
         } catch (GeneralSecurityException | IOException e) {
             throw new RuntimeException("Lỗi khởi tạo Google Sheets Client: " + e.getMessage(), e);
+        }
+    }
+
+    @Override
+    public SpreadsheetMetadataResponse getMetadata(ReadSheetRequest request) {
+        requireText(request.getSpreadsheetId(), "Spreadsheet ID");
+        try {
+            Spreadsheet metadata = createSheetsClient(request.getAccessToken()).spreadsheets()
+                    .get(request.getSpreadsheetId())
+                    .setFields("spreadsheetId,properties(title),sheets(properties(sheetId,title,sheetType))")
+                    .execute();
+            List<SpreadsheetMetadataResponse.SheetTab> tabs = (metadata.getSheets() == null ? List.<Sheet>of() : metadata.getSheets()).stream()
+                    .map(Sheet::getProperties)
+                    .filter(p -> p != null && p.getSheetId() != null && p.getTitle() != null
+                            && (p.getSheetType() == null || "GRID".equals(p.getSheetType())))
+                    .map(p -> new SpreadsheetMetadataResponse.SheetTab(p.getSheetId(), p.getTitle()))
+                    .toList();
+            if (tabs.isEmpty()) throw new IllegalArgumentException("File không có trang tính dạng bảng có thể đồng bộ.");
+            return new SpreadsheetMetadataResponse(request.getSpreadsheetId(),
+                    metadata.getProperties() == null ? "" : metadata.getProperties().getTitle(), tabs);
+        } catch (GoogleJsonResponseException e) {
+            throw new IllegalArgumentException(switch (e.getStatusCode()) {
+                case 401 -> "Phiên Google hết hạn. Kết nối lại Google để tải danh sách trang tính.";
+                case 403 -> "Tài khoản Google chưa có quyền đọc file này. Kiểm tra quyền chia sẻ hoặc kết nối tài khoản khác.";
+                case 404 -> "Không tìm thấy file Google Sheets hoặc tài khoản chưa có quyền truy cập.";
+                default -> "Google chưa tải được danh sách trang tính. Vui lòng thử lại.";
+            }, e);
+        } catch (IOException e) {
+            throw new IllegalStateException("Không thể tải danh sách trang tính từ Google. Vui lòng thử lại.", e);
         }
     }
 
@@ -164,7 +195,7 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
     @Override
     public void updateCells(String accessToken, String spreadsheetId, Map<String, String> cells) {
         if (cells.isEmpty()) return;
-        var ranges = cells.entrySet().stream().map(cell -> new ValueRange()
+        List<ValueRange> ranges = cells.entrySet().stream().map(cell -> new ValueRange()
                 .setRange(cell.getKey()).setValues(List.of(List.of(cell.getValue() == null ? "" : cell.getValue())))).toList();
         try {
             createSheetsClient(accessToken).spreadsheets().values().batchUpdate(spreadsheetId,

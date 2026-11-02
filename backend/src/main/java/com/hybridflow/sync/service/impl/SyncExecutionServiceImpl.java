@@ -1,18 +1,22 @@
 package com.hybridflow.sync.service.impl;
 
 import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
+import com.hybridflow.connector.google.dto.response.SheetDataResponse;
 import com.hybridflow.connector.google.service.GoogleSheetsService;
 import com.hybridflow.notification.service.TelegramNotificationService;
 import com.hybridflow.sync.dto.request.RunSyncRequest;
+import com.hybridflow.sync.dto.response.FieldConflict;
 import com.hybridflow.sync.dto.response.RunSyncResponse;
 import com.hybridflow.sync.engine.ThreeWayDiffEngine;
 import com.hybridflow.sync.entity.SyncConflict;
+import com.hybridflow.sync.model.SyncDiffResult;
 import com.hybridflow.sync.service.*;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+
 import java.util.*;
 
 @Service
@@ -44,10 +48,10 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         store.lock(flow);
         String executionId = history.start(flow);
         try {
-            var sheet = googleSheetsService.readSheet(ReadSheetRequest.builder()
+            SheetDataResponse sheet = googleSheetsService.readSheet(ReadSheetRequest.builder()
                     .accessToken(request.getAccessToken()).spreadsheetId(request.getSpreadsheetId())
                     .sheetname(request.getSheetName()).build());
-            var index = SheetRows.index(sheet, idColumn);
+            Map<String, Integer> index = SheetRows.index(sheet, idColumn);
             Set<String> columns = new LinkedHashSet<>(request.getSyncColumns() == null || request.getSyncColumns().isEmpty()
                     ? sheet.getHeaders() : request.getSyncColumns());
             if (!sheet.getHeaders().containsAll(columns)) throw new IllegalArgumentException("Cột đồng bộ không tồn tại trong Sheet.");
@@ -56,7 +60,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             store.bind(flow, request.getSpreadsheetId(), sheet.getSheetName(), idColumn, sheet.getHeaders(), request.getStorageName());
             boolean initial = !store.hasSnapshots(flow);
             if (initial && !index.isEmpty() && !request.isBootstrapConfirmed()) {
-                var result = RunSyncResponse.builder().flowId(flow).executionId(executionId).status("AWAITING_CONFIRMATION")
+                RunSyncResponse result = RunSyncResponse.builder().flowId(flow).executionId(executionId).status("AWAITING_CONFIRMATION")
                         .bootstrapRequired(true).sheetName(sheet.getSheetName()).totalRowsProcessed(0)
                         .cleanRecordIds(List.of()).conflicts(List.of()).comparedColumns(columns)
                         .latency((System.currentTimeMillis() - start) + " ms").build();
@@ -64,7 +68,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
                 return result;
             }
             // Deletions need an explicit policy; never silently treat a missing row as a successful sync.
-            for (var old : store.vault(flow)) {
+            for (Map<String, String> old : store.vault(flow)) {
                 if (!index.containsKey(old.get(idColumn))) throw new IllegalArgumentException(
                         "Bản ghi " + old.get(idColumn) + " đã bị xóa khỏi Sheet. Khôi phục dòng hoặc tạo luồng mới để khởi tạo lại.");
             }
@@ -73,11 +77,11 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             Map<String, String> sheetWrites = new LinkedHashMap<>();
             List<String> clean = new ArrayList<>();
             List<SyncConflict> detected = new ArrayList<>();
-            for (var entry : index.entrySet()) {
+            for (Map.Entry<String, Integer> entry : index.entrySet()) {
                 String id = entry.getKey();
-                var rowA = sheet.getRows().get(entry.getValue());
-                var base = store.read("sync_snapshots", flow, id);
-                var rowB = store.read("vault_records", flow, id);
+                Map<String, String> rowA = sheet.getRows().get(entry.getValue());
+                Map<String, String> base = store.read("sync_snapshots", flow, id);
+                Map<String, String> rowB = store.read("vault_records", flow, id);
                 if (base == null) {
                     if (rowB != null) throw new IllegalArgumentException("Vault có dữ liệu nhưng thiếu snapshot cho bản ghi " + id);
                     vaultWrites.put(id, new LinkedHashMap<>(rowA));
@@ -86,26 +90,26 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
                     continue;
                 }
                 if (rowB == null) throw new IllegalArgumentException("Thiếu bản ghi Vault: " + id);
-                var diff = threeWayDiffEngine.compareRow(id, base, rowA, rowB, columns);
-                var merged = new LinkedHashMap<>(rowB);
+                SyncDiffResult diff = threeWayDiffEngine.compareRow(id, base, rowA, rowB, columns);
+                Map<String, String> merged = new LinkedHashMap<>(rowB);
                 merged.putAll(diff.getUpdatesForB());
                 Map<String, String> updatesA = new LinkedHashMap<>(diff.getUpdatesForA());
                 Set<String> unresolved = new HashSet<>();
-                for (var conflict : diff.getConflicts()) {
+                for (FieldConflict conflict : diff.getConflicts()) {
                     switch (request.getConflictPolicy()) {
                         case "SOURCE_WINS" -> merged.put(conflict.getColumn(), conflict.getValueA());
                         case "DESTINATION_WINS" -> updatesA.put(conflict.getColumn(), conflict.getValueB());
                         default -> unresolved.add(conflict.getColumn());
                     }
                 }
-                var openDiff = new com.hybridflow.sync.model.SyncDiffResult(id);
-                for (var conflict : diff.getConflicts()) {
+                SyncDiffResult openDiff = new SyncDiffResult(id);
+                for (FieldConflict conflict : diff.getConflicts()) {
                     if (unresolved.contains(conflict.getColumn())) openDiff.addConflict(conflict.getColumn(),
                             conflict.getBaseValue(), conflict.getValueA(), conflict.getValueB());
                 }
                 detected.addAll(syncConflictService.saveConflicts(openDiff, request, sheet.getSheetName()));
                 updatesA.forEach((column, value) -> sheetWrites.put(SheetRows.range(sheet, entry.getValue(), column), value));
-                var checkpoint = new LinkedHashMap<>(base);
+                Map<String, String> checkpoint = new LinkedHashMap<>(base);
                 for (String column : columns) {
                     if (!unresolved.contains(column)) checkpoint.put(column, merged.get(column));
                 }
@@ -119,11 +123,11 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             snapshotWrites.forEach((id, row) -> store.write("sync_snapshots", flow, id, row));
             int sent = 0, failed = 0;
             if (request.isNotifyConflicts()) {
-                for (var conflict : detected) {
+                for (SyncConflict conflict : detected) {
                     if (telegramNotificationService.sendConflictAlert(conflict, request.getChatId())) sent++; else failed++;
                 }
             }
-            var result = RunSyncResponse.builder().flowId(flow).sheetName(sheet.getSheetName()).executionId(executionId)
+            RunSyncResponse result = RunSyncResponse.builder().flowId(flow).sheetName(sheet.getSheetName()).executionId(executionId)
                     .status(detected.isEmpty() ? "SUCCESS" : "CONFLICT").totalRowsProcessed(index.size())
                     .cleanRecordIds(clean).conflicts(detected).comparedColumns(columns)
                     .notificationsSent(sent).notificationsFailed(failed).latency((System.currentTimeMillis() - start) + " ms").build();
