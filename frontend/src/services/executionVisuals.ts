@@ -45,10 +45,10 @@ export function executionVisuals(nodes: Node[], edges: Edge[], run: ExecutionHis
     const sheetEdge = from?.type === 'sheetsTrigger' && ['diffEngine', 'dataTransform'].includes(to?.type || '')
       || from?.type === 'dataTransform' && to?.type === 'diffEngine'
       || from?.type === 'diffEngine' && to?.type === 'sheetsTrigger';
-    const upstreamSheet = from?.type === 'dataTransform'
-      ? edges.find(link => link.target === from.id && nodes.some(node => node.id === link.source && node.type === 'sheetsTrigger'))?.source
-      : undefined;
-    const writingSheet = current?.stage === 'WRITE' && (active(edge.source) || active(edge.target) || !!upstreamSheet && active(upstreamSheet));
+    const upstreamSheets = from?.type === 'dataTransform'
+      ? edges.filter(link => link.target === from.id && nodes.some(node => node.id === link.source && node.type === 'sheetsTrigger')).map(link => link.source)
+      : [];
+    const writingSheet = current?.stage === 'WRITE' && (active(edge.source) || active(edge.target) || upstreamSheets.some(active));
     const moving = running && !pending && current && (
       ['READ', 'TRANSFORM'].includes(current.stage) && sheetEdge && (active(edge.source) || active(edge.target)) ||
       current.stage === 'WRITE' && (sheetEdge && writingSheet || to?.type === 'storageAction' && active(edge.target)) ||

@@ -312,6 +312,18 @@ test('Sheet to Vault also supports transformation and rule changes reset identit
   assert.notEqual(await flowIdFor(config), await flowIdFor({ ...config, transforms: [] }));
 });
 
+test('multiple sheets can connect to a single transform node and inherit its rules', () => {
+  const g = withTransform();
+  g.edges = g.edges.filter(e => !(e.source === 'second' && e.target === 'diff'));
+  g.edges.push({ source: 'second', target: 'transform', sourceHandle: 'out', targetHandle: 'in' });
+  const config = workflowConfig(g.nodes, g.edges);
+  assert.equal(config.sheets?.length, 2);
+  assert.deepEqual(config.sheets[0].transforms, [{ columnName: 'sku', rules: ['TRIM', 'UPPERCASE'] }]);
+  assert.deepEqual(config.sheets[1].transforms, [{ columnName: 'sku', rules: ['TRIM', 'UPPERCASE'] }]);
+  assert.equal(config.sheets[0].writeBackCleanData, true);
+  assert.equal(config.sheets[1].writeBackCleanData, true);
+});
+
 test('ambiguous node identities are rejected before resolving transform paths', () => {
   const g = withTransform();
   g.nodes.push({ id: 'transform', type: 'dataTransform', data: {} });

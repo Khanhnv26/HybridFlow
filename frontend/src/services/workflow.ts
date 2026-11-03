@@ -15,21 +15,26 @@ const supported = new Set([
   'telegramAction',
 ]);
 
-// A transform belongs to exactly one Sheet and feeds exactly one comparison node.
+// A transform receives one or more Sheets and feeds exactly one comparison node.
 function transformPaths(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
   const settings = new Map<string, { transforms: ColumnTransformConfig[]; writeBackCleanData: boolean }>();
   let resolved = [...edges];
   for (const node of nodes.filter(n => n.type === 'dataTransform')) {
     const incoming = edges.filter(e => e.target === node.id);
     const outgoing = edges.filter(e => e.source === node.id);
-    const source = nodes.find(n => n.id === incoming[0]?.source);
     const target = nodes.find(n => n.id === outgoing[0]?.target);
-    if (incoming.length !== 1 || outgoing.length !== 1 || source?.type !== 'sheetsTrigger'
-      || target?.type !== 'diffEngine' || incoming[0].sourceHandle !== 'out' || incoming[0].targetHandle !== 'in'
-      || outgoing[0].sourceHandle !== 'out' || outgoing[0].targetHandle !== 'in'
-      || settings.has(source.id) || edges.some(e => (e.source === source.id && e.target === target.id)
-        || (e.source === target.id && e.target === source.id)))
-      throw new Error('Nối đúng một Sheet → Chuẩn Hóa Dữ Liệu → So khớp; không nối song song hoặc nối chuỗi.');
+    if (incoming.length === 0 || outgoing.length !== 1 || target?.type !== 'diffEngine'
+      || outgoing[0].sourceHandle !== 'out' || outgoing[0].targetHandle !== 'in')
+      throw new Error('Nối Sheet → Chuẩn Hóa Dữ Liệu → So khớp; không nối song song hoặc nối chuỗi.');
+
+    for (const inEdge of incoming) {
+      const source = nodes.find(n => n.id === inEdge.source);
+      if (source?.type !== 'sheetsTrigger' || inEdge.sourceHandle !== 'out' || inEdge.targetHandle !== 'in'
+        || settings.has(source.id) || edges.some(e => (e.source === source.id && e.target === target.id)
+          || (e.source === target.id && e.target === source.id)))
+        throw new Error('Nối Sheet → Chuẩn Hóa Dữ Liệu → So khớp; không nối song song hoặc nối chuỗi.');
+    }
+
     const transforms = node.data.transforms || [];
     const seen = new Set<string>();
     for (const config of transforms) {
@@ -38,9 +43,12 @@ function transformPaths(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
         throw new Error('Cột hoặc quy tắc chuẩn hóa không hợp lệ.');
       seen.add(config.columnName);
     }
-    settings.set(source.id, { transforms, writeBackCleanData: !!node.data.writeBackCleanData });
+
+    for (const inEdge of incoming) {
+      settings.set(inEdge.source, { transforms, writeBackCleanData: !!node.data.writeBackCleanData });
+      resolved.push({ source: inEdge.source, target: target.id, sourceHandle: 'out', targetHandle: 'in' });
+    }
     resolved = resolved.filter(e => e.source !== node.id && e.target !== node.id);
-    resolved.push({ source: source.id, target: target.id, sourceHandle: 'out', targetHandle: 'in' });
   }
   return { nodes: nodes.filter(n => n.type !== 'dataTransform'), edges: resolved, settings };
 }

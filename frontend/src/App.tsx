@@ -588,11 +588,12 @@ export default function App() {
   const edgeTypes = useMemo(() => ({ execution: ExecutionEdge }), []);
   const activeNode = nodes.find((n) => n.id === activeNodeId) || null;
   const transformInputs = activeNode?.type === 'dataTransform'
-    ? edges.filter(edge => edge.target === activeNode.id)
+    ? edges.filter(edge => edge.target === activeNode.id && edge.sourceHandle === 'out' && edge.targetHandle === 'in')
     : [];
-  const transformSource = transformInputs.length === 1 && transformInputs[0].sourceHandle === 'out' && transformInputs[0].targetHandle === 'in'
-    ? nodes.find(node => node.type === 'sheetsTrigger' && node.id === transformInputs[0].source)
-    : undefined;
+  const transformSources = transformInputs
+    .map(edge => nodes.find(node => node.type === 'sheetsTrigger' && node.id === edge.source))
+    .filter((node): node is Node<OrchestrationNodeData> => !!node);
+  const transformSource = transformSources[0];
   const connectGoogle = async () => {
     const opened = window.open('about:blank', 'hybridflow-google', 'width=600,height=700');
     if (!opened) throw new Error('Trình duyệt đã chặn cửa sổ đăng nhập Google.');
@@ -790,7 +791,13 @@ export default function App() {
       {activeNode?.type === 'dataTransform' && <DataTransformConfigModal
         key={JSON.stringify([activeNode.id, transformSource ? sourceDescriptor(transformSource) : null])}
         data={activeNode.data}
-        sourceName={transformSource ? `${transformSource.data.spreadsheetTitle || transformSource.data.label} · ${transformSource.data.sheetName || 'Chưa chọn tab'}` : undefined}
+        sourceName={
+          transformSources.length > 1
+            ? `${transformSources.length} nguồn chung: ${transformSources.map(s => s.data.spreadsheetTitle || s.data.label).join(', ')}`
+            : transformSource
+            ? `${transformSource.data.spreadsheetTitle || transformSource.data.label} · ${transformSource.data.sheetName || 'Chưa chọn tab'}`
+            : undefined
+        }
         connected={connected}
         connectionVersion={connectionVersion}
         onConnectGoogle={connectGoogle}
