@@ -131,3 +131,18 @@ test('changing recipient type discards a late pairing response', async () => {
   assert.equal(text(renderer.root).includes('Old destination'), false);
   assert.equal(button('Lưu cấu hình Telegram').props.disabled, true);
 });
+
+test('template variables use their own contracts and previews keep literal row values', async () => {
+  defaults(); const saves = [];
+  await mount(props({ availableColumns: ['id', 'status'], previewRow: { id: '1', status: 'READY' },
+    previewConflict: { recordId: '1', columnName: 'status', valueA: 'A', valueB: 'B' },
+    data: { ...data, recordTemplate: 'Order {id}: {status}', conflictTemplate: '{recordId}/{columnName}/{valueA}' },
+    onSave: async value => saves.push(value) }));
+  assert.match(text(renderer.root), /Order 1: READY/);
+  assert.match(text(renderer.root), /1\/status\/A/);
+  assert.equal(button('Lưu cấu hình Telegram').props.disabled, false);
+  await act(async () => renderer.root.findAllByType('textarea')[1].props.onChange({ target: { value: '{status}' } }));
+  assert.match(text(renderer.root), /Biến template không hợp lệ: status/);
+  assert.equal(button('Lưu cấu hình Telegram').props.disabled, true);
+  assert.equal(saves.length, 0);
+});

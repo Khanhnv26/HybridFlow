@@ -4,15 +4,17 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
-import com.hybridflow.connection.service.GoogleCredentialService;
 import com.hybridflow.connection.exception.GoogleReconnectRequiredException;
-import com.hybridflow.sync.service.SyncExecutionService;
+import com.hybridflow.connection.service.GoogleCredentialService;
 import com.hybridflow.sync.dto.request.RunSyncRequest;
 import com.hybridflow.sync.dto.response.RunSyncResponse;
 import com.hybridflow.sync.dto.response.SaveWorkflowResponse;
+import com.hybridflow.sync.model.NotificationOutboxItem;
 import com.hybridflow.sync.model.ParsedSchedule;
 import com.hybridflow.sync.repository.WorkflowDefinitionRepository;
 import com.hybridflow.sync.service.ExecutionHistoryService;
+import com.hybridflow.sync.service.NotificationOutboxService;
+import com.hybridflow.sync.service.SyncExecutionService;
 import com.hybridflow.sync.service.SyncStateService;
 import com.hybridflow.sync.service.WorkflowService;
 import com.hybridflow.sync.support.SyncJsonCodec;
@@ -21,6 +23,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Clock;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -34,9 +37,10 @@ public class WorkflowServiceImpl implements WorkflowService {
     private final ExecutionHistoryService history;
     private final SyncJsonCodec codec;
     private final WorkflowGraphParser parser;
-    private final java.time.Clock clock;
+    private final Clock clock;
     private final GoogleCredentialService credentials;
     private final SyncExecutionService execution;
+    private final NotificationOutboxService outboxService;
 
     @Override
     @Transactional(readOnly = true)
@@ -110,6 +114,30 @@ public class WorkflowServiceImpl implements WorkflowService {
     public Map<String, Object> getScheduleStatus(String workflowId) {
         validateId(workflowId);
         return repository.scheduleStatus(workflowId);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<NotificationOutboxItem> getNotifications(String flowId, int limit) {
+        validateId(flowId);
+        int max = limit <= 0 ? 50 : Math.min(limit, 200);
+        return outboxService.getNotifications(flowId, max);
+    }
+
+    @Override
+    @Transactional(readOnly = true)
+    public List<NotificationOutboxItem> getNotifications(String flowId, String executionId, int limit) {
+        validateId(flowId);
+        return outboxService.getNotifications(flowId, executionId, Math.max(1, Math.min(limit, 500)));
+    }
+
+    @Override
+    @Transactional
+    public void retryNotification(String id) {
+        if (id == null || id.isBlank()) {
+            throw new IllegalArgumentException("Mã thông báo không hợp lệ.");
+        }
+        outboxService.retry(id);
     }
 
     private JsonNode sanitize(JsonNode definition) {

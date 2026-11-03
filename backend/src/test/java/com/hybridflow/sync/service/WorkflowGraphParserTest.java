@@ -76,4 +76,65 @@ class WorkflowGraphParserTest {
         ((com.fasterxml.jackson.databind.node.ArrayNode) graph.path("edges")).add(graph.path("edges").get(2).deepCopy());
         assertThrows(IllegalArgumentException.class, () -> parser.buildSyncRequest("ignored", graph, "token"));
     }
+
+    @Test void routerAndMultipleTelegramActionsParseCorrectly() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        var graph = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree("""
+            {"nodes":[
+              {"id":"s1","type":"sheetsTrigger","data":{"spreadsheetId":"sheet-A","sheetName":"Orders"}},
+              {"id":"s2","type":"sheetsTrigger","data":{"spreadsheetId":"sheet-B","sheetName":"Orders"}},
+              {"id":"diff","type":"diffEngine","data":{"uniqueKey":"id","sharedColumns":"status,amount","conflictPolicy":"ASK_TELEGRAM"}},
+              {"id":"r1","type":"routerCondition","data":{"routerTriggerOn":"UPDATED","routerMatchMode":"ALL","routerConditions":[{"columnName":"status","operator":"CHANGED_TO","value":"Đang giao"}]}},
+              {"id":"t1","type":"telegramAction","data":{"chatId":"111111","recordTemplate":"Đơn {id} đang giao"}},
+              {"id":"t2","type":"telegramAction","data":{"chatId":"222222","recordTemplate":"Quản lý: đơn {id}"}},
+              {"id":"t3","type":"telegramAction","data":{"chatId":"333333"}}
+            ],"edges":[
+              {"source":"s1","target":"diff","sourceHandle":"out","targetHandle":"in"},
+              {"source":"s2","target":"diff","sourceHandle":"out","targetHandle":"in"},
+              {"source":"diff","target":"r1","sourceHandle":"clean","targetHandle":"in"},
+              {"source":"r1","target":"t1","sourceHandle":"out","targetHandle":"in"},
+              {"source":"r1","target":"t2","sourceHandle":"out","targetHandle":"in"},
+              {"source":"diff","target":"t3","sourceHandle":"conflict","targetHandle":"in"}
+            ]}
+            """);
+
+        var request = parser.buildSyncRequest("flow-test", graph, "token").orElseThrow();
+        assertNotNull(request.getRouters());
+        assertEquals(1, request.getRouters().size());
+        assertEquals("r1", request.getRouters().getFirst().getNodeId());
+        assertEquals(List.of("t1", "t2"), request.getRouters().getFirst().getActionNodeIds());
+
+        assertNotNull(request.getActions());
+        assertEquals(3, request.getActions().size());
+        assertEquals(List.of("t3"), request.getConflictActionIds());
+        assertTrue(request.isNotifyConflicts());
+
+        assertEquals(List.of("r1"), request.getExecutionNodes().get("router:r1"));
+        assertEquals(List.of("t1"), request.getExecutionNodes().get("action:t1"));
+        assertEquals(List.of("t2"), request.getExecutionNodes().get("action:t2"));
+        assertEquals(List.of("t3"), request.getExecutionNodes().get("action:t3"));
+        assertEquals(List.of("t3"), request.getExecutionNodes().get("telegram"));
+    }
+
+    @Test void routerValidationRejectsChainingAndOrphanNodes() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        // Chained router r1 -> r2
+        var chained = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree("""
+            {"nodes":[
+              {"id":"s1","type":"sheetsTrigger","data":{"spreadsheetId":"sheet-A","sheetName":"Orders"}},
+              {"id":"s2","type":"sheetsTrigger","data":{"spreadsheetId":"sheet-B","sheetName":"Orders"}},
+              {"id":"diff","type":"diffEngine","data":{"uniqueKey":"id","sharedColumns":"status","conflictPolicy":"ASK_TELEGRAM"}},
+              {"id":"r1","type":"routerCondition","data":{"routerConditions":[{"columnName":"status","operator":"EQUALS","value":"OK"}]}},
+              {"id":"r2","type":"routerCondition","data":{"routerConditions":[{"columnName":"status","operator":"EQUALS","value":"OK"}]}},
+              {"id":"t1","type":"telegramAction","data":{"chatId":"123"}}
+            ],"edges":[
+              {"source":"s1","target":"diff","sourceHandle":"out","targetHandle":"in"},
+              {"source":"s2","target":"diff","sourceHandle":"out","targetHandle":"in"},
+              {"source":"diff","target":"r1","sourceHandle":"clean","targetHandle":"in"},
+              {"source":"r1","target":"r2","sourceHandle":"out","targetHandle":"in"},
+              {"source":"r2","target":"t1","sourceHandle":"out","targetHandle":"in"}
+            ]}
+            """);
+        assertThrows(IllegalArgumentException.class, () -> parser.buildSyncRequest("flow-test", chained, "token"));
+    }
 }

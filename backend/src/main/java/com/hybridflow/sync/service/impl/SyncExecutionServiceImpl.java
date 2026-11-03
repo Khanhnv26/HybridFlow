@@ -3,30 +3,47 @@ package com.hybridflow.sync.service.impl;
 import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
 import com.hybridflow.connector.google.dto.response.SheetDataResponse;
 import com.hybridflow.connector.google.service.GoogleSheetsService;
-import com.hybridflow.notification.service.TelegramNotificationService;
+import com.hybridflow.sync.dto.request.ActionPlan;
+import com.hybridflow.sync.dto.request.ColumnTransformConfig;
+import com.hybridflow.sync.dto.request.RouterPlan;
 import com.hybridflow.sync.dto.request.RunSyncRequest;
 import com.hybridflow.sync.dto.request.SheetEndpointRequest;
 import com.hybridflow.sync.dto.response.FieldConflict;
 import com.hybridflow.sync.dto.response.RunSyncResponse;
 import com.hybridflow.sync.engine.ThreeWayDiffEngine;
 import com.hybridflow.sync.entity.SyncConflict;
-import com.hybridflow.sync.model.SyncDiffResult;
-import com.hybridflow.sync.model.SheetWritePlan;
+import com.hybridflow.sync.model.NotificationOutboxItem;
+import com.hybridflow.sync.model.RecordChangeEvent;
 import com.hybridflow.sync.model.SheetCellChange;
-import com.hybridflow.sync.service.SheetWriteService;
+import com.hybridflow.sync.model.SheetWritePlan;
+import com.hybridflow.sync.model.SyncDiffResult;
+import com.hybridflow.sync.service.DataTransformerService;
 import com.hybridflow.sync.service.ExecutionHistoryService;
+import com.hybridflow.sync.service.NotificationOutboxService;
+import com.hybridflow.sync.service.NotificationTemplateService;
+import com.hybridflow.sync.service.RuleEvaluationService;
+import com.hybridflow.sync.service.SheetWriteService;
 import com.hybridflow.sync.service.SyncConflictService;
 import com.hybridflow.sync.service.SyncExecutionService;
 import com.hybridflow.sync.service.SyncStateService;
-import com.hybridflow.sync.util.SheetRowUtils;
 import com.hybridflow.sync.util.SheetEndpointUtils;
+import com.hybridflow.sync.util.SheetRowUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.TreeSet;
 
 @Service
 @RequiredArgsConstructor
@@ -34,11 +51,13 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
     private final GoogleSheetsService googleSheetsService;
     private final ThreeWayDiffEngine threeWayDiffEngine;
     private final SyncConflictService syncConflictService;
-    private final TelegramNotificationService telegramNotificationService;
     private final SyncStateService store;
     private final ExecutionHistoryService history;
     private final SheetWriteService writes;
-    private final com.hybridflow.sync.service.DataTransformerService dataTransformerService;
+    private final DataTransformerService dataTransformerService;
+    private final RuleEvaluationService ruleEvaluationService;
+    private final NotificationTemplateService notificationTemplateService;
+    private final NotificationOutboxService notificationOutboxService;
 
     @Override
     @Transactional
@@ -49,7 +68,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         if (request.getFlowId().length() > 100) throw new IllegalArgumentException("Flow ID quá dài.");
         if (!Set.of("ASK_TELEGRAM", "SOURCE_WINS", "DESTINATION_WINS").contains(request.getConflictPolicy()))
             throw new IllegalArgumentException("Chính sách xung đột không hợp lệ.");
-        if (request.isNotifyConflicts()) require(request.getChatId(), "Telegram Chat ID");
+        normalizeLegacyNotifications(request);
 
         String flow = request.getFlowId();
         String idColumn = request.getIdColumn() == null ? "id" : request.getIdColumn().trim();
@@ -116,17 +135,23 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         columns.remove(idColumn);
         if (columns.isEmpty() || data.stream().anyMatch(sheet -> !sheet.getHeaders().containsAll(columns)))
             throw new IllegalArgumentException("Chọn ít nhất một cột dữ liệu có mặt trên tất cả trang tính.");
-        List<String> boundColumns = new ArrayList<>(List.of(idColumn));
-        boundColumns.addAll(columns);
+
+        Set<String> boundColumnsSet = new LinkedHashSet<>();
+        boundColumnsSet.add(idColumn);
+        boundColumnsSet.addAll(columns);
+        List<String> boundColumns = new ArrayList<>(boundColumnsSet);
         store.bindMultiSheets(flow, endpoints, idColumn, boundColumns);
-        if (!store.hasSnapshots(flow) && indexes.stream().anyMatch(index -> !index.isEmpty()) && !request.isBootstrapConfirmed()) {
+
+        validateNotifications(request, boundColumnsSet);
+
+        boolean initial = !store.hasSnapshots(flow);
+        if (initial && indexes.stream().anyMatch(index -> !index.isEmpty()) && !request.isBootstrapConfirmed()) {
             RunSyncResponse result = RunSyncResponse.builder().flowId(flow).executionId(executionId).status("AWAITING_CONFIRMATION")
                     .bootstrapRequired(true).sheetName(data.getFirst().getSheetName()).totalRowsProcessed(0).cleanRecordIds(List.of())
                     .conflicts(List.of()).comparedColumns(columns).latency((System.currentTimeMillis() - start) + " ms").build();
             completeAfterCommit(executionId, result);
             return result;
         }
-        Set<Long> previouslyOpen = new HashSet<>(syncConflictService.getOpenConflicts(flow).stream().map(SyncConflict::getId).toList());
         Set<String> allIds = new LinkedHashSet<>();
         indexes.forEach(index -> allIds.addAll(index.keySet()));
         if (!allIds.containsAll(store.getSnapshotRecordIds(flow)))
@@ -135,6 +160,8 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         Map<String, Map<String, String>> checkpoints = new LinkedHashMap<>();
         List<String> clean = new ArrayList<>();
         List<SyncConflict> detected = new ArrayList<>();
+        List<RecordChangeEvent> recordEvents = new ArrayList<>();
+
         for (String id : allIds) {
             Map<String, String> base = store.getSnapshot(flow, id);
             List<Integer> positions = new ArrayList<>();
@@ -153,6 +180,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             Map<String, String> checkpoint = base == null ? new LinkedHashMap<>() : new LinkedHashMap<>(base);
             checkpoint.put(idColumn, id);
             boolean unresolved = false;
+            Set<String> conflictedColumns = new LinkedHashSet<>();
             for (String column : columns) {
                 List<String> values = new ArrayList<>();
                 Map<String, List<String>> changed = new LinkedHashMap<>();
@@ -176,6 +204,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
                         if (missing) throw new IllegalArgumentException("Dòng mới '" + id + "' có nhiều giá trị khác nhau. Thống nhất dòng trên các bảng đang có trước khi tạo bản sao.");
                         detected.add(syncConflictService.saveMultiSheetConflict(request, endpoints, id, column, baseValue, changed, values));
                         unresolved = true;
+                        conflictedColumns.add(column);
                         continue;
                     }
                 }
@@ -188,6 +217,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             }
             checkpoints.put(id, checkpoint);
             if (!unresolved) clean.add(id);
+            if (!initial) addRecordEvent(recordEvents, id, base, checkpoint, columns, conflictedColumns);
         }
         phase(request, executionId, "sheets", "WRITE", "Đang ghi và lưu checkpoint");
         for (int i = 0; i < plans.size(); i++) {
@@ -196,18 +226,13 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         writes.apply(request.getAccessToken(), plans);
         checkpoints.forEach((id, row) -> store.saveSnapshot(flow, id, row));
         syncConflictService.retainOpenConflicts(flow, detected.stream().map(SyncConflict::getId).toList());
+
+        int queued = enqueueNotifications(request, flow, executionId, recordEvents, columns, initial ? List.of() : detected);
         int sent = 0, failed = 0;
-        if (request.isNotifyConflicts()) {
-            if (detected.stream().anyMatch(conflict -> !previouslyOpen.contains(conflict.getId())))
-                phase(request, executionId, "telegram", "NOTIFY", "Đang gửi cảnh báo xung đột");
-            for (SyncConflict conflict : detected) {
-                if (previouslyOpen.contains(conflict.getId())) continue;
-                if (telegramNotificationService.sendConflictAlert(conflict, request.getChatId())) sent++; else failed++;
-            }
-        }
         RunSyncResponse result = RunSyncResponse.builder().flowId(flow).executionId(executionId).sheetName(data.getFirst().getSheetName())
                 .status(detected.isEmpty() ? "SUCCESS" : "CONFLICT").totalRowsProcessed(allIds.size()).cleanRecordIds(clean)
                 .conflicts(detected).comparedColumns(columns).notificationsSent(sent).notificationsFailed(failed)
+                .notificationsQueued(queued)
                 .latency((System.currentTimeMillis() - start) + " ms").build();
         completeAfterCommit(executionId, result);
         return result;
@@ -241,7 +266,15 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         if (!sheet.getHeaders().containsAll(columns)) throw new IllegalArgumentException("Cột đồng bộ không tồn tại trong Sheet.");
         columns.remove(idColumn);
         if (columns.isEmpty()) throw new IllegalArgumentException("Cần ít nhất một cột dữ liệu ngoài cột khóa.");
+
+        Set<String> boundColumnsSet = new LinkedHashSet<>();
+        boundColumnsSet.add(idColumn);
+        boundColumnsSet.addAll(columns);
+        List<String> boundColumns = new ArrayList<>(boundColumnsSet);
         store.bind(flow, request.getSpreadsheetId(), sheet.getSheetName(), idColumn, sheet.getHeaders(), request.getStorageName());
+
+        validateNotifications(request, boundColumnsSet);
+
         boolean initial = !store.hasSnapshots(flow);
         if (initial && !index.isEmpty() && !request.isBootstrapConfirmed()) {
             RunSyncResponse result = RunSyncResponse.builder().flowId(flow).executionId(executionId).status("AWAITING_CONFIRMATION")
@@ -267,6 +300,8 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         }
         List<String> clean = new ArrayList<>();
         List<SyncConflict> detected = new ArrayList<>();
+        List<RecordChangeEvent> recordEvents = new ArrayList<>();
+
         for (Map.Entry<String, Integer> entry : index.entrySet()) {
             String id = entry.getKey();
             Map<String, String> rowA = sheet.getRows().get(entry.getValue());
@@ -277,6 +312,16 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
                 vaultWrites.put(id, new LinkedHashMap<>(rowA));
                 snapshotWrites.put(id, new LinkedHashMap<>(rowA));
                 clean.add(id);
+                if (!initial) {
+                    recordEvents.add(RecordChangeEvent.builder()
+                            .recordId(id)
+                            .kind("CREATED")
+                            .before(Collections.emptyMap())
+                            .after(rowA)
+                            .changedColumns(columns)
+                            .conflictedColumns(Collections.emptySet())
+                            .build());
+                }
                 continue;
             }
             if (rowB == null) throw new IllegalArgumentException("Thiếu bản ghi Vault: " + id);
@@ -306,6 +351,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             vaultWrites.put(id, merged);
             snapshotWrites.put(id, checkpoint);
             if (unresolved.isEmpty()) clean.add(id);
+            if (!initial) addRecordEvent(recordEvents, id, base, checkpoint, columns, unresolved);
         }
         phase(request, executionId, "sheets", "WRITE", "Đang đối soát và ghi trang tính");
         if (request.getTransforms() != null && !request.getTransforms().isEmpty()) {
@@ -320,25 +366,81 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         phase(request, executionId, "storage", "WRITE", "Đang lưu Vault và checkpoint");
         vaultWrites.forEach((id, row) -> store.saveVaultRecord(flow, id, row));
         snapshotWrites.forEach((id, row) -> store.saveSnapshot(flow, id, row));
+
+        int queued = enqueueNotifications(request, flow, executionId, recordEvents, columns, initial ? List.of() : detected);
         int sent = 0, failed = 0;
-        if (request.isNotifyConflicts()) {
-            if (!detected.isEmpty()) phase(request, executionId, "telegram", "NOTIFY", "Đang gửi cảnh báo xung đột");
-            for (SyncConflict conflict : detected) {
-                if (telegramNotificationService.sendConflictAlert(conflict, request.getChatId())) sent++; else failed++;
-            }
-        }
         RunSyncResponse result = RunSyncResponse.builder().flowId(flow).sheetName(sheet.getSheetName()).executionId(executionId)
                 .status(detected.isEmpty() ? "SUCCESS" : "CONFLICT").totalRowsProcessed(index.size())
                 .cleanRecordIds(clean).conflicts(detected).comparedColumns(columns)
-                .notificationsSent(sent).notificationsFailed(failed).latency((System.currentTimeMillis() - start) + " ms").build();
+                .notificationsSent(sent).notificationsFailed(failed).notificationsQueued(queued)
+                .latency((System.currentTimeMillis() - start) + " ms").build();
         completeAfterCommit(executionId, result);
         return result;
     }
 
-    private void transformSheet(SheetDataResponse sheet, List<com.hybridflow.sync.dto.request.ColumnTransformConfig> configs) {
+    private void validateNotifications(RunSyncRequest request, Set<String> columns) {
+        ruleEvaluationService.validate(request.getRouters(), request.getActions(), columns);
+        Set<String> actionIds = new HashSet<>();
+        if (request.getActions() != null) {
+            for (ActionPlan action : request.getActions()) {
+                actionIds.add(action.getNodeId());
+                notificationTemplateService.validateTemplate(action.getRecordTemplate(), columns);
+                notificationTemplateService.validateConflictTemplate(action.getConflictTemplate());
+            }
+        }
+        if (request.getConflictActionIds() != null && !actionIds.containsAll(request.getConflictActionIds()))
+            throw new IllegalArgumentException("Đích cảnh báo xung đột không tồn tại.");
+    }
+
+    private void normalizeLegacyNotifications(RunSyncRequest request) {
+        if (!request.isNotifyConflicts() || (request.getConflictActionIds() != null && !request.getConflictActionIds().isEmpty())) return;
+        require(request.getChatId(), "Telegram Chat ID");
+        String actionId = "legacy-" + java.util.UUID.nameUUIDFromBytes(request.getFlowId().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        List<ActionPlan> actions = request.getActions() == null ? new ArrayList<>() : new ArrayList<>(request.getActions());
+        actions.add(ActionPlan.builder().nodeId(actionId).channel("TELEGRAM").chatId(request.getChatId()).build());
+        request.setActions(actions);
+        request.setConflictActionIds(List.of(actionId));
+    }
+
+    private void addRecordEvent(List<RecordChangeEvent> events, String id, Map<String, String> before,
+                                Map<String, String> after, Set<String> columns, Set<String> conflictedColumns) {
+        Set<String> changed = new LinkedHashSet<>();
+        for (String column : columns) {
+            if (!conflictedColumns.contains(column) && (before == null
+                    || !Objects.equals(before.getOrDefault(column, ""), after.getOrDefault(column, "")))) changed.add(column);
+        }
+        if (before == null || !changed.isEmpty()) events.add(RecordChangeEvent.builder().recordId(id)
+                .kind(before == null ? "CREATED" : "UPDATED").before(before == null ? Map.of() : new LinkedHashMap<>(before))
+                .after(new LinkedHashMap<>(after)).changedColumns(changed)
+                .conflictedColumns(new LinkedHashSet<>(conflictedColumns)).build());
+    }
+
+    private int enqueueNotifications(RunSyncRequest request, String flow, String executionId,
+                                     List<RecordChangeEvent> events, Set<String> columns, List<SyncConflict> conflicts) {
+        if (request.getRouters() != null && !events.isEmpty()) {
+            for (RouterPlan router : request.getRouters())
+                phase(request, executionId, "router:" + router.getNodeId(), "ROUTE", "Đang kiểm tra điều kiện rẽ nhánh");
+        }
+        int queued = notificationOutboxService.enqueue(flow, executionId, request.getRouters(), request.getActions(),
+                events, columns, request.getConflictActionIds(), conflicts);
+        if (queued > 0 && request.getActions() != null) {
+            for (ActionPlan action : request.getActions()) {
+                boolean recordMatched = request.getRouters() != null && request.getRouters().stream().anyMatch(router ->
+                        router.getActionNodeIds() != null && router.getActionNodeIds().contains(action.getNodeId())
+                                && events.stream().anyMatch(event -> ruleEvaluationService.matches(router, event)));
+                boolean conflictMatched = !conflicts.isEmpty() && request.getConflictActionIds() != null
+                        && request.getConflictActionIds().contains(action.getNodeId());
+                if (recordMatched || conflictMatched)
+                    phase(request, executionId, "action:" + action.getNodeId(), "NOTIFY", "Đã xếp hàng thông báo");
+            }
+        }
+        return queued;
+    }
+
+    private void transformSheet(SheetDataResponse sheet, List<ColumnTransformConfig> configs) {
         Map<String, String> columns = new LinkedHashMap<>();
         sheet.getHeaders().forEach(column -> columns.put(column, ""));
-        for (var config : configs) {
+        for (ColumnTransformConfig config : configs) {
             if (config != null && !columns.containsKey(config.getColumnName()))
                 throw new IllegalArgumentException("Trang tính '" + (sheet.getSpreadsheetTitle() == null ? sheet.getSpreadsheetId() : sheet.getSpreadsheetTitle())
                         + " / " + sheet.getSheetName() + "' thiếu cột chuẩn hóa: " + config.getColumnName());

@@ -42,9 +42,10 @@ class SyncApiIntegrationTest {
     @Autowired com.hybridflow.connection.service.GoogleCredentialService credentials;
     @Autowired com.hybridflow.sync.service.WorkflowJobService scheduler;
     @Autowired com.hybridflow.sync.service.SyncExecutionService execution;
+    @Autowired com.hybridflow.sync.service.NotificationOutboxService outbox;
 
     @BeforeEach void cleanDatabase() {
-        jdbc.execute("TRUNCATE workflow_jobs,sheet_write_journal,sync_conflicts,sync_snapshots,vault_records,sync_flow_bindings,sync_executions,workflow_definitions,google_connections RESTART IDENTITY");
+        jdbc.execute("TRUNCATE notification_outbox,workflow_jobs,sheet_write_journal,sync_conflicts,sync_snapshots,vault_records,sync_flow_bindings,sync_executions,workflow_definitions,google_connections RESTART IDENTITY");
         source("NEW");
     }
     private void source(String status) {
@@ -65,6 +66,81 @@ class SyncApiIntegrationTest {
     }
     private String statusOf(String table, String flow) {
         return jdbc.queryForObject("SELECT data->>'status' FROM " + table + " WHERE flow_id=? AND record_id='1'", String.class, flow);
+    }
+
+    private String routedRequest(String flow) {
+        return request(flow).replace("\"conflictPolicy\":\"ASK_TELEGRAM\"", """
+                "conflictPolicy":"ASK_TELEGRAM",
+                "routers":[{"nodeId":"r1","conditions":[{"columnName":"status","operator":"EQUALS","value":"READY"}],"actionNodeIds":["t1","t2"]},
+                  {"nodeId":"r2","conditions":[{"columnName":"status","operator":"IS_NOT_EMPTY"}],"actionNodeIds":["t1","t3"]}],
+                "actions":[{"nodeId":"t1","chatId":"1","recordTemplate":"Ops {id}:{status}","conflictTemplate":"Conflict {recordId}:{columnName}"},
+                  {"nodeId":"t2","chatId":"2","recordTemplate":"Manager {id}"},
+                  {"nodeId":"t3","chatId":"3","recordTemplate":"Audit {status}"}],
+                "conflictActionIds":["t1"]
+                """);
+    }
+
+    @Test void twoRoutersThreeActionsBootstrapNoChangeAndConflictTemplatesUseTheRealOutbox() throws Exception {
+        String body = routedRequest("routed");
+        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.notificationsQueued").value(0));
+        source("READY");
+        String response = mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.notificationsQueued").value(3)).andReturn().getResponse().getContentAsString();
+        String executionId = new com.fasterxml.jackson.databind.ObjectMapper().readTree(response).path("executionId").asText();
+        assertEquals(List.of("Audit READY", "Manager 1", "Ops 1:READY"), jdbc.queryForList("SELECT message FROM notification_outbox ORDER BY message", String.class));
+        mvc.perform(get("/api/v1/workflows/routed/notifications").param("executionId", executionId))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(3));
+        mvc.perform(get("/api/v1/workflows/routed/notifications").param("executionId", "other"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(0));
+        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.notificationsQueued").value(0));
+        source("A");
+        jdbc.update("UPDATE vault_records SET data=jsonb_set(data,'{status}','\"B\"') WHERE flow_id='routed'");
+        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.notificationsQueued").value(1));
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM notification_outbox WHERE message='Conflict 1:status'", Integer.class));
+        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.notificationsQueued").value(0));
+        String notification = jdbc.queryForObject("SELECT id FROM notification_outbox WHERE destination='2'", String.class);
+        jdbc.update("UPDATE notification_outbox SET state='DEAD' WHERE id=?", notification);
+        mvc.perform(post("/api/v1/notifications/" + notification + "/retry")).andExpect(status().isOk());
+        assertEquals("PENDING", jdbc.queryForObject("SELECT state FROM notification_outbox WHERE id=?", String.class, notification));
+        verifyNoInteractions(telegram);
+    }
+
+    @Test void databaseFailureAfterSheetWriteRollsBackOutboxAndCheckpointAndTheNextRunRecreatesEvents() throws Exception {
+        String body = routedRequest("rollback-notification");
+        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk());
+        jdbc.update("UPDATE vault_records SET data=jsonb_set(data,'{status}','\"READY\"') WHERE flow_id='rollback-notification'");
+        jdbc.execute("CREATE FUNCTION fail_notification() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected outbox failure'; END $$");
+        jdbc.execute("CREATE TRIGGER fail_notification BEFORE INSERT ON notification_outbox FOR EACH ROW EXECUTE FUNCTION fail_notification()");
+        try {
+            mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isInternalServerError());
+            verify(sheets).updateCells("test-token", "sheet", Map.of("'Data'!B2", "READY"));
+            assertEquals("NEW", statusOf("sync_snapshots", "rollback-notification"));
+            assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM notification_outbox", Integer.class));
+            verifyNoInteractions(telegram);
+        } finally {
+            jdbc.execute("DROP TRIGGER fail_notification ON notification_outbox");
+            jdbc.execute("DROP FUNCTION fail_notification()");
+        }
+        source("READY");
+        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.notificationsQueued").value(3));
+        assertEquals("READY", statusOf("sync_snapshots", "rollback-notification"));
+    }
+
+    @Test void invalidTemplateFailsAfterReadBeforeAnySheetOrCheckpointWrite() throws Exception {
+        String body = routedRequest("invalid-template");
+        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk());
+        source("READY"); clearInvocations(sheets);
+        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body.replace("Conflict {recordId}:{columnName}", "Conflict {status}")))
+                .andExpect(status().isBadRequest());
+        verify(sheets).readSheet(any());
+        verify(sheets, never()).updateCells(anyString(), anyString(), anyMap());
+        assertEquals("NEW", statusOf("sync_snapshots", "invalid-template"));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM notification_outbox", Integer.class));
     }
 
     @Test void apiRoundTripPersistsBothDirectionsAndConflictApproval() throws Exception {
@@ -107,10 +183,12 @@ class SyncApiIntegrationTest {
         run("flow-one");
         source("SHIPPING");
         jdbc.update("UPDATE vault_records SET data=jsonb_set(data,'{status}','\"CANCELLED\"') WHERE flow_id='flow-one'");
-        when(telegram.sendConflictAlert(any(), eq("123"))).thenReturn(true);
+        when(telegram.sendDetailedMessage(any(), eq("123"))).thenReturn(com.hybridflow.notification.dto.response.TelegramDeliveryResult.builder().success(true).build());
         String notifyingRequest = request("flow-one").replace("\"notifyConflicts\":false", "\"notifyConflicts\":true,\"chatId\":\"123\"");
         mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(notifyingRequest))
-                .andExpect(status().isOk()).andExpect(jsonPath("$.notificationsSent").value(1));
+                .andExpect(status().isOk()).andExpect(jsonPath("$.notificationsSent").value(0))
+                .andExpect(jsonPath("$.notificationsQueued").value(1));
+        assertTrue(outbox.processNext());
         Long id = jdbc.queryForObject("SELECT id FROM sync_conflicts WHERE status='OPEN'", Long.class);
         mvc.perform(post("/api/v1/conflicts/" + id + "/resolve").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"resolvedValue\":\"CANCELLED\",\"accessToken\":\"test-token\"}"))
@@ -125,7 +203,7 @@ class SyncApiIntegrationTest {
         mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(notifyingRequest))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.conflicts.length()").value(0))
                 .andExpect(jsonPath("$.notificationsSent").value(0));
-        verify(telegram, times(1)).sendConflictAlert(any(), eq("123"));
+        verify(telegram, times(1)).sendDetailedMessage(any(), eq("123"));
     }
 
     @Test void flowBindingsRejectRepointingAndIsolateIdenticalRecordIds() throws Exception {

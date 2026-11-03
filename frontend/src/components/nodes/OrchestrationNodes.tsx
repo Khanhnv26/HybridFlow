@@ -14,7 +14,13 @@ import {
   Zap,
 } from 'lucide-react';
 import { ExcelIcon, TelegramIcon } from '../icons/BrandIcons';
-import { OrchestrationNodeData, NodeExecutionState } from '../../types';
+import {
+  OrchestrationNodeData,
+  NodeExecutionState,
+  RouterConditionItem,
+  RouterMatchMode,
+  RouterTriggerOn,
+} from '../../types';
 
 const cardClass = (selected: boolean, accent: string, execution?: NodeExecutionState) =>
   `workflow-node workflow-node--${execution?.state || 'idle'} w-[280px] rounded-xl border bg-[#1a1f29] shadow-lg select-none ${selected ? accent : 'border-[#303b4b] hover:border-gray-500'}`;
@@ -158,7 +164,7 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
   const unconfigured = sheets.length - configured.length;
   const legacy = nodeData.hasLegacyStorageConnection;
   const sheetHint = 'Nối với Google Sheet cần đồng bộ. Có thể nối nhiều khối Sheet vào cổng này.';
-  const rightHint = legacy ? 'Kết nối với Kho lưu trữ trong luồng Sheet–Vault.' : sheetHint;
+  const rightHint = legacy ? 'Kết nối với Kho lưu trữ trong luồng Sheet–Vault.' : 'Nối tới Rẽ Nhánh Điều Kiện';
   const refreshHandles = useHandleGeometry(
     id,
     `${legacy}:${nodeData.hasConflict}:${sheets.length}`,
@@ -227,6 +233,7 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
             )}
           </div>
         </details>
+        {nodeData.hasLegacySheetConnection && <p className="text-xs text-amber-200">Chuyển dây Sheet sang cổng ⇄ Đầu vào</p>}
         {nodeData.hasConflict && (
           <button
             onClick={(event) => {
@@ -259,7 +266,7 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
           className="flex items-center gap-1 text-amber-200"
           title="Nối với Telegram để gửi cảnh báo khi có xung đột."
         >
-          <Zap size={11} /> Báo động
+          <Zap size={11} /> Có xung đột
         </span>
         <Handle
           type="source"
@@ -277,7 +284,7 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
           position={Position.Right}
           id="clean"
           title={rightHint}
-          aria-label={legacy ? 'Kết nối Kho lưu trữ' : 'Kết nối mở rộng bên phải'}
+          aria-label={legacy ? 'Kết nối Kho lưu trữ' : 'Nối tới Rẽ Nhánh Điều Kiện'}
           style={{ top: '50%' }}
           className={`${handleClass} !border-emerald-400`}
         />
@@ -308,6 +315,65 @@ export const StorageActionNode: React.FC<any> = ({ data, selected }) => {
   );
 };
 
+export const RouterConditionNode: React.FC<any> = ({ id, data, selected }) => {
+  const nodeData = data as OrchestrationNodeData;
+  useHandleGeometry(id);
+  const conditions = (nodeData.routerConditions || nodeData.conditions || []) as RouterConditionItem[];
+  const triggerOn = (nodeData.routerTriggerOn || nodeData.triggerOn || 'CHANGED') as RouterTriggerOn;
+  const matchMode = (nodeData.routerMatchMode || nodeData.matchMode || 'ALL') as RouterMatchMode;
+
+  const triggerLabel =
+    triggerOn === 'CREATED' ? 'KHI: Tạo mới' : triggerOn === 'UPDATED' ? 'KHI: Cập nhật' : 'KHI: Thay đổi';
+  const modeLabel = matchMode === 'ANY' ? 'HOẶC (ANY)' : 'VÀ (ALL)';
+
+  return (
+    <div className={cardClass(selected, 'border-purple-400 ring-2 ring-purple-500/20', nodeData.executionState)}>
+      <Handle
+        type="target"
+        position={Position.Left}
+        id="in"
+        title="Nhận bản ghi sạch từ cổng 'Hành động ➔' của khối Điều phối & Đồng bộ."
+        aria-label="Nhận kết quả sạch từ Điều phối & Đồng bộ"
+        className={`${handleClass} !border-purple-400`}
+      />
+      <NodeHeading
+        icon={<Split size={18} className="text-purple-300" />}
+        title="Rẽ Nhánh Điều Kiện"
+        execution={nodeData.executionState}
+      />
+      <div className="space-y-1.5 px-3 py-2.5 text-[11px]">
+        <div className="flex items-center justify-between gap-1.5">
+          <span className="rounded bg-purple-950/60 px-1.5 py-0.5 font-medium text-purple-300 border border-purple-800/50">
+            {triggerLabel}
+          </span>
+          <span className="rounded bg-gray-800/80 px-1.5 py-0.5 text-gray-300 border border-gray-700">
+            {modeLabel}
+          </span>
+        </div>
+        <p className="text-gray-400">
+          {conditions.length === 0 ? (
+            <span className="text-amber-300/80">Chưa thiết lập điều kiện</span>
+          ) : (
+            <span>Đã cấu hình {conditions.length} điều kiện lọc</span>
+          )}
+        </p>
+      </div>
+      <div className="relative flex h-7 items-center justify-between rounded-b-xl border-t border-[#293241] bg-[#151b25] px-2.5 text-[10px] font-medium">
+        <span className="text-purple-300">Đầu vào ➔</span>
+        <span className="text-emerald-300">Thỏa mãn ➔</span>
+        <Handle
+          type="source"
+          position={Position.Right}
+          id="out"
+          title="Nối tới các khối Hành động (ví dụ Báo động Telegram)."
+          aria-label="Chuyển tiếp bản ghi thỏa mãn điều kiện"
+          className={`${handleClass} !border-purple-400`}
+        />
+      </div>
+    </div>
+  );
+};
+
 export const TelegramActionNode: React.FC<any> = ({ id, data, selected }) => {
   const nodeData = data as OrchestrationNodeData;
   const refreshHandles = useHandleGeometry(id);
@@ -318,21 +384,27 @@ export const TelegramActionNode: React.FC<any> = ({ id, data, selected }) => {
     <div className={cardClass(selected, 'border-sky-400 ring-2 ring-sky-500/20', nodeData.executionState)}>
       <Handle
         type="target"
-        position={Position.Top}
+        position={Position.Left}
         id="in"
-        title="Nối với cổng cảnh báo ở đáy khối So khớp."
-        aria-label="Nhận cảnh báo từ phía trên"
+        title="Nối với cổng cảnh báo ở đáy khối So khớp hoặc cổng ra của khối Rẽ nhánh."
+        aria-label="Nhận thông báo từ luồng"
         className={`${handleClass} !border-amber-400`}
       />
       <NodeHeading icon={<TelegramIcon size={24} />} title="Telegram" execution={nodeData.executionState} />
       <div className="space-y-1.5 px-3 py-2.5 text-[11px]">
         <p className="text-gray-500">Nơi nhận cảnh báo</p>
+        <p className="text-gray-400">Nhận từ {nodeData.incomingSourcesCount ?? 0} nhánh</p>
         <p
           className={`truncate font-medium ${nodeData.chatId ? 'text-sky-200' : 'text-amber-300'}`}
           title={recipient}
         >
           {recipient}
         </p>
+        {nodeData.recordTemplate && (
+          <p className="text-[10px] text-gray-400 truncate" title={`Mẫu: ${nodeData.recordTemplate}`}>
+            Mẫu: {nodeData.recordTemplate}
+          </p>
+        )}
         <details
           className="nodrag nopan text-[10px] text-gray-500"
           onClick={stopNodeClick}
@@ -343,6 +415,8 @@ export const TelegramActionNode: React.FC<any> = ({ id, data, selected }) => {
             <p>Nơi nhận: {recipient}</p>
             <p>Bot: {nodeData.botName || 'Chưa có thông tin bot'}</p>
             {nodeData.chatId && <p className="break-all">Chat ID: {nodeData.chatId}</p>}
+            {nodeData.recordTemplate && <p className="break-all">Mẫu bản ghi: {nodeData.recordTemplate}</p>}
+            {nodeData.conflictTemplate && <p className="break-all">Mẫu xung đột: {nodeData.conflictTemplate}</p>}
           </div>
         </details>
       </div>

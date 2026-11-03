@@ -13,7 +13,7 @@ interface PaletteItem {
 }
 
 const executableTypes = new Set<OrchestrationNodeType>([
-  'sheetsTrigger', 'scheduleTrigger', 'diffEngine', 'dataTransform', 'storageAction', 'telegramAction',
+  'sheetsTrigger', 'scheduleTrigger', 'diffEngine', 'dataTransform', 'routerCondition', 'storageAction', 'telegramAction',
 ]);
 
 const PALETTE_ITEMS: PaletteItem[] = [

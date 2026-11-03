@@ -16,6 +16,13 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.hybridflow.sync.dto.request.ActionPlan;
+import com.hybridflow.sync.dto.request.ColumnTransformConfig;
+import com.hybridflow.sync.dto.request.RouterConditionItem;
+import com.hybridflow.sync.dto.request.RouterPlan;
 import com.hybridflow.sync.dto.request.RunSyncRequest;
 import com.hybridflow.sync.dto.request.SheetEndpointRequest;
 import com.hybridflow.sync.model.ParsedSchedule;
@@ -106,14 +113,14 @@ public class WorkflowGraphParser {
         JsonNode nodes = definition.path("nodes");
         JsonNode edges = definition.path("edges");
         if (!nodes.isArray() || !edges.isArray()) throw new IllegalArgumentException("Cấu hình luồng không hợp lệ.");
-        Set<String> supported = Set.of("sheetsTrigger", "scheduleTrigger", "diffEngine", "storageAction", "telegramAction");
+        Set<String> supported = Set.of("sheetsTrigger", "scheduleTrigger", "diffEngine", "storageAction", "telegramAction", "routerCondition");
         Set<String> ids = new LinkedHashSet<>();
         for (JsonNode node : nodes) {
             if (!supported.contains(node.path("type").asText()) || node.path("id").asText().isBlank()
                     || !ids.add(node.path("id").asText())) throw new IllegalArgumentException("Luồng có khối không hợp lệ hoặc chưa hỗ trợ.");
         }
-        if (count(nodes, "diffEngine") != 1 || count(nodes, "telegramAction") > 1 || count(nodes, "scheduleTrigger") > 1)
-            throw new IllegalArgumentException("Luồng cần một khối So khớp, tối đa một Telegram và một hẹn giờ.");
+        if (count(nodes, "diffEngine") != 1 || count(nodes, "scheduleTrigger") > 1)
+            throw new IllegalArgumentException("Luồng cần một khối So khớp và tối đa một hẹn giờ.");
         JsonNode diffNode = findFirstByType(nodes, "diffEngine");
 
         if (diffNode == null) {
@@ -187,16 +194,133 @@ public class WorkflowGraphParser {
             throw new IllegalArgumentException("Nối Google Sheet → So khớp → Kho lưu trữ trước khi chạy.");
         if (multi) storageName = "multi_sheet";
 
-        JsonNode telegramNode = findFirstByType(nodes, "telegramAction");
-        boolean notifyConflicts = false;
-        String chatId = null;
-
-        if (telegramNode != null) {
-            String telegramId = telegramNode.path("id").asText("");
-            notifyConflicts = hasEdge(edges, diffId, "conflict", telegramId, "in");
-            chatId = telegramNode.path("data").path("chatId").asText("").trim();
+        List<JsonNode> routerNodes = new ArrayList<>();
+        for (JsonNode node : nodes) {
+            if ("routerCondition".equals(node.path("type").asText(""))) {
+                routerNodes.add(node);
+            }
         }
-        if (notifyConflicts && chatId.isBlank()) throw new IllegalArgumentException("Điền Telegram Chat ID.");
+        List<JsonNode> telegramNodes = new ArrayList<>();
+        for (JsonNode node : nodes) {
+            if ("telegramAction".equals(node.path("type").asText(""))) {
+                telegramNodes.add(node);
+            }
+        }
+
+        Set<String> edgeSignatures = new LinkedHashSet<>();
+        for (JsonNode edge : edges) {
+            String sig = edge.path("source").asText("") + ":" + edge.path("sourceHandle").asText("")
+                    + "->" + edge.path("target").asText("") + ":" + edge.path("targetHandle").asText("");
+            if (!edgeSignatures.add(sig)) {
+                throw new IllegalArgumentException("Có dây nối trùng lặp trong luồng.");
+            }
+        }
+
+        List<RouterPlan> routerPlans = new ArrayList<>();
+        for (JsonNode rNode : routerNodes) {
+            String rId = rNode.path("id").asText("");
+            if (!hasEdge(edges, diffId, "clean", rId, "in")) {
+                throw new IllegalArgumentException("Khối Rẽ Nhánh Điều Kiện phải được nối từ cổng Hành động của khối So khớp.");
+            }
+            for (JsonNode edge : edges) {
+                if (rId.equals(edge.path("target").asText("")) && (!diffId.equals(edge.path("source").asText()) || !"clean".equals(edge.path("sourceHandle").asText()) || !"in".equals(edge.path("targetHandle").asText()))) {
+                    throw new IllegalArgumentException("Đường vào khối Rẽ Nhánh Điều Kiện không hợp lệ.");
+                }
+            }
+            List<String> actionTargets = new ArrayList<>();
+            for (JsonNode edge : edges) {
+                if (rId.equals(edge.path("source").asText(""))) {
+                    if (!"out".equals(edge.path("sourceHandle").asText("")) || !"in".equals(edge.path("targetHandle").asText())) {
+                        throw new IllegalArgumentException("Đường ra khối Rẽ Nhánh Điều Kiện không hợp lệ.");
+                    }
+                    String targetId = edge.path("target").asText("");
+                    boolean isTelegram = telegramNodes.stream().anyMatch(t -> t.path("id").asText("").equals(targetId));
+                    if (!isTelegram) {
+                        throw new IllegalArgumentException("Khối Rẽ Nhánh Điều Kiện chỉ được nối tới khối thông báo.");
+                    }
+                    actionTargets.add(targetId);
+                }
+            }
+            if (actionTargets.isEmpty()) {
+                throw new IllegalArgumentException("Khối Rẽ Nhánh Điều Kiện cần nối tới ít nhất một khối thông báo.");
+            }
+
+            JsonNode rData = rNode.path("data");
+            String triggerOn = rData.path("routerTriggerOn").asText(rData.path("triggerOn").asText("CHANGED"));
+            String matchMode = rData.path("routerMatchMode").asText(rData.path("matchMode").asText("ALL"));
+            List<RouterConditionItem> conditions = new ArrayList<>();
+            JsonNode condArray = rData.has("routerConditions") ? rData.path("routerConditions") : rData.path("conditions");
+            if (condArray.isArray()) {
+                for (JsonNode cNode : condArray) {
+                    conditions.add(RouterConditionItem.builder()
+                            .columnName(cNode.path("columnName").asText("").trim())
+                            .operator(cNode.path("operator").asText("").trim())
+                            .value(cNode.hasNonNull("value") ? cNode.path("value").asText() : null)
+                            .build());
+                }
+            }
+            if (conditions.isEmpty()) {
+                throw new IllegalArgumentException("Khối Rẽ Nhánh Điều Kiện cần ít nhất một điều kiện.");
+            }
+            if (!Set.of("CHANGED", "CREATED", "UPDATED").contains(triggerOn) || !Set.of("ALL", "ANY").contains(matchMode))
+                throw new IllegalArgumentException("Cấu hình KHI/NẾU không hợp lệ.");
+            for (RouterConditionItem condition : conditions) {
+                if (condition.getColumnName().isBlank() || !Set.of("CHANGED_TO", "EQUALS", "NOT_EQUALS", "CONTAINS", "IS_NOT_EMPTY").contains(condition.getOperator())
+                        || (!"IS_NOT_EMPTY".equals(condition.getOperator()) && condition.getValue() == null))
+                    throw new IllegalArgumentException("Điều kiện rẽ nhánh thiếu cột, sai toán tử hoặc thiếu value.");
+            }
+            routerPlans.add(RouterPlan.builder()
+                    .nodeId(rId)
+                    .triggerOn(triggerOn)
+                    .matchMode(matchMode)
+                    .conditions(conditions)
+                    .actionNodeIds(actionTargets)
+                    .build());
+        }
+
+        List<ActionPlan> actionPlans = new ArrayList<>();
+        List<String> conflictActionIds = new ArrayList<>();
+        for (JsonNode tNode : telegramNodes) {
+            String tId = tNode.path("id").asText("");
+            boolean receivingConflict = hasEdge(edges, diffId, "conflict", tId, "in");
+            boolean receivingRouter = routerPlans.stream().anyMatch(rp -> rp.getActionNodeIds().contains(tId));
+            if (!receivingConflict && !receivingRouter) {
+                throw new IllegalArgumentException("Khối Telegram cần ít nhất một dây vào.");
+            }
+            String tChatId = tNode.path("data").path("chatId").asText("").trim();
+            if (tChatId.isBlank()) {
+                throw new IllegalArgumentException("Điền Telegram Chat ID.");
+            }
+            if (receivingConflict) {
+                conflictActionIds.add(tId);
+            }
+            for (JsonNode edge : edges) {
+                if (tId.equals(edge.path("target").asText(""))) {
+                    String sId = edge.path("source").asText("");
+                    String sPort = edge.path("sourceHandle").asText("");
+                    String tPort = edge.path("targetHandle").asText("");
+                    boolean isFromDiff = diffId.equals(sId) && "conflict".equals(sPort) && "in".equals(tPort);
+                    boolean isFromRouter = routerNodes.stream().anyMatch(rn -> rn.path("id").asText("").equals(sId)) && "out".equals(sPort) && "in".equals(tPort);
+                    if (!isFromDiff && !isFromRouter) {
+                        throw new IllegalArgumentException("Có dây nối không được hỗ trợ trong luồng.");
+                    }
+                }
+            }
+            actionPlans.add(ActionPlan.builder()
+                    .nodeId(tId)
+                    .channel("TELEGRAM")
+                    .chatId(tChatId)
+                    .recordTemplate(tNode.path("data").hasNonNull("recordTemplate") ? tNode.path("data").path("recordTemplate").asText() : null)
+                    .conflictTemplate(tNode.path("data").hasNonNull("conflictTemplate") ? tNode.path("data").path("conflictTemplate").asText() : null)
+                    .build());
+        }
+
+        boolean notifyConflicts = !conflictActionIds.isEmpty();
+        String chatId = actionPlans.isEmpty()
+                ? (telegramNodes.isEmpty() ? null : telegramNodes.get(0).path("data").path("chatId").asText("").trim())
+                : actionPlans.get(0).getChatId();
+        if (chatId != null && chatId.isBlank()) chatId = null;
+
         for (JsonNode edge : edges) {
             JsonNode source = null;
             for (JsonNode node : nodes) if (node.path("id").asText().equals(edge.path("source").asText())) source = node;
@@ -204,13 +328,19 @@ public class WorkflowGraphParser {
             String to = edge.path("target").asText();
             String port = edge.path("sourceHandle").asText();
             String targetPort = edge.path("targetHandle").asText();
+            boolean isRouter = routerNodes.stream().anyMatch(r -> r.path("id").asText().equals(to));
+            boolean isTelegram = telegramNodes.stream().anyMatch(t -> t.path("id").asText().equals(to));
+            boolean fromRouter = routerNodes.stream().anyMatch(r -> r.path("id").asText().equals(from));
+
             boolean allowed = source != null && (
                     "scheduleTrigger".equals(source.path("type").asText()) && "out".equals(port) && diffId.equals(to) && "trigger".equals(targetPort)
                     || "in".equals(targetPort) && (
                     "sheetsTrigger".equals(source.path("type").asText()) && "out".equals(port) && diffId.equals(to)
                     || diffId.equals(from) && "clean".equals(port) && (multi
-                        ? connectedSheets.stream().anyMatch(sheet -> sheet.getNodeId().equals(to)) : storageNode.path("id").asText().equals(to))
-                    || diffId.equals(from) && "conflict".equals(port) && telegramNode != null && telegramNode.path("id").asText().equals(to)));
+                        ? connectedSheets.stream().anyMatch(sheet -> sheet.getNodeId().equals(to)) || isRouter
+                        : (storageNode != null && storageNode.path("id").asText().equals(to)) || isRouter)
+                    || diffId.equals(from) && "conflict".equals(port) && isTelegram
+                    || fromRouter && "out".equals(port) && isTelegram));
             if (!allowed) throw new IllegalArgumentException("Có dây nối không được hỗ trợ trong luồng.");
         }
         JsonNode timer = findFirstByType(nodes, "scheduleTrigger");
@@ -222,7 +352,13 @@ public class WorkflowGraphParser {
         executionNodes.put("sheets", connectedSheets.stream().map(SheetEndpointRequest::getNodeId).toList());
         executionNodes.put("diff", List.of(diffId));
         if (storageNode != null) executionNodes.put("storage", List.of(storageNode.path("id").asText()));
-        if (telegramNode != null && notifyConflicts) executionNodes.put("telegram", List.of(telegramNode.path("id").asText()));
+        if (!conflictActionIds.isEmpty()) executionNodes.put("telegram", conflictActionIds);
+        for (RouterPlan rp : routerPlans) {
+            executionNodes.put("router:" + rp.getNodeId(), List.of(rp.getNodeId()));
+        }
+        for (ActionPlan ap : actionPlans) {
+            executionNodes.put("action:" + ap.getNodeId(), List.of(ap.getNodeId()));
+        }
         if (timer != null) executionNodes.put("trigger", List.of(timer.path("id").asText()));
 
         RunSyncRequest request = RunSyncRequest.builder()
@@ -240,6 +376,9 @@ public class WorkflowGraphParser {
                 .conflictPolicy(conflictPolicy)
                 .notifyConflicts(notifyConflicts)
                 .chatId(chatId)
+                .routers(routerPlans.isEmpty() ? null : routerPlans)
+                .actions(actionPlans.isEmpty() ? null : actionPlans)
+                .conflictActionIds(conflictActionIds.isEmpty() ? null : conflictActionIds)
                 .build();
         return Optional.of(request);
     }
@@ -254,10 +393,10 @@ public class WorkflowGraphParser {
         return fromTime.plusSeconds(Math.multiplyExact(60L, intervalMinutes));
     }
 
-    private List<com.hybridflow.sync.dto.request.ColumnTransformConfig> readTransforms(JsonNode configs) {
+    private List<ColumnTransformConfig> readTransforms(JsonNode configs) {
         if (configs.isMissingNode() || configs.isNull()) return null;
         if (!configs.isArray()) throw new IllegalArgumentException("Cấu hình chuẩn hóa không hợp lệ.");
-        List<com.hybridflow.sync.dto.request.ColumnTransformConfig> result = new ArrayList<>();
+        List<ColumnTransformConfig> result = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
         for (JsonNode config : configs) {
             String column = config.path("columnName").asText();
@@ -269,7 +408,7 @@ public class WorkflowGraphParser {
                     throw new IllegalArgumentException("Quy tắc chuẩn hóa không hợp lệ.");
                 rules.add(rule.asText());
             }
-            result.add(new com.hybridflow.sync.dto.request.ColumnTransformConfig(column, rules, config.path("defaultValue").asText("")));
+            result.add(new ColumnTransformConfig(column, rules, config.path("defaultValue").asText("")));
         }
         return result;
     }
@@ -283,7 +422,7 @@ public class WorkflowGraphParser {
             throw new IllegalArgumentException("Mã khối không hợp lệ hoặc bị trùng.");
         Set<String> bound = new LinkedHashSet<>();
         Set<String> removed = new LinkedHashSet<>();
-        List<com.fasterxml.jackson.databind.node.ObjectNode> links = new ArrayList<>();
+        List<ObjectNode> links = new ArrayList<>();
         for (JsonNode transform : nodes) {
             if (!"dataTransform".equals(transform.path("type").asText())) continue;
             String id = transform.path("id").asText();
@@ -309,22 +448,22 @@ public class WorkflowGraphParser {
                         || !"out".equals(input.path("sourceHandle").asText()) || !"in".equals(input.path("targetHandle").asText())
                         || isSheetConnected(edges, sourceId, targetId))
                     throw new IllegalArgumentException("Đường nối chuẩn hóa không hợp lệ; không nối trùng, song song hoặc nối chuỗi.");
-                com.fasterxml.jackson.databind.node.ObjectNode data = (com.fasterxml.jackson.databind.node.ObjectNode) source.path("data");
-                data.set("transforms", config.path("transforms").isMissingNode() ? new com.fasterxml.jackson.databind.ObjectMapper().createArrayNode() : config.path("transforms"));
+                ObjectNode data = (ObjectNode) source.path("data");
+                data.set("transforms", config.path("transforms").isMissingNode() ? new ObjectMapper().createArrayNode() : config.path("transforms"));
                 data.put("writeBackCleanData", config.path("writeBackBySource").path(sourceId).asBoolean(config.path("writeBackCleanData").asBoolean(false)));
-                com.fasterxml.jackson.databind.node.ObjectNode link = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+                ObjectNode link = new ObjectMapper().createObjectNode();
                 link.put("source", sourceId).put("target", targetId).put("sourceHandle", "out").put("targetHandle", "in");
                 links.add(link);
             }
             removed.add(id);
         }
-        com.fasterxml.jackson.databind.node.ArrayNode normalizedNodes = new com.fasterxml.jackson.databind.ObjectMapper().createArrayNode();
+        ArrayNode normalizedNodes = new ObjectMapper().createArrayNode();
         for (JsonNode node : nodes) if (!removed.contains(node.path("id").asText())) normalizedNodes.add(node);
-        com.fasterxml.jackson.databind.node.ArrayNode normalizedEdges = new com.fasterxml.jackson.databind.ObjectMapper().createArrayNode();
+        ArrayNode normalizedEdges = new ObjectMapper().createArrayNode();
         for (JsonNode edge : edges) if (!removed.contains(edge.path("source").asText()) && !removed.contains(edge.path("target").asText())) normalizedEdges.add(edge);
         links.forEach(normalizedEdges::add);
-        ((com.fasterxml.jackson.databind.node.ObjectNode) copy).set("nodes", normalizedNodes);
-        ((com.fasterxml.jackson.databind.node.ObjectNode) copy).set("edges", normalizedEdges);
+        ((ObjectNode) copy).set("nodes", normalizedNodes);
+        ((ObjectNode) copy).set("edges", normalizedEdges);
         return copy;
     }
 

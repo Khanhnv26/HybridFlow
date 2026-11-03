@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { TelegramIcon } from '../icons/BrandIcons';
 import { telegramService } from '../../services/api';
+import { conflictVariables, invalidTemplateVariables, renderTemplatePreview } from '../../services/notificationPreview';
 import type {
   OrchestrationNodeData,
   TelegramBotInfo,
@@ -22,9 +23,14 @@ interface Props {
   data: OrchestrationNodeData;
   disabled: boolean;
   notificationConnected: boolean;
+  availableColumns?: string[];
+  previewRow?: Record<string, string>;
+  previewConflict?: Record<string, string>;
+  onRetryNotification?: (id: string) => Promise<void>;
   onClose: () => void;
   onSave: (data: Partial<OrchestrationNodeData>) => Promise<void>;
 }
+
 function errorMessage(error: unknown) {
   const detail = error as {
     response?: { data?: { message?: string } };
@@ -39,7 +45,17 @@ function errorMessage(error: unknown) {
   return detail.message || 'Không thể kết nối Telegram. Vui lòng thử lại.';
 }
 
-export function TelegramConfig({ data, disabled, notificationConnected, onClose, onSave }: Props) {
+export function TelegramConfig({
+  data,
+  disabled,
+  notificationConnected,
+  availableColumns = [],
+  previewRow,
+  previewConflict,
+  onRetryNotification,
+  onClose,
+  onSave,
+}: Props) {
   const [type, setType] = useState<TelegramRecipient['recipientType']>(
     data.telegramRecipientType || (data.chatId?.startsWith('-') ? 'GROUP' : 'PRIVATE'),
   );
@@ -48,6 +64,8 @@ export function TelegramConfig({ data, disabled, notificationConnected, onClose,
   const [retry, setRetry] = useState(0);
   const [recipient, setRecipient] = useState<TelegramRecipient | null>(null);
   const [chatId, setChatId] = useState(data.chatId || '');
+  const [recordTemplate, setRecordTemplate] = useState(data.recordTemplate || '');
+  const [conflictTemplate, setConflictTemplate] = useState(data.conflictTemplate || '');
   const [session, setSession] = useState<TelegramLink | null>(null);
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
@@ -123,6 +141,7 @@ export function TelegramConfig({ data, disabled, notificationConnected, onClose,
   }, [session]);
 
   const locked = disabled || busy || saving || loading;
+  const invalidVariables = [...invalidTemplateVariables(recordTemplate, availableColumns), ...invalidTemplateVariables(conflictTemplate, conflictVariables)];
   const canUseRecipient = !!bot?.configured && !!recipient && !locked;
   const selectType = (next: TelegramRecipient['recipientType']) => {
     setType(next);
@@ -181,6 +200,7 @@ export function TelegramConfig({ data, disabled, notificationConnected, onClose,
   };
   const save = async () => {
     if (!recipient || !bot) return;
+    if (invalidVariables.length) { setError(`Biến template không hợp lệ: ${invalidVariables.join(', ')}`); return; }
     setSaving(true);
     setError('');
     try {
@@ -189,6 +209,8 @@ export function TelegramConfig({ data, disabled, notificationConnected, onClose,
         telegramRecipientType: type,
         telegramRecipientName: recipient.name,
         botName: bot.username ? `@${bot.username}` : undefined,
+        recordTemplate: recordTemplate.trim() || undefined,
+        conflictTemplate: conflictTemplate.trim() || undefined,
       });
     } catch (error) {
       setError(errorMessage(error));
@@ -362,6 +384,87 @@ export function TelegramConfig({ data, disabled, notificationConnected, onClose,
               </p>
             )}
           </section>
+
+          {/* Section 4: Mẫu tin nhắn (Template) */}
+          <section className="space-y-3 border-t border-gray-700 pt-4">
+            <h4 className="font-medium text-xs uppercase tracking-wider text-sky-300">
+              4. Mẫu nội dung thông báo (Template)
+            </h4>
+            <p className="text-xs text-gray-400">
+              Tùy chỉnh nội dung tin nhắn gửi về Telegram. Dùng biến dạng <code className="text-sky-300">{`{tên_cột}`}</code> hoặc bấm nút bên dưới để chèn nhanh.
+            </p>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-medium text-gray-300">
+                Mẫu thông báo bản ghi (khi nhận từ Rẽ Nhánh Điều Kiện):
+              </label>
+              <textarea
+                rows={2}
+                value={recordTemplate}
+                placeholder="Ví dụ: Đơn {id} chuyển sang trạng thái {status}."
+                onChange={(e) => setRecordTemplate(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-[#0b0e14] px-3 py-2 text-xs font-mono text-gray-100 placeholder-gray-500 focus:border-sky-400 focus:outline-none"
+              />
+              {availableColumns.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[10px] text-gray-500">Chèn biến:</span>
+                  {availableColumns.map((col) => (
+                    <button
+                      key={col}
+                      type="button"
+                      onClick={() => setRecordTemplate((prev) => `${prev}{${col}}`)}
+                      className="px-1.5 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-[10px] font-mono text-sky-300 border border-gray-700 transition cursor-pointer"
+                    >
+                      +{col}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="space-y-1.5">
+              <label className="block text-xs font-medium text-gray-300">
+                Mẫu cảnh báo xung đột (khi nhận từ nhánh Có xung đột):
+              </label>
+              <textarea
+                rows={2}
+                value={conflictTemplate}
+                placeholder="Ví dụ: Bản ghi {recordId} xung đột trên cột {columnName}."
+                onChange={(e) => setConflictTemplate(e.target.value)}
+                className="w-full rounded-lg border border-gray-700 bg-[#0b0e14] px-3 py-2 text-xs font-mono text-gray-100 placeholder-gray-500 focus:border-sky-400 focus:outline-none"
+              />
+              {conflictVariables.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1.5 pt-1">
+                  <span className="text-[10px] text-gray-500">Chèn biến:</span>
+                  {conflictVariables.map((col) => (
+                    <button
+                      key={col}
+                      type="button"
+                      onClick={() => setConflictTemplate((prev) => `${prev}{${col}}`)}
+                      className="px-1.5 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-[10px] font-mono text-amber-300 border border-gray-700 transition cursor-pointer"
+                    >
+                      +{col}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+          </section>
+
+          {invalidVariables.length > 0 && <p role="alert" className="text-xs text-red-300">Biến template không hợp lệ: {[...new Set(invalidVariables)].join(', ')}</p>}
+          {previewRow && recordTemplate && <section className="text-xs space-y-2"><h4>Xem trước bản ghi đã đọc</h4><pre className="whitespace-pre-wrap">{renderTemplatePreview(recordTemplate, previewRow)}</pre></section>}
+          {previewConflict && conflictTemplate && <section className="text-xs space-y-2"><h4>Xem trước xung đột</h4><pre className="whitespace-pre-wrap">{renderTemplatePreview(conflictTemplate, previewConflict)}</pre></section>}
+          {!!data.notificationItems?.length && <section className="space-y-2 text-xs">
+            <h4>Thông báo của lượt chạy gần nhất</h4>
+            {data.notificationItems.filter(item => item.state !== 'SKIPPED').map(item => <div key={item.id} className="border-t border-gray-700 py-2">
+              <p>{item.state === 'SENT' ? 'Đã gửi' : item.state === 'SENDING' ? 'Đang gửi' : item.state === 'PENDING' ? 'Đang chờ' : 'Gửi lỗi'} · {item.message.slice(0, 100)}</p>
+              {item.lastError && <p className="text-amber-200">{item.lastError}</p>}
+              {onRetryNotification && ['FAILED', 'DEAD'].includes(item.state) && <button disabled={busy} className="text-sky-300" onClick={async () => {
+                setBusy(true); setError('');
+                try { await onRetryNotification(item.id); } catch (error) { setError(errorMessage(error)); } finally { setBusy(false); }
+              }}>Thử gửi lại</button>}
+            </div>)}
+          </section>}
           <details className="border-t border-gray-700 pt-3">
             <summary className="cursor-pointer text-xs text-gray-400">
               Thiết lập nâng cao · nhập Chat ID
@@ -413,8 +516,7 @@ export function TelegramConfig({ data, disabled, notificationConnected, onClose,
           )}
           {!notificationConnected && (
             <p className="text-xs text-amber-200">
-              Khối Telegram chưa được nối với nhánh xung đột. Sau khi lưu, nối nhánh này để nhận
-              cảnh báo tự động.
+              Khối Telegram chưa được nối với nhánh xung đột hoặc rẽ nhánh. Sau khi lưu, hãy nối dây để nhận thông báo tự động.
             </p>
           )}
         </div>
@@ -431,7 +533,7 @@ export function TelegramConfig({ data, disabled, notificationConnected, onClose,
               Hủy
             </button>
             <button
-              disabled={!canUseRecipient}
+              disabled={!canUseRecipient || invalidVariables.length > 0}
               onClick={() => void save()}
               className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-xs font-medium disabled:opacity-40"
             >

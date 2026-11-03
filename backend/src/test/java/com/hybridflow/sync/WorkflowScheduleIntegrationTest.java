@@ -1,4 +1,5 @@
 package com.hybridflow.sync;
+import com.hybridflow.sync.dto.request.RunSyncRequest;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.api.client.googleapis.auth.oauth2.GoogleTokenResponse;
@@ -45,7 +46,7 @@ class WorkflowScheduleIntegrationTest {
     private String connection;
 
     @BeforeEach void setup() {
-        jdbc.execute("TRUNCATE workflow_jobs,sheet_write_journal,sync_conflicts,sync_snapshots,vault_records,sync_flow_bindings,sync_executions,workflow_definitions,google_connections RESTART IDENTITY");
+        jdbc.execute("TRUNCATE notification_outbox,workflow_jobs,sheet_write_journal,sync_conflicts,sync_snapshots,vault_records,sync_flow_bindings,sync_executions,workflow_definitions,google_connections RESTART IDENTITY");
         now.set(Instant.parse("2026-11-03T02:00:00Z"));
         when(clock.instant()).thenAnswer(invocation -> now.get());
         connection = credentials.store(new GoogleTokenResponse().setAccessToken("access-test").setRefreshToken("refresh-test").setExpiresInSeconds(3600L));
@@ -69,6 +70,43 @@ class WorkflowScheduleIntegrationTest {
     private void due(String id) { jdbc.update("UPDATE workflow_definitions SET next_run_at=? WHERE flow_id=?", java.sql.Timestamp.from(now.get()), id); }
     private String state() { return jdbc.queryForObject("SELECT state FROM workflow_jobs LIMIT 1", String.class); }
     private WorkflowJob claim() { return new TransactionTemplate(transactions).execute(status -> jobs.claim(now.get(), 120, 3).orElse(null)); }
+
+    @Test void savedRoutersAndTemplatesSurviveReloadAndProduceTheSameManualAndScheduledPlans() throws Exception {
+        com.fasterxml.jackson.databind.node.ObjectNode definition = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(graph(true));
+        com.fasterxml.jackson.databind.node.ArrayNode nodes = (com.fasterxml.jackson.databind.node.ArrayNode) definition.path("nodes");
+        nodes.add(mapper.readTree("""
+                {"id":"router","type":"routerCondition","data":{"routerTriggerOn":"UPDATED","routerMatchMode":"ANY",
+                "routerConditions":[{"columnName":"status","operator":"EQUALS","value":"READY"}]}}
+                """));
+        nodes.add(mapper.readTree("""
+                {"id":"telegram","type":"telegramAction","data":{"chatId":"123","recordTemplate":"Order {id}","conflictTemplate":"Conflict {recordId}"}}
+                """));
+        com.fasterxml.jackson.databind.node.ArrayNode edges = (com.fasterxml.jackson.databind.node.ArrayNode) definition.path("edges");
+        edges.add(mapper.readTree("""
+                {"source":"diff","sourceHandle":"clean","target":"router","targetHandle":"in"}
+                """));
+        edges.add(mapper.readTree("""
+                {"source":"router","sourceHandle":"out","target":"telegram","targetHandle":"in"}
+                """));
+        edges.add(mapper.readTree("""
+                {"source":"diff","sourceHandle":"conflict","target":"telegram","targetHandle":"in"}
+                """));
+        workflows.saveDefinition("routed-editor", definition);
+        assertEquals(nodes, workflows.getDefinition("routed-editor").path("nodes"));
+        assertEquals(edges, workflows.getDefinition("routed-editor").path("edges"));
+        workflows.runDefinition("routed-editor", false);
+        due("routed-editor"); scheduler.enqueueDue(); scheduler.runNext();
+        org.mockito.ArgumentCaptor<RunSyncRequest> requests = org.mockito.ArgumentCaptor.forClass(RunSyncRequest.class);
+        verify(execution, times(2)).executeSync(requests.capture());
+        RunSyncRequest manual = requests.getAllValues().get(0);
+        RunSyncRequest scheduled = requests.getAllValues().get(1);
+        assertEquals(manual.getFlowId(), scheduled.getFlowId());
+        assertEquals(mapper.valueToTree(manual.getRouters()), mapper.valueToTree(scheduled.getRouters()));
+        assertEquals(mapper.valueToTree(manual.getActions()), mapper.valueToTree(scheduled.getActions()));
+        assertEquals(manual.getConflictActionIds(), scheduled.getConflictActionIds());
+        assertEquals("UPDATED", manual.getRouters().getFirst().getTriggerOn());
+        assertEquals("Order {id}", manual.getActions().getFirst().getRecordTemplate());
+    }
 
     @Test void savingUnchangedScheduleKeepsDueTimeAndChangingIntervalReschedules() throws Exception {
         save("editor", true);

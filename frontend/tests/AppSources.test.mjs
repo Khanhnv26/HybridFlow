@@ -115,7 +115,7 @@ async function mount(options = {}) {
     sheets: [],
   });
   api.workflowService = { load: async () => ({}), save: async () => ({}) };
-  api.syncService = options.syncService || {};
+  api.syncService = { getNotifications: async () => [], ...options.syncService };
   api.telegramService = {};
   await act(async () => {
     renderer = create(React.createElement(App));
@@ -168,6 +168,102 @@ function rows(file, tab, count) {
     totalRows: count,
   };
 }
+
+test('Telegram states follow the latest execution outbox without changing successful sync steps', async context => {
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  let state = 'PENDING';
+  const queried = [];
+  api.googleService = { readSheet: async (_token, file, tab) => rows(file, tab, 1) };
+  await mount({ draft: {
+    nodes: [source('a', 'file-a', 'Tab A'),
+      { id: 'diff', type: 'diffEngine', position: { x: 0, y: 0 }, data: { uniqueKey: 'id', conflictPolicy: 'ASK_TELEGRAM' } },
+      { id: 'vault', type: 'storageAction', position: { x: 0, y: 0 }, data: { tableName: 'vault' } },
+      { id: 't', type: 'telegramAction', position: { x: 0, y: 0 }, data: { chatId: '123' } }],
+    edges: [{ source: 'a', sourceHandle: 'out', target: 'diff', targetHandle: 'in' },
+      { source: 'diff', sourceHandle: 'clean', target: 'vault', targetHandle: 'in' },
+      { source: 'diff', sourceHandle: 'conflict', target: 't', targetHandle: 'in' }],
+  }, syncService: {
+    getOpenConflicts: async () => [],
+    getHistory: async () => [{ id: 'outbox-run', status: 'SUCCESS', started_at: '2026-11-03T03:00:00Z',
+      progress: JSON.stringify([{ stage: 'WRITE', nodes: ['vault'], label: 'Lưu dữ liệu' }, { stage: 'NOTIFY', nodes: ['t'], label: 'Đã xếp hàng' }]),
+      result: JSON.stringify({ cleanRecordIds: [], conflicts: [], notificationsQueued: 1, notificationsSent: 0, notificationsFailed: 0 }) }],
+    getNotifications: async (flow, execution) => { queried.push([flow, execution]); return [{ id: 'notice', actionNodeId: 't', executionId: 'outbox-run', state, message: 'Test' }]; },
+  } });
+  for (let attempt = 0; attempt < 6; attempt++) await act(async () => new Promise(setImmediate));
+  assert.match(text(renderer.root), /Đang chờ gửi/);
+  assert.equal(queried[0][1], 'outbox-run');
+  state = 'DEAD';
+  await act(async () => context.mock.timers.tick(2000));
+  assert.match(text(renderer.root), /Gửi thông báo lỗi/);
+  state = 'SENT';
+  await act(async () => context.mock.timers.tick(2000));
+  assert.match(text(renderer.root), /Đã gửi 1 thông báo/);
+});
+
+test('closing the router cancels its outstanding source read', async () => {
+  const reads = [];
+  let rejectRead;
+  api.googleService = { readSheet: (_token, _file, _tab, signal) => {
+    reads.push(signal);
+    return new Promise((_resolve, reject) => { rejectRead = reject; });
+  } };
+  await mount({ token: 'gconn-test', draft: {
+    nodes: [source('a', 'file-a', 'Tab A'),
+      { id: 'diff', type: 'diffEngine', position: { x: 0, y: 0 }, data: { uniqueKey: 'id', sharedColumns: 'status', conflictPolicy: 'ASK_TELEGRAM' } },
+      { id: 'router', type: 'routerCondition', position: { x: 0, y: 0 }, data: {} }],
+    edges: [{ source: 'a', sourceHandle: 'out', target: 'diff', targetHandle: 'in' },
+      { source: 'diff', sourceHandle: 'clean', target: 'router', targetHandle: 'in' }],
+  } });
+  await act(async () => renderer.root.find(node => node.props['data-workflow-node'] === 'router').props.onClick());
+  assert.equal(reads.length, 1);
+  await act(async () => renderer.root.findByProps({ 'aria-label': 'Đóng' }).props.onClick());
+  assert.equal(reads[0]?.aborted, true, 'Closing must cancel the dialog source read');
+  await act(async () => rejectRead(new Error('read cancelled')));
+  assert.equal(renderer.root.findAllByProps({ role: 'dialog' }).length, 0);
+});
+
+test('a failed router preview read is shown once and can be retried without trapping the dialog', async () => {
+  let reads = 0;
+  let rejectRead;
+  api.googleService = { readSheet: async () => {
+    reads++;
+    if (reads === 1) return new Promise((_resolve, reject) => { rejectRead = reject; });
+    return { spreadsheetId: 'file-a', sheetName: 'Tab A', headers: ['id', 'status'], rows: [{ id: '1', status: 'READY' }], totalRows: 1 };
+  } };
+  await mount({ token: 'gconn-test', draft: {
+    nodes: [source('a', 'file-a', 'Tab A'),
+      { id: 'diff', type: 'diffEngine', position: { x: 0, y: 0 }, data: { uniqueKey: 'id', sharedColumns: 'status', conflictPolicy: 'ASK_TELEGRAM' } },
+      { id: 'router', type: 'routerCondition', position: { x: 0, y: 0 }, data: {} }],
+    edges: [{ source: 'a', sourceHandle: 'out', target: 'diff', targetHandle: 'in' },
+      { source: 'diff', sourceHandle: 'clean', target: 'router', targetHandle: 'in' }],
+  } });
+  await act(async () => renderer.root.find(node => node.props['data-workflow-node'] === 'router').props.onClick());
+  await act(async () => rejectRead(new Error('Sheet temporarily unavailable')));
+  assert.match(text(renderer.root), /Sheet temporarily unavailable/);
+  assert.equal(reads, 1);
+  await act(async () => renderer.root.findAllByType('button').find(node => text(node).includes('Đọc lại dữ liệu')).props.onClick());
+  assert.equal(reads, 2);
+  assert.equal(renderer.root.findAllByProps({ role: 'dialog' }).length, 1);
+  await act(async () => renderer.root.findByProps({ 'aria-label': 'Đóng' }).props.onClick());
+  assert.equal(renderer.root.findAllByProps({ role: 'dialog' }).length, 0);
+});
+
+test('opening and closing a router across parent updates never reuses another modal key', async context => {
+  const warnings = [];
+  context.mock.method(console, 'error', (...args) => warnings.push(args.join(' ')));
+  api.googleService = {};
+  await mount({ draft: {
+    nodes: [{ id: 'r', type: 'routerCondition', position: { x: 0, y: 0 }, data: {} }], edges: [],
+  } });
+  for (let cycle = 0; cycle < 3; cycle++) {
+    await act(async () => renderer.root.find(node => node.props['data-workflow-node'] === 'r').props.onClick());
+    assert.equal(renderer.root.findAllByProps({ role: 'dialog' }).length, 1);
+    await act(async () => renderer.root.findAllByType('input').find(node => node.props.type === 'text').props.onChange({ target: { value: 'READY' } }));
+    await act(async () => renderer.root.findByProps({ 'aria-label': 'Đóng' }).props.onClick());
+    assert.equal(renderer.root.findAllByProps({ role: 'dialog' }).length, 0);
+  }
+  assert.equal(warnings.some(line => line.includes('same key')), false, 'Sibling configuration modals must have different React keys');
+});
 
 test('scheduled backend phases animate the actual node and retain completion without manual execution', async (context) => {
   context.mock.timers.enable({ apis: ['setTimeout'] });

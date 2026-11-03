@@ -34,4 +34,7 @@ public class RunSyncRequest {
     private String conflictPolicy = "ASK_TELEGRAM";
     @Builder.Default
     private String storageName = "vault";
+    private List<RouterPlan> routers;
+    private List<ActionPlan> actions;
+    private List<String> conflictActionIds;
 }

@@ -23,7 +23,6 @@ function graph() {
         data: { uniqueKey: 'sku', conflictPolicy: 'ASK_TELEGRAM' },
       },
       { id: 'storage', type: 'storageAction', data: { tableName: 'products' } },
-      { id: 'telegram', type: 'telegramAction', data: { chatId: 'target-chat' } },
     ],
     edges: [
       { source: 'source', target: 'diff', sourceHandle: 'out', targetHandle: 'in' },
@@ -59,8 +58,9 @@ test('request uses node configuration and connected notification path', () => {
     storageName: 'products',
     conflictPolicy: 'ASK_TELEGRAM',
     notifyConflicts: false,
-    chatId: 'target-chat',
+    chatId: undefined,
   });
+  nodes.push({ id: 'telegram', type: 'telegramAction', data: { chatId: 'target-chat' } });
   edges.push({ source: 'diff', target: 'telegram', sourceHandle: 'conflict', targetHandle: 'in' });
   assert.equal(workflowConfig(nodes, edges).notifyConflicts, true);
 });
@@ -97,7 +97,7 @@ test('empty source or a connected Telegram node without a chat fails validation'
   nodes[0].data.spreadsheetId = '';
   assert.throws(() => workflowConfig(nodes, edges), /Điền/);
   nodes[0].data.spreadsheetId = 'sheet-A';
-  nodes[3].data.chatId = '';
+  nodes.push({ id: 'telegram', type: 'telegramAction', data: { chatId: '' } });
   edges.push({ source: 'diff', target: 'telegram', sourceHandle: 'conflict', targetHandle: 'in' });
   assert.throws(() => workflowConfig(nodes, edges), /Chat ID/);
 });
@@ -344,4 +344,72 @@ test('three Sheets share one rule set with independent write-back and canonical 
   assert.equal(await flowIdFor(config), 'flow-3de00f0e45057f912e6f975f793d7e82f1921d90fa09e3094c2e18d359226d54');
   g.edges.push({ source: 'second', target: 'transform', sourceHandle: 'out', targetHandle: 'in' });
   assert.throws(() => workflowConfig(g.nodes, g.edges), /nối trùng/);
+});
+
+test('router condition connects to diff clean and fans out to multiple telegram nodes', () => {
+  const nodes = [
+    { id: 's1', type: 'sheetsTrigger', data: { spreadsheetId: 'sheet-1', sheetName: 'Orders' } },
+    { id: 's2', type: 'sheetsTrigger', data: { spreadsheetId: 'sheet-2', sheetName: 'Orders' } },
+    { id: 'diff', type: 'diffEngine', data: { uniqueKey: 'id', sharedColumns: 'status', conflictPolicy: 'ASK_TELEGRAM' } },
+    { id: 'r1', type: 'routerCondition', data: { routerTriggerOn: 'UPDATED', routerMatchMode: 'ALL', routerConditions: [{ columnName: 'status', operator: 'CHANGED_TO', value: 'Đang giao' }] } },
+    { id: 't1', type: 'telegramAction', data: { chatId: 'chat-1', recordTemplate: 'Đơn {id}' } },
+    { id: 't2', type: 'telegramAction', data: { chatId: 'chat-2', recordTemplate: 'Quản lý: {id}' } },
+    { id: 't3', type: 'telegramAction', data: { chatId: 'chat-3' } },
+  ];
+  const edges = [
+    { source: 's1', target: 'diff', sourceHandle: 'out', targetHandle: 'in' },
+    { source: 's2', target: 'diff', sourceHandle: 'out', targetHandle: 'in' },
+    { source: 'diff', target: 'r1', sourceHandle: 'clean', targetHandle: 'in' },
+    { source: 'r1', target: 't1', sourceHandle: 'out', targetHandle: 'in' },
+    { source: 'r1', target: 't2', sourceHandle: 'out', targetHandle: 'in' },
+    { source: 'diff', target: 't3', sourceHandle: 'conflict', targetHandle: 'in' },
+  ];
+  const config = workflowConfig(nodes, edges);
+  assert.equal(config.routers?.length, 1);
+  assert.equal(config.routers[0].nodeId, 'r1');
+  assert.deepEqual(config.routers[0].actionNodeIds, ['t1', 't2']);
+  assert.equal(config.actions?.length, 3);
+  assert.deepEqual(config.conflictActionIds, ['t3']);
+  assert.equal(config.notifyConflicts, true);
+});
+
+test('router condition rejects chained routers and missing conditions', () => {
+  const nodes = [
+    { id: 's1', type: 'sheetsTrigger', data: { spreadsheetId: 'sheet-1', sheetName: 'Orders' } },
+    { id: 's2', type: 'sheetsTrigger', data: { spreadsheetId: 'sheet-2', sheetName: 'Orders' } },
+    { id: 'diff', type: 'diffEngine', data: { uniqueKey: 'id', sharedColumns: 'status', conflictPolicy: 'ASK_TELEGRAM' } },
+    { id: 'r1', type: 'routerCondition', data: { routerConditions: [] } },
+    { id: 't1', type: 'telegramAction', data: { chatId: 'chat-1' } },
+  ];
+  const edges = [
+    { source: 's1', target: 'diff', sourceHandle: 'out', targetHandle: 'in' },
+    { source: 's2', target: 'diff', sourceHandle: 'out', targetHandle: 'in' },
+    { source: 'diff', target: 'r1', sourceHandle: 'clean', targetHandle: 'in' },
+    { source: 'r1', target: 't1', sourceHandle: 'out', targetHandle: 'in' },
+  ];
+  assert.throws(() => workflowConfig(nodes, edges), /ít nhất một điều kiện/);
+});
+
+test('router syntax validation rejects missing values and operators and accepts repaired modal drafts', async () => {
+  const { nodes, edges } = graph();
+  const router = { id: 'r', type: 'routerCondition', data: { triggerOn: 'UPDATED', matchMode: 'ANY', conditions: [{ columnName: 'status', operator: 'EQUALS', value: '' }] } };
+  nodes.push(router, { id: 't', type: 'telegramAction', data: { chatId: '123' } });
+  edges.push({ source: 'diff', sourceHandle: 'clean', target: 'r', targetHandle: 'in' }, { source: 'r', sourceHandle: 'out', target: 't', targetHandle: 'in' });
+  const config = workflowConfig(nodes, edges);
+  assert.equal(config.routers[0].triggerOn, 'UPDATED');
+  assert.equal(config.routers[0].matchMode, 'ANY');
+  assert.equal(config.routers[0].conditions[0].value, '');
+  const identity = await flowIdFor(config);
+  router.data.conditions[0].value = 'READY';
+  assert.equal(await flowIdFor(workflowConfig(nodes, edges)), identity);
+  delete router.data.conditions[0].value;
+  assert.throws(() => workflowConfig(nodes, edges), /thiếu value/);
+  router.data.conditions[0].operator = 'UNKNOWN';
+  assert.throws(() => workflowConfig(nodes, edges), /toán tử/);
+});
+
+test('an unconnected Telegram is rejected instead of silently omitted', () => {
+  const { nodes, edges } = graph();
+  nodes.push({ id: 'unused', type: 'telegramAction', data: { chatId: '123' } });
+  assert.throws(() => workflowConfig(nodes, edges), /dây vào/);
 });

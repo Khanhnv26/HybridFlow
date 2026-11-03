@@ -12,6 +12,7 @@ import com.hybridflow.sync.entity.SyncConflict;
 import com.hybridflow.sync.model.SyncDiffResult;
 import com.hybridflow.sync.model.SheetCellChange;
 import com.hybridflow.sync.model.SheetWritePlan;
+import com.hybridflow.sync.service.DataTransformerService;
 import com.hybridflow.sync.service.SheetWriteService;
 import com.hybridflow.sync.util.SheetEndpointUtils;
 import com.hybridflow.sync.repository.SyncConflictRepository;
@@ -35,7 +36,7 @@ public class SyncConflictServiceImpl implements SyncConflictService {
     private final TelegramNotificationService notifications;
     private final SyncJsonCodec codec;
     private final SheetWriteService writes;
-    private final com.hybridflow.sync.service.DataTransformerService dataTransformerService;
+    private final DataTransformerService dataTransformerService;
 
     @Override
     @Transactional

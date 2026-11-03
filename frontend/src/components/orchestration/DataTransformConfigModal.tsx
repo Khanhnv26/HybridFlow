@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowUp, Check, RefreshCw, Save, Wand2, X } from 'lucide-react';
+import { ArrowDown, ArrowUp, Check, RefreshCw, Save, Search, Wand2, X } from 'lucide-react';
 import type { ColumnTransformConfig, OrchestrationNodeData, SheetDataResponse, TransformRule } from '../../types';
 import { transformRules, transformValue } from '../../services/dataTransform';
 
@@ -70,6 +70,11 @@ export function DataTransformConfigModal({
   const unverified = connected && active.length > 0 && inputs.some(input => !previews[input.nodeId]);
   const columns = [...new Set([...Object.values(previews).flatMap(sheet => sheet.headers), ...configs.map(config => config.columnName)])];
   const [selectedColumn, setSelectedColumn] = useState<string>('');
+  const [colSearchQuery, setColSearchQuery] = useState('');
+
+  const filteredColumns = columns.filter(col =>
+    col.toLowerCase().includes(colSearchQuery.toLowerCase().trim()),
+  );
 
   const activeCol = selectedColumn && columns.includes(selectedColumn)
     ? selectedColumn
@@ -153,7 +158,7 @@ export function DataTransformConfigModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="transform-title"
-        className="flex max-h-[90vh] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-[#2d3748] bg-[#141922] text-gray-100 shadow-2xl"
+        className="flex h-[88vh] max-h-[850px] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-[#2d3748] bg-[#141922] text-gray-100 shadow-2xl"
         onClick={event => event.stopPropagation()}
       >
         {/* Modal Header */}
@@ -180,10 +185,10 @@ export function DataTransformConfigModal({
         </header>
 
         {/* 2-Column Split: Master-Detail matching SheetSourceConfig */}
-        <div className="grid min-h-0 overflow-y-auto md:grid-cols-2">
+        <div className="grid min-h-0 flex-1 overflow-hidden md:grid-cols-2">
           
           {/* Left Panel: Configuration */}
-          <div className="space-y-4 overflow-y-auto p-5 text-sm">
+          <div className="space-y-4 overflow-y-auto p-5 text-sm min-w-0 h-full">
             {hasSource && !connected && (
               <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-700 bg-amber-950/30 p-3 text-xs text-amber-200">
                 <span>Kết nối Google để kiểm tra cột và xem trước dữ liệu thật.</span>
@@ -254,23 +259,23 @@ export function DataTransformConfigModal({
                             : 'border-gray-800 bg-[#141922] text-gray-400 hover:border-gray-700 hover:text-gray-300'
                         }`}
                       >
-                        <div className="min-w-0">
+                        <div className="min-w-0 flex-1 pr-2">
                           <button
                             type="button"
                             onClick={(e) => { e.stopPropagation(); setSelectedId(input.nodeId); }}
                             title={input.name}
-                            className={`block truncate text-left text-xs ${isSelected ? 'font-medium text-purple-200' : 'text-gray-400'}`}
+                            className={`block w-full truncate text-left text-xs ${isSelected ? 'font-medium text-purple-200' : 'text-gray-400'}`}
                           >
                             {input.name}
                           </button>
-                          <span className={`block text-[10px] ${readErrors[input.nodeId] ? 'text-red-300' : 'text-gray-500'}`}>
+                          <span className={`block text-[10px] truncate ${readErrors[input.nodeId] ? 'text-red-300' : 'text-gray-500'}`}>
                             {reading ? 'Đang đọc…' : readErrors[input.nodeId] ? 'Đọc thất bại' : previews[input.nodeId] ? `${previews[input.nodeId].totalRows} dòng` : 'Chưa đọc'}
                           </span>
                         </div>
 
                         {inputs.length > 1 && (
                           <label
-                            className="flex shrink-0 items-center gap-1.5 text-xs text-gray-400 cursor-pointer"
+                            className="flex shrink-0 items-center gap-1.5 text-xs text-gray-400 cursor-pointer select-none"
                             onClick={e => e.stopPropagation()}
                           >
                             <input
@@ -319,7 +324,7 @@ export function DataTransformConfigModal({
             </div>
 
             {/* Block 2: Cột dữ liệu (Pill Selector) */}
-            <div className="space-y-2">
+            <div className="space-y-2 min-w-0">
               <div className="flex items-center justify-between">
                 <span className="text-xs font-semibold text-gray-300">
                   Cột dữ liệu ({columns.length})
@@ -334,38 +339,53 @@ export function DataTransformConfigModal({
                   {reading ? 'Đang lấy danh sách cột…' : 'Đọc Sheet để lấy danh sách cột.'}
                 </p>
               ) : (
-                <div className="flex flex-wrap gap-1.5">
-                  {columns.map(column => {
-                    const config = configs.find(item => item.columnName === column);
-                    const count = config?.rules?.length || 0;
-                    const isSelected = activeCol === column;
-                    return (
-                      <button
-                        key={column}
-                        type="button"
-                        onClick={() => setSelectedColumn(column)}
-                        className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-mono transition ${
-                          isSelected
-                            ? 'border-purple-500 bg-purple-600 font-medium text-white shadow-sm'
-                            : count > 0
-                            ? 'border-purple-800 bg-purple-950/40 text-purple-200 hover:border-purple-600'
-                            : 'border-gray-700 bg-[#0b0e14] text-gray-400 hover:border-gray-600 hover:text-gray-200'
-                        }`}
-                      >
-                        <span>{column}</span>
-                        {count > 0 && (
-                          <span
-                            className={`rounded-full px-1.5 text-[11px] font-sans ${
-                              isSelected ? 'bg-purple-800 text-white' : 'bg-purple-900/60 text-purple-300'
-                            }`}
-                          >
-                            {count}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
+                <>
+                  {columns.length > 5 && (
+                    <div className="relative">
+                      <Search size={13} className="absolute left-2.5 top-2.5 text-gray-500 pointer-events-none" />
+                      <input
+                        type="text"
+                        value={colSearchQuery}
+                        onChange={(e) => setColSearchQuery(e.target.value)}
+                        placeholder="Tìm tên cột..."
+                        className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-[#0b0e14] border border-gray-700 text-xs text-gray-200 placeholder-gray-500 outline-none focus:border-purple-500"
+                      />
+                    </div>
+                  )}
+                  <div className="max-h-28 overflow-y-auto pr-1 flex flex-wrap gap-1.5">
+                    {filteredColumns.map(column => {
+                      const config = configs.find(item => item.columnName === column);
+                      const count = config?.rules?.length || 0;
+                      const isSelected = activeCol === column;
+                      return (
+                        <button
+                          key={column}
+                          type="button"
+                          title={column}
+                          onClick={() => setSelectedColumn(column)}
+                          className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-mono transition max-w-[150px] ${
+                            isSelected
+                              ? 'border-purple-500 bg-purple-600 font-medium text-white shadow-sm'
+                              : count > 0
+                              ? 'border-purple-800 bg-purple-950/40 text-purple-200 hover:border-purple-600'
+                              : 'border-gray-700 bg-[#0b0e14] text-gray-400 hover:border-gray-600 hover:text-gray-200'
+                          }`}
+                        >
+                          <span className="truncate">{column}</span>
+                          {count > 0 && (
+                            <span
+                              className={`rounded-full px-1.5 text-[11px] font-sans shrink-0 ${
+                                isSelected ? 'bg-purple-800 text-white' : 'bg-purple-900/60 text-purple-300'
+                              }`}
+                            >
+                              {count}
+                            </span>
+                          )}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </>
               )}
             </div>
 
@@ -470,8 +490,8 @@ export function DataTransformConfigModal({
           </div>
 
           {/* Right Panel: Spreadsheet Preview matching SheetSourceConfig */}
-          <div className="flex min-w-0 flex-col justify-between space-y-4 bg-[#13161f] p-5 text-xs">
-            <div className="space-y-3">
+          <div className="flex min-w-0 flex-col justify-between space-y-4 bg-[#13161f] p-5 text-xs overflow-y-auto h-full">
+            <div className="space-y-3 min-w-0">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
                   <h4 className="font-medium text-gray-300">Xem trước kết quả</h4>
@@ -482,7 +502,7 @@ export function DataTransformConfigModal({
                     aria-label="Sheet xem trước"
                     value={selectedId}
                     onChange={event => setSelectedId(event.target.value)}
-                    className="rounded-lg border border-gray-700 bg-[#0b0e14] px-2.5 py-1.5 text-xs text-gray-200 outline-none focus:border-purple-500"
+                    className="rounded-lg border border-gray-700 bg-[#0b0e14] px-2.5 py-1.5 text-xs text-gray-200 outline-none focus:border-purple-500 max-w-[200px] truncate"
                   >
                     {inputs.map(input => (
                       <option key={input.nodeId} value={input.nodeId}>{input.name}</option>
@@ -502,14 +522,14 @@ export function DataTransformConfigModal({
                     : 'Chọn quy tắc để xem kết quả.'}
                 </div>
               ) : (
-                <div className="max-h-[50vh] overflow-auto rounded-lg border border-gray-800 bg-[#0b0e14]">
-                  <table className="w-full text-left whitespace-nowrap">
-                    <thead className="sticky top-0 border-b border-gray-700 bg-[#161c26] text-gray-400">
+                <div className="max-h-[52vh] overflow-auto rounded-lg border border-gray-800 bg-[#0b0e14]">
+                  <table className="w-full table-fixed text-left">
+                    <thead className="sticky top-0 z-10 border-b border-gray-700 bg-[#161c26] text-gray-400">
                       <tr>
                         <th className="p-2.5 text-center text-gray-500 w-12 font-medium">#</th>
-                        <th className="p-2.5 font-medium">Cột</th>
-                        <th className="p-2.5 font-medium">Trước</th>
-                        <th className="p-2.5 font-medium">Sau</th>
+                        <th className="p-2.5 font-medium w-[26%]">Cột</th>
+                        <th className="p-2.5 font-medium w-[34%]">Trước</th>
+                        <th className="p-2.5 font-medium w-[34%]">Sau</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-800 font-mono">
@@ -525,15 +545,17 @@ export function DataTransformConfigModal({
                               className={`hover:bg-[#141922] transition ${isSelected ? 'bg-purple-950/20' : ''}`}
                             >
                               <td className="p-2.5 text-center text-gray-500 font-sans text-xs">{index + 2}</td>
-                              <td className={`p-2.5 ${isSelected ? 'font-medium text-purple-300' : 'text-gray-400'}`}>
-                                {config.columnName}
+                              <td className="p-2.5 truncate" title={config.columnName}>
+                                <span className={`block truncate ${isSelected ? 'font-medium text-purple-300' : 'text-gray-400'}`}>
+                                  {config.columnName}
+                                </span>
                               </td>
-                              <td className="whitespace-pre-wrap break-all p-2.5 text-gray-400">
-                                {JSON.stringify(before)}
+                              <td className="p-2.5 text-gray-400 truncate" title={String(before)}>
+                                <span className="block truncate">{JSON.stringify(before)}</span>
                               </td>
-                              <td className={`whitespace-pre-wrap break-all p-2.5 ${changed ? 'font-medium text-emerald-300' : 'text-gray-400'}`}>
-                                <div className="flex items-center gap-1.5">
-                                  <span>{JSON.stringify(after)}</span>
+                              <td className={`p-2.5 truncate ${changed ? 'font-medium text-emerald-300' : 'text-gray-400'}`} title={String(after)}>
+                                <div className="flex items-center justify-between gap-1.5 min-w-0">
+                                  <span className="truncate">{JSON.stringify(after)}</span>
                                   {changed && <Check size={12} className="text-emerald-300 shrink-0" aria-label="Đã thay đổi" />}
                                 </div>
                               </td>

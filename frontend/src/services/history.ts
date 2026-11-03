@@ -27,7 +27,7 @@ export function historyLog(item: ExecutionHistoryDto): RunHistoryItem {
             ? 'Phiên này yêu cầu xác nhận khởi tạo snapshot từ Sheet.'
             : `Đồng bộ ${result?.cleanRecordIds?.length ?? 0} bản ghi; ${result?.conflicts?.length ?? 0} xung đột.`,
     details: result
-      ? `Telegram: gửi ${result.notificationsSent}, lỗi ${result.notificationsFailed}.`
+      ? result.notificationsQueued !== undefined ? `Đã xếp hàng ${result.notificationsQueued} thông báo.` : `Telegram: gửi ${result.notificationsSent}, lỗi ${result.notificationsFailed}.`
       : undefined,
     latency: result?.latency,
     recordsCount: result?.totalRowsProcessed,

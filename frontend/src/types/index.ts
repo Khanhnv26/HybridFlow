@@ -89,6 +89,51 @@ export interface ColumnTransformConfig {
   rules: TransformRule[];
   defaultValue?: string;
 }
+
+export type RouterOperator = 'CHANGED_TO' | 'EQUALS' | 'NOT_EQUALS' | 'CONTAINS' | 'IS_NOT_EMPTY';
+export type RouterTriggerOn = 'CHANGED' | 'CREATED' | 'UPDATED';
+export type RouterMatchMode = 'ALL' | 'ANY';
+
+export interface RouterConditionItem {
+  columnName: string;
+  operator: RouterOperator;
+  value?: string;
+}
+
+export interface RouterPlanPayload {
+  nodeId: string;
+  triggerOn: RouterTriggerOn;
+  matchMode: RouterMatchMode;
+  conditions: RouterConditionItem[];
+  actionNodeIds: string[];
+}
+
+export interface ActionPlanPayload {
+  nodeId: string;
+  channel: 'TELEGRAM';
+  chatId: string;
+  recordTemplate?: string;
+  conflictTemplate?: string;
+}
+
+export interface NotificationOutboxItem {
+  id: string;
+  flowId: string;
+  executionId?: string;
+  actionNodeId: string;
+  channel: string;
+  destination: string;
+  sourceType: 'RECORD' | 'CONFLICT';
+  sourceKey: string;
+  message: string;
+  state: 'PENDING' | 'SENDING' | 'SENT' | 'FAILED' | 'DEAD' | 'SKIPPED';
+  attempts: number;
+  availableAt: string;
+  lastError?: string;
+  createdAt: string;
+  sentAt?: string;
+}
+
 export interface DataTransformNodeData extends OrchestrationNodeData {
   transforms?: ColumnTransformConfig[];
   writeBackCleanData?: boolean;
@@ -100,6 +145,16 @@ export interface OrchestrationNodeData extends Record<string, unknown> {
   transformWriteBackCount?: number;
   transforms?: ColumnTransformConfig[];
   writeBackCleanData?: boolean;
+  routerTriggerOn?: RouterTriggerOn;
+  routerMatchMode?: RouterMatchMode;
+  routerConditions?: RouterConditionItem[];
+  triggerOn?: RouterTriggerOn;
+  matchMode?: RouterMatchMode;
+  conditions?: RouterConditionItem[];
+  recordTemplate?: string;
+  conflictTemplate?: string;
+  incomingSourcesCount?: number;
+  notificationItems?: NotificationOutboxItem[];
   label: string;
   category: 'trigger' | 'logic' | 'action';
   type: OrchestrationNodeType;
@@ -119,9 +174,11 @@ export interface OrchestrationNodeData extends Record<string, unknown> {
   onOpenConflict?: () => void;
   connectedSheets?: ConnectedSheetSource[];
   hasLegacyStorageConnection?: boolean;
+  hasLegacySheetConnection?: boolean;
   // Natural language parameters
   uniqueKey?: string;
   sharedColumns?: string;
+  syncColumns?: string[];
   conflictPolicy?: string;
   spreadsheetId?: string;
   spreadsheetTitle?: string;
@@ -208,6 +265,9 @@ export interface RunSyncRequestPayload {
   chatId?: string;
   conflictPolicy: 'ASK_TELEGRAM' | 'SOURCE_WINS' | 'DESTINATION_WINS';
   storageName: string;
+  routers?: RouterPlanPayload[];
+  actions?: ActionPlanPayload[];
+  conflictActionIds?: string[];
 }
 
 export interface RunSyncResponse {
@@ -223,6 +283,7 @@ export interface RunSyncResponse {
   bootstrapRequired: boolean;
   notificationsSent: number;
   notificationsFailed: number;
+  notificationsQueued?: number;
 }
 
 export interface ExecutionHistoryDto {

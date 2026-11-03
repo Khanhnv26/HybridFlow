@@ -12,7 +12,9 @@ import java.util.concurrent.RejectedExecutionException;
 public class WorkflowScheduleRunner {
     private final WorkflowJobService jobs;
     private final ThreadPoolExecutor workflowExecutor;
-    @Value("${hybridflow.scheduler.enabled:true}") private boolean enabled = true;
+
+    @Value("${hybridflow.scheduler.enabled:true}")
+    private boolean enabled = true;
 
     @Scheduled(fixedDelayString = "${hybridflow.scheduler.poll-ms:5000}")
     public void pollAndExecuteDueWorkflows() {

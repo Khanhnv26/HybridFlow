@@ -17,6 +17,7 @@ import { Map, LayoutGrid, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { StudioHeader } from './components/orchestration/StudioHeader';
 import { NodePalette } from './components/orchestration/NodePalette';
 import { DataTransformConfigModal } from './components/orchestration/DataTransformConfigModal';
+import { RouterConditionConfigModal } from './components/orchestration/RouterConditionConfigModal';
 import { NaturalLanguageConfigModal } from './components/orchestration/NaturalLanguageConfigModal';
 import { RunHistoryDrawer } from './components/orchestration/RunHistoryDrawer';
 import { ConflictModal } from './components/nocode/ConflictModal';
@@ -29,6 +30,7 @@ import {
   TelegramActionNode,
   ScheduleTriggerNode,
   GenericOrchestrationNode,
+  RouterConditionNode,
 } from './components/nodes/OrchestrationNodes';
 import { googleService, syncService, workflowService, telegramService } from './services/api';
 import { arrangeWorkflowNodes } from './services/workflowLayout';
@@ -39,7 +41,7 @@ import { useWorkflowPolling } from './hooks/useWorkflowPolling';
 import { useExecutionCompletion } from './hooks/useExecutionCompletion';
 import { executionVisuals } from './services/executionVisuals';
 import { ExecutionEdge } from './components/orchestration/ExecutionEdge';
-import type { RunHistoryItem, OrchestrationNodeData, SyncConflictDto, ExecutionHistoryDto } from './types';
+import type { RunHistoryItem, OrchestrationNodeData, SyncConflictDto, ExecutionHistoryDto, NotificationOutboxItem } from './types';
 
 const initialNodes: Node<OrchestrationNodeData>[] = [
   {
@@ -158,6 +160,7 @@ export default function App() {
     if (conflicts.length === 0) setIsConflictModalOpen(false);
   }, [conflicts.length]);
   const [flowId, setFlowId] = useState('');
+  const [notificationItems, setNotificationItems] = useState<NotificationOutboxItem[]>([]);
   const [bootstrapRequired, setBootstrapRequired] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [connected, setConnected] = useState(() => !!localStorage.getItem('google_access_token')?.startsWith('gconn-'));
@@ -286,6 +289,7 @@ export default function App() {
     ++refreshRevision.current;
     observedRunData.current = null;
     setLatestExecution(null);
+    setNotificationItems([]);
     setFlowId('');
     currentFlow.current = '';
     setConflicts([]);
@@ -323,6 +327,18 @@ export default function App() {
     }
     return false;
   }, []);
+  const notificationKey = flowId && latestExecution?.id ? flowId + '|' + latestExecution.id : '';
+  useEffect(() => { setNotificationItems([]); }, [notificationKey]);
+  const refreshNotifications = async (_key: string, signal: AbortSignal) => {
+    if (!latestExecution?.id) return;
+    const items = await syncService.getNotifications(flowId, latestExecution.id, signal);
+    if (!signal.aborted && currentFlow.current === flowId) setNotificationItems(items);
+  };
+  useWorkflowPolling(notificationKey, refreshNotifications, error => showToast(message(error)), 2000);
+  const retryNotification = async (id: string) => {
+    await syncService.retryNotification(id);
+    await refreshNotifications(notificationKey, new AbortController().signal);
+  };
   const clearLogs = useCallback(async () => {
     const id = currentFlow.current;
     if (!id) {
@@ -405,7 +421,7 @@ export default function App() {
           showToast('Chưa ghi dữ liệu. Xác nhận khởi tạo snapshot để bắt đầu đồng bộ.');
         } else
           showToast(
-            `Đồng bộ ${result.cleanRecordIds.length} bản ghi, ${result.conflicts.length} xung đột. Telegram: gửi ${result.notificationsSent}, lỗi ${result.notificationsFailed}.`,
+            `Đồng bộ ${result.cleanRecordIds.length} bản ghi, ${result.conflicts.length} xung đột. Đã xếp hàng ${result.notificationsQueued ?? 0} thông báo.`,
           );
         await refreshRunData(id);
         await refreshSources();
@@ -469,13 +485,22 @@ export default function App() {
   );
   const sendTelegram = useCallback(
     async (conflictId: number) => {
-      const chatId = nodes.find((n) => n.type === 'telegramAction')?.data.chatId?.trim();
-      if (!chatId) throw new Error('Điền Telegram Chat ID.');
-      const result = await syncService.resendTelegramAlert(conflictId, chatId);
-      if (!result.success) throw new Error(result.message);
-      showToast(result.message);
+      const diff = nodes.find(node => node.type === 'diffEngine');
+      const targets = nodes.filter(node => node.type === 'telegramAction' && edges.some(edge =>
+        edge.source === diff?.id && edge.sourceHandle === 'conflict' && edge.target === node.id));
+      if (!targets.length) throw new Error('Nối khối Telegram vào nhánh xung đột trước khi gửi lại.');
+      const results = await Promise.all(targets.map(async node => {
+        const destination = node.data.chatId?.trim();
+        if (!destination) throw new Error('Điền Telegram Chat ID.');
+        return syncService.resendTelegramAlert(conflictId, destination);
+      }));
+      const failed = results.filter(result => !result.success);
+      if (failed.length) throw new Error(failed.map(result => result.message).join('; '));
+      showToast('Đã gửi lại cảnh báo đến ' + targets.length + ' đích Telegram.');
+      return;
+
     },
-    [nodes, showToast],
+    [nodes, edges, showToast],
   );
   const updateCell = useCallback(
     async (range: string, value: string) => {
@@ -500,8 +525,8 @@ export default function App() {
   );
   const pendingExecution = manualRunning && latestExecution?.id === manualBaseline;
   const recentlyCompleted = useExecutionCompletion(flowId, latestExecution, observedRunData.current?.flowId === flowId);
-  const executionView = useMemo(() => executionVisuals(nodes, edges, pendingExecution ? null : latestExecution, pendingExecution),
-    [nodes, edges, latestExecution, pendingExecution]);
+  const executionView = useMemo(() => executionVisuals(nodes, edges, pendingExecution ? null : latestExecution, pendingExecution, notificationItems),
+    [nodes, edges, latestExecution, pendingExecution, notificationItems]);
   const enhancedNodes = useMemo(
     () =>
       nodes.map((node) => ({
@@ -510,6 +535,9 @@ export default function App() {
           ...node.data,
           isRunning,
           executionState: executionView.nodeStates[node.id],
+          incomingSourcesCount: edges.filter(edge => edge.target === node.id).length,
+          hasLegacySheetConnection: edges.some(edge => edge.source === node.id && edge.sourceHandle === 'clean' && nodes.some(target => target.id === edge.target && target.type === 'sheetsTrigger')),
+          notificationItems: notificationItems.filter(item => item.actionNodeId === node.id),
           userAccount: node.type === 'sheetsTrigger' && connected ? 'Google OAuth' : undefined,
           spreadsheetTitle:
             node.type === 'sheetsTrigger'
@@ -558,7 +586,7 @@ export default function App() {
             ),
         },
       })),
-    [nodes, edges, sheetNodes, isRunning, connected, stateFor, openTable, conflicts.length, executionView],
+    [nodes, edges, sheetNodes, isRunning, connected, stateFor, openTable, conflicts.length, executionView, notificationItems],
   );
   const nodeTypes = useMemo(
     () => ({
@@ -568,7 +596,7 @@ export default function App() {
       telegramAction: TelegramActionNode,
       scheduleTrigger: ScheduleTriggerNode,
       webhookTrigger: GenericOrchestrationNode,
-      routerCondition: GenericOrchestrationNode,
+      routerCondition: RouterConditionNode,
       dataTransform: DataTransformNode,
       sheetWriteAction: GenericOrchestrationNode,
     }),
@@ -602,6 +630,72 @@ export default function App() {
   const transformSources = transformInputs
     .map(edge => nodes.find(node => node.type === 'sheetsTrigger' && node.id === edge.source))
     .filter((node): node is Node<OrchestrationNodeData> => !!node);
+  const diffUpstreamSheets = useMemo(() => {
+    if (!activeNode || !['diffEngine', 'routerCondition', 'telegramAction'].includes(activeNode.type || '')) return [];
+    const diffId = activeNode.type === 'diffEngine' ? activeNode.id : nodes.find(node => node.type === 'diffEngine')?.id;
+    const direct = edges
+      .filter(e => e.target === diffId)
+      .map(e => nodes.find(n => n.id === e.source))
+      .filter((n): n is Node<OrchestrationNodeData> => n?.type === 'sheetsTrigger');
+    const viaTransform = edges
+      .filter(e => e.target === diffId)
+      .flatMap(e => {
+        const transNode = nodes.find(n => n.id === e.source && n.type === 'dataTransform');
+        if (!transNode) return [];
+        return edges
+          .filter(te => te.target === transNode.id)
+          .map(te => nodes.find(n => n.id === te.source && n.type === 'sheetsTrigger'))
+          .filter((n): n is Node<OrchestrationNodeData> => !!n);
+      });
+    const seen = new Set<string>();
+    const unique: Node<OrchestrationNodeData>[] = [];
+    for (const s of [...direct, ...viaTransform]) {
+      if (s && !seen.has(s.id)) {
+        seen.add(s.id);
+        unique.push(s);
+      }
+    }
+    return unique;
+  }, [activeNode, edges, nodes]);
+  const diffAvailableColumns = useMemo(() => {
+    if (!activeNode || !['diffEngine', 'routerCondition', 'telegramAction'].includes(activeNode.type || '')) return [];
+    const headers = diffUpstreamSheets.map(source => stateFor(sourceDescriptor(source)).data?.headers).filter((value): value is string[] => !!value);
+    const common = headers.length ? headers[0].filter(column => headers.every(list => list.includes(column))) : [];
+    const diffNode = nodes.find(node => node.type === 'diffEngine');
+    if (activeNode.type === 'diffEngine') return common;
+    const key = diffNode?.data.uniqueKey?.trim() || 'id';
+    const configured = diffNode?.data.syncColumns || diffNode?.data.sharedColumns?.split(',').map(value => value.trim()).filter(Boolean);
+    return [...new Set([key, ...(configured?.length ? configured : common)])];
+  }, [activeNode, diffUpstreamSheets, nodes, stateFor]);
+  const previewRows = diffUpstreamSheets.flatMap(source => stateFor(sourceDescriptor(source)).data?.rows || []);
+  const previewConflict = conflicts[0] ? {
+    recordId: conflicts[0].recordId, id: conflicts[0].recordId,
+    columnName: conflicts[0].columnName, column: conflicts[0].columnName,
+    baseValue: conflicts[0].baseValue || '', valueA: conflicts[0].valueA || '', valueB: conflicts[0].valueB || '',
+  } : undefined;
+
+  const configReadSourcesKey = JSON.stringify(diffUpstreamSheets.map(sourceDescriptor));
+  const [configReadRetry, setConfigReadRetry] = useState(0);
+  const configReadErrors = diffUpstreamSheets.flatMap(source => {
+    const state = stateFor(sourceDescriptor(source));
+    return state.status === 'error' ? [`${source.data.spreadsheetTitle || source.data.sheetName}: ${state.error}`] : [];
+  });
+  const configReading = diffUpstreamSheets.some(source => stateFor(sourceDescriptor(source)).status === 'loading');
+
+  useEffect(() => {
+    const controller = new AbortController();
+    if (activeNode && ['diffEngine', 'routerCondition', 'telegramAction'].includes(activeNode.type || '') && connected && !isRunning) {
+      const sources = JSON.parse(configReadSourcesKey) as ReturnType<typeof sourceDescriptor>[];
+      sources.forEach(desc => {
+        const state = stateFor(desc);
+        if (desc.spreadsheetId && desc.sheetName && !state.data && state.status !== 'loading') {
+          // The read hook records errors; keep a rejected source read out of the global error overlay.
+          void readSheetSource(desc, controller.signal).catch(() => {});
+        }
+      });
+    }
+    return () => controller.abort();
+  }, [activeNode?.id, activeNode?.type, connected, configReadSourcesKey, configReadRetry, isRunning, readSheetSource]);
   const connectGoogle = async () => {
     const opened = window.open('about:blank', 'hybridflow-google', 'width=600,height=700');
     if (!opened) throw new Error('Trình duyệt đã chặn cửa sổ đăng nhập Google.');
@@ -810,10 +904,24 @@ export default function App() {
         disabled={isRunning}
         onSave={settings => saveSource(activeNode.id, settings, 'Đã lưu cấu hình chuẩn hóa vào hệ thống.')}
       />}
+      {activeNode?.type === 'routerCondition' && (
+        <RouterConditionConfigModal
+          key={`router-config:${activeNode.id}`}
+          data={activeNode.data}
+          availableColumns={diffAvailableColumns}
+          previewRows={previewRows}
+          reading={configReading}
+          readErrors={configReadErrors}
+          onRetryRead={() => setConfigReadRetry(value => value + 1)}
+          disabled={isRunning}
+          onClose={() => setActiveNodeId(null)}
+          onSave={settings => saveSource(activeNode.id, settings, 'Đã lưu cấu hình rẽ nhánh điều kiện.')}
+        />
+      )}
       <NaturalLanguageConfigModal
         workflowId={workflowId}
-        key={activeNodeId}
-        node={activeNode?.type === 'dataTransform' ? null : activeNode}
+        key={`node-config:${activeNodeId}`}
+        node={['dataTransform', 'routerCondition'].includes(activeNode?.type || '') || !activeNode ? null : { ...activeNode, data: { ...activeNode.data, notificationItems: notificationItems.filter(item => item.actionNodeId === activeNode.id) } }}
         onClose={() => setActiveNodeId(null)}
         onTestStep={testStep}
         connectionVersion={connectionVersion}
@@ -826,9 +934,16 @@ export default function App() {
         notificationConnected={edges.some(
           (edge) =>
             edge.target === activeNodeId &&
-            edge.sourceHandle === 'conflict' &&
-            nodes.some((node) => node.id === edge.source && node.type === 'diffEngine'),
+            ((edge.sourceHandle === 'conflict' &&
+              nodes.some((node) => node.id === edge.source && node.type === 'diffEngine')) ||
+             (edge.sourceHandle === 'out' &&
+              nodes.some((node) => node.id === edge.source && node.type === 'routerCondition'))),
         )}
+        availableColumns={diffAvailableColumns}
+        previewRow={previewRows[0]}
+        previewConflict={previewConflict}
+        onRetryNotification={retryNotification}
+        upstreamSheets={diffUpstreamSheets.map(s => s.data.spreadsheetTitle || s.data.label || 'Sheet')}
         disabled={isRunning}
         connected={connected}
         onUpdateData={(id, data) =>

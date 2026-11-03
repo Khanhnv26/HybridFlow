@@ -38,19 +38,44 @@ export function arrangeWorkflowNodes<T extends LayoutNode>(nodes: T[], edges: La
   const mainY = mainDiff ? positions.get(mainDiff.id)!.y : center - 95;
   let triggerY = mainY - 270;
   let actionY = mainY + (mainDiff ? height(mainDiff) : 190) + 100;
-  let storageY = mainY;
-  let extraY = 60;
-  for (const node of nodes) {
-    if (positions.has(node.id)) continue;
-    if (node.type === 'scheduleTrigger') {
-      positions.set(node.id, { x: diffX, y: triggerY }); triggerY -= height(node) + 70;
-    } else if (node.type === 'telegramAction') {
-      positions.set(node.id, { x: diffX, y: actionY }); actionY += height(node) + 70;
-    } else if (node.type === 'storageAction') {
-      positions.set(node.id, { x: diffX + 340, y: storageY }); storageY += height(node) + 70;
+  let midColY = mainY;
+  let rightColY = mainY;
+
+  // 1. Triggers
+  for (const node of nodes.filter(n => n.type === 'scheduleTrigger')) {
+    positions.set(node.id, { x: diffX, y: triggerY });
+    triggerY -= height(node) + 70;
+  }
+
+  // 2. Mid column (diffX + 340): storageAction, then routerCondition
+  for (const node of nodes.filter(n => n.type === 'storageAction')) {
+    positions.set(node.id, { x: diffX + 340, y: midColY });
+    midColY += height(node) + 70;
+  }
+  for (const node of nodes.filter(n => n.type === 'routerCondition')) {
+    positions.set(node.id, { x: diffX + 340, y: midColY });
+    midColY += height(node) + 70;
+  }
+
+  // 3. Telegram action nodes
+  const routerIds = new Set(nodes.filter(n => n.type === 'routerCondition').map(n => n.id));
+  for (const node of nodes.filter(n => n.type === 'telegramAction')) {
+    const isDownstreamOfRouter = edges.some(e => e.target === node.id && routerIds.has(e.source));
+    if (isDownstreamOfRouter) {
+      positions.set(node.id, { x: diffX + 680, y: rightColY });
+      rightColY += height(node) + 70;
     } else {
-      positions.set(node.id, { x: diffX + 680, y: extraY }); extraY += height(node) + 70;
+      positions.set(node.id, { x: diffX, y: actionY });
+      actionY += height(node) + 70;
     }
   }
+
+  // 4. Remaining nodes
+  for (const node of nodes) {
+    if (positions.has(node.id)) continue;
+    positions.set(node.id, { x: diffX + 680, y: rightColY });
+    rightColY += height(node) + 70;
+  }
+
   return nodes.map(node => ({ ...node, position: positions.get(node.id)! }));
 }

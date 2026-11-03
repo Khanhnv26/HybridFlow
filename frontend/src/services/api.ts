@@ -12,6 +12,7 @@ import type {
   TelegramBotInfo,
   TelegramRecipient,
   TelegramLink,
+  NotificationOutboxItem,
 } from '../types';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '');
@@ -73,6 +74,9 @@ export const googleService = {
 };
 
 export const syncService = {
+  getNotifications: async (flowId: string, executionId: string, signal?: AbortSignal): Promise<NotificationOutboxItem[]> =>
+    (await apiClient.get(`/workflows/${encodeURIComponent(flowId)}/notifications`, { params: { executionId, limit: 500 }, signal })).data,
+  retryNotification: async (id: string): Promise<void> => { await apiClient.post(`/notifications/${encodeURIComponent(id)}/retry`); },
   // Chạy luồng đồng bộ 3-Way Diff trên Backend
   runSync: async (payload: RunSyncRequestPayload): Promise<RunSyncResponse> => {
     const response = await apiClient.post<RunSyncResponse>('/sync/run', payload);

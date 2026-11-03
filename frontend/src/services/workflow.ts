@@ -1,4 +1,11 @@
-import type { ColumnTransformConfig, OrchestrationNodeData, RunSyncRequestPayload, SheetEndpointPayload } from '../types';
+import type {
+  ActionPlanPayload,
+  ColumnTransformConfig,
+  OrchestrationNodeData,
+  RouterPlanPayload,
+  RunSyncRequestPayload,
+  SheetEndpointPayload,
+} from '../types';
 
 type WorkflowNode = { id: string; type?: string; data: OrchestrationNodeData };
 type WorkflowEdge = {
@@ -13,6 +20,7 @@ const supported = new Set([
   'diffEngine',
   'storageAction',
   'telegramAction',
+  'routerCondition',
 ]);
 
 // A transform receives one or more Sheets and feeds exactly one comparison node.
@@ -63,7 +71,7 @@ export function workflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
   }
   const normalized = transformPaths(nodes, edges);
   const config = baseWorkflowConfig(normalized.nodes, normalized.edges);
-  if (config.sheets) return { ...config, sheets: config.sheets.map(sheet => ({ ...sheet, ...normalized.settings.get(sheet.nodeId) })) };
+  if ('sheets' in config && config.sheets) return { ...config, sheets: config.sheets.map((sheet: any) => ({ ...sheet, ...normalized.settings.get(sheet.nodeId) })) };
   const source = normalized.nodes.find(n => n.type === 'sheetsTrigger');
   return { ...config, ...normalized.settings.get(source?.id || '') };
 }
@@ -75,6 +83,100 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
   const diffs = nodes.filter((n) => n.type === 'diffEngine');
   if (diffs.length !== 1) throw new Error('Luồng cần đúng một khối diffEngine.');
   const diff = diffs[0];
+
+  const edgeSignatures = new Set<string>();
+  for (const edge of edges) {
+    const sig = `${edge.source}:${edge.sourceHandle || ''}->${edge.target}:${edge.targetHandle || ''}`;
+    if (edgeSignatures.has(sig)) throw new Error('Có dây nối trùng lặp trong luồng.');
+    edgeSignatures.add(sig);
+  }
+
+  const routerNodes = nodes.filter((n) => n.type === 'routerCondition');
+  const telegramNodes = nodes.filter((n) => n.type === 'telegramAction');
+
+  const routerPlans: RouterPlanPayload[] = [];
+  for (const rNode of routerNodes) {
+    if (!edges.some((e) => e.source === diff.id && e.sourceHandle === 'clean' && e.target === rNode.id && e.targetHandle === 'in')) {
+      throw new Error('Khối Rẽ Nhánh Điều Kiện phải được nối từ cổng Hành động của khối So khớp.');
+    }
+    for (const e of edges) {
+      if (e.target === rNode.id && (e.source !== diff.id || e.sourceHandle !== 'clean' || e.targetHandle !== 'in')) {
+        throw new Error('Đường vào khối Rẽ Nhánh Điều Kiện không hợp lệ.');
+      }
+    }
+    const actionTargets: string[] = [];
+    for (const e of edges) {
+      if (e.source === rNode.id) {
+        if (e.sourceHandle !== 'out' || e.targetHandle !== 'in') {
+          throw new Error('Đường ra khối Rẽ Nhánh Điều Kiện không hợp lệ.');
+        }
+        if (!telegramNodes.some((t) => t.id === e.target)) {
+          throw new Error('Khối Rẽ Nhánh Điều Kiện chỉ được nối tới khối thông báo.');
+        }
+        actionTargets.push(e.target);
+      }
+    }
+    if (actionTargets.length === 0) {
+      throw new Error('Khối Rẽ Nhánh Điều Kiện cần nối tới ít nhất một khối thông báo.');
+    }
+    const conditions = (rNode.data.routerConditions || rNode.data.conditions || []);
+    if (conditions.length === 0) {
+      throw new Error('Khối Rẽ Nhánh Điều Kiện cần ít nhất một điều kiện.');
+    }
+    const trigger = rNode.data.routerTriggerOn || rNode.data.triggerOn || 'CHANGED';
+    const mode = rNode.data.routerMatchMode || rNode.data.matchMode || 'ALL';
+    if (!['CHANGED', 'CREATED', 'UPDATED'].includes(trigger) || !['ALL', 'ANY'].includes(mode)) throw new Error('Cấu hình KHI/NẾU không hợp lệ.');
+    for (const condition of conditions) {
+      if (!condition.columnName?.trim() || !['CHANGED_TO', 'EQUALS', 'NOT_EQUALS', 'CONTAINS', 'IS_NOT_EMPTY'].includes(condition.operator)
+          || condition.operator !== 'IS_NOT_EMPTY' && condition.value == null) throw new Error('Điều kiện rẽ nhánh thiếu cột, sai toán tử hoặc thiếu value.');
+    }
+    routerPlans.push({
+      nodeId: rNode.id,
+      triggerOn: trigger,
+      matchMode: mode,
+      conditions,
+      actionNodeIds: actionTargets,
+    });
+  }
+
+  const actionPlans: ActionPlanPayload[] = [];
+  const conflictActionIds: string[] = [];
+  for (const tNode of telegramNodes) {
+    const receivingConflict = edges.some(
+      (e) =>
+        e.source === diff.id &&
+        e.sourceHandle === 'conflict' &&
+        e.target === tNode.id &&
+        e.targetHandle === 'in',
+    );
+    const receivingRouter = routerPlans.some((rp) => rp.actionNodeIds.includes(tNode.id));
+    if (!receivingConflict && !receivingRouter) {
+      throw new Error('Khối Telegram cần ít nhất một dây vào.');
+    }
+    const tChatId = tNode.data.chatId?.trim() || '';
+    if (!tChatId) {
+      throw new Error('Điền Telegram Chat ID hoặc bỏ dây nối đến Telegram.');
+    }
+    if (receivingConflict) {
+      conflictActionIds.push(tNode.id);
+    }
+    for (const e of edges) {
+      if (e.target === tNode.id) {
+        const fromDiff = e.source === diff.id && e.sourceHandle === 'conflict' && e.targetHandle === 'in';
+        const fromRouter = routerNodes.some((rn) => rn.id === e.source) && e.sourceHandle === 'out' && e.targetHandle === 'in';
+        if (!fromDiff && !fromRouter) {
+          throw new Error('Có dây nối không được hỗ trợ trong luồng.');
+        }
+      }
+    }
+    actionPlans.push({
+      nodeId: tNode.id,
+      channel: 'TELEGRAM',
+      chatId: tChatId,
+      recordTemplate: tNode.data.recordTemplate,
+      conflictTemplate: tNode.data.conflictTemplate,
+    });
+  }
 
   const schedules = nodes.filter((n) => n.type === 'scheduleTrigger');
   if (schedules.length > 1) throw new Error('Chỉ hỗ trợ một khối hẹn giờ trong mỗi luồng.');
@@ -92,9 +194,6 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
     )
   )
     throw new Error('Luồng có khối chưa được hỗ trợ thực thi hoặc chưa nối vào cổng kích hoạt.');
-
-  const telegram = nodes.filter((n) => n.type === 'telegramAction');
-  if (telegram.length > 1) throw new Error('Chỉ hỗ trợ một khối Telegram trong mỗi luồng.');
 
   const sheetNodes = nodes.filter((n) => n.type === 'sheetsTrigger');
   const storages = nodes.filter((n) => n.type === 'storageAction');
@@ -130,8 +229,14 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
             sheetIds.has(edge.target) &&
             edge.sourceHandle === 'clean') ||
           (edge.source === diff.id &&
-            edge.target === telegram[0]?.id &&
-            edge.sourceHandle === 'conflict')));
+            edge.sourceHandle === 'clean' &&
+            routerNodes.some((rn) => rn.id === edge.target)) ||
+          (edge.source === diff.id &&
+            edge.sourceHandle === 'conflict' &&
+            telegramNodes.some((tn) => tn.id === edge.target)) ||
+          (routerNodes.some((rn) => rn.id === edge.source) &&
+            edge.sourceHandle === 'out' &&
+            telegramNodes.some((tn) => tn.id === edge.target))));
     if (edges.some((e) => !allowedMultiEdge(e)))
       throw new Error('Có dây nối không được hỗ trợ trong luồng đồng bộ.');
 
@@ -170,11 +275,6 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
     if (!['ASK_TELEGRAM', 'SOURCE_WINS', 'DESTINATION_WINS'].includes(conflictPolicy))
       throw new Error('Chọn chính sách xung đột hợp lệ.');
 
-    const notifyConflicts = !!telegram[0] && connects(diff.id, telegram[0].id, 'conflict');
-    const chatId = telegram[0]?.data.chatId?.trim();
-    if (notifyConflicts && !chatId)
-      throw new Error('Điền Telegram Chat ID hoặc bỏ dây nối đến Telegram.');
-
     return {
       spreadsheetId: sheets[0].spreadsheetId,
       sheetName: sheets[0].sheetName,
@@ -183,8 +283,11 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
       idColumn,
       storageName: 'multi_sheet',
       conflictPolicy,
-      notifyConflicts,
-      chatId,
+      notifyConflicts: conflictActionIds.length > 0,
+      chatId: actionPlans[0]?.chatId || telegramNodes[0]?.data.chatId?.trim(),
+      ...(routerPlans.length ? { routers: routerPlans } : {}),
+      ...(actionPlans.length ? { actions: actionPlans } : {}),
+      ...(conflictActionIds.length ? { conflictActionIds } : {}),
     };
   }
 
@@ -209,8 +312,14 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
       ((edge.source === source.id && edge.target === diff.id && edge.sourceHandle === 'out') ||
         (edge.source === diff.id && edge.target === storage.id && edge.sourceHandle === 'clean') ||
         (edge.source === diff.id &&
-          edge.target === telegram[0]?.id &&
-          edge.sourceHandle === 'conflict')));
+          edge.sourceHandle === 'clean' &&
+          routerNodes.some((rn) => rn.id === edge.target)) ||
+        (edge.source === diff.id &&
+          edge.sourceHandle === 'conflict' &&
+          telegramNodes.some((tn) => tn.id === edge.target)) ||
+        (routerNodes.some((rn) => rn.id === edge.source) &&
+          edge.sourceHandle === 'out' &&
+          telegramNodes.some((tn) => tn.id === edge.target))));
   if (edges.some((e) => !allowed(e)))
     throw new Error('Có dây nối không được hỗ trợ trong luồng đồng bộ.');
 
@@ -225,11 +334,6 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
   if (!['ASK_TELEGRAM', 'SOURCE_WINS', 'DESTINATION_WINS'].includes(conflictPolicy))
     throw new Error('Chọn chính sách xung đột hợp lệ.');
 
-  const notifyConflicts = !!telegram[0] && connects(diff.id, telegram[0].id, 'conflict');
-  const chatId = telegram[0]?.data.chatId?.trim();
-  if (notifyConflicts && !chatId)
-    throw new Error('Điền Telegram Chat ID hoặc bỏ dây nối đến Telegram.');
-
   const syncColumns = [...new Set((diff.data.sharedColumns || '').split(',').map((column) => column.trim()).filter((column) => column && column !== idColumn))].sort();
   if ((diff.data.sharedColumns || '').trim() && !syncColumns.length)
     throw new Error('Chọn ít nhất một cột dữ liệu ngoài cột khóa.');
@@ -240,9 +344,12 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
     idColumn,
     storageName,
     conflictPolicy,
-    notifyConflicts,
-    chatId,
+    notifyConflicts: conflictActionIds.length > 0,
+    chatId: actionPlans[0]?.chatId || telegramNodes[0]?.data.chatId?.trim(),
     ...(syncColumns.length ? { syncColumns } : {}),
+    ...(routerPlans.length ? { routers: routerPlans } : {}),
+    ...(actionPlans.length ? { actions: actionPlans } : {}),
+    ...(conflictActionIds.length ? { conflictActionIds } : {}),
   };
 }
 

@@ -26,6 +26,7 @@ public class RunSyncResponse {
     private String status;
     private int notificationsSent;
     private int notificationsFailed;
+    private int notificationsQueued;
     private boolean bootstrapRequired;
     private String sheetName;
 }

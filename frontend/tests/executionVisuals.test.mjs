@@ -42,7 +42,7 @@ test('scheduled trigger participation is shown only when recorded by the backend
 });
 
 test('conflicts and failed notifications remain distinct from successful data steps', () => {
-  const view = executionVisuals(nodes, edges, run('CONFLICT', [phase('READ', 'sheet'), phase('COMPARE', 'diff'), phase('WRITE', 'vault'), phase('NOTIFY', 'telegram')], { notificationsFailed: 1 }));
+  const view = executionVisuals(nodes, edges, run('CONFLICT', [phase('READ', 'sheet'), phase('COMPARE', 'diff'), phase('WRITE', 'vault'), phase('NOTIFY', 'telegram')], { notificationsFailed: 0 }), false, [{ id: 'notice', actionNodeId: 'telegram', executionId: 'execution', state: 'DEAD' }]);
   assert.equal(view.nodeStates.diff.state, 'warning');
   assert.equal(view.nodeStates.vault.state, 'success');
   assert.equal(view.nodeStates.telegram.state, 'error');
