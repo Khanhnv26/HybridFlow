@@ -208,10 +208,17 @@ public class WorkflowGraphParser {
             throw new IllegalArgumentException("Nối khối hẹn giờ vào cổng kích hoạt.");
 
         String resolvedFlowId = computeFlowId(connectedSheets, idColumn, storageName, syncColumns);
+        java.util.Map<String, List<String>> executionNodes = new java.util.LinkedHashMap<>();
+        executionNodes.put("sheets", connectedSheets.stream().map(SheetEndpointRequest::getNodeId).toList());
+        executionNodes.put("diff", List.of(diffId));
+        if (storageNode != null) executionNodes.put("storage", List.of(storageNode.path("id").asText()));
+        if (telegramNode != null && notifyConflicts) executionNodes.put("telegram", List.of(telegramNode.path("id").asText()));
+        if (timer != null) executionNodes.put("trigger", List.of(timer.path("id").asText()));
 
         RunSyncRequest request = RunSyncRequest.builder()
                 .flowId(resolvedFlowId)
                 .accessToken(accessToken)
+                .executionNodes(executionNodes)
                 .spreadsheetId(connectedSheets.get(0).getSpreadsheetId())
                 .sheetName(connectedSheets.get(0).getSheetName())
                 .sheets(connectedSheets.size() >= 2 ? connectedSheets : null)

@@ -17,6 +17,8 @@ import java.util.Set;
 public class RunSyncRequest {
     private String flowId;
     private String accessToken;
+    private java.util.Map<String, List<String>> executionNodes;
+    private boolean scheduledExecution;
     private String spreadsheetId;
     private String sheetName;
     private List<SheetEndpointRequest> sheets;

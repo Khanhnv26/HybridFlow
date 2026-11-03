@@ -91,6 +91,7 @@ export interface OrchestrationNodeData extends Record<string, unknown> {
   icon?: string;
   status?: string;
   isRunning?: boolean;
+  executionState?: NodeExecutionState;
   recordsCount?: number;
   sourceNumber?: number;
   readStatus?: SheetReadStatus;
@@ -205,12 +206,19 @@ export interface RunSyncResponse {
 }
 
 export interface ExecutionHistoryDto {
+  progress?: string | ExecutionPhase[] | null;
   id: string;
   status: string;
   result: string | null;
   error: string | null;
   started_at: string;
   finished_at: string | null;
+}
+
+export interface ExecutionPhase { nodes: string[]; stage: string; label: string }
+export interface NodeExecutionState {
+  state: 'idle' | 'running' | 'success' | 'warning' | 'error' | 'skipped';
+  label: string;
 }
 
 export interface TelegramAlertResponse {

@@ -14,10 +14,10 @@ import {
   Zap,
 } from 'lucide-react';
 import { ExcelIcon, TelegramIcon } from '../icons/BrandIcons';
-import { OrchestrationNodeData } from '../../types';
+import { OrchestrationNodeData, NodeExecutionState } from '../../types';
 
-const cardClass = (selected: boolean, accent: string) =>
-  `w-[280px] rounded-xl border bg-[#1a1f29] shadow-lg select-none ${selected ? accent : 'border-[#303b4b] hover:border-gray-500'}`;
+const cardClass = (selected: boolean, accent: string, execution?: NodeExecutionState) =>
+  `workflow-node workflow-node--${execution?.state || 'idle'} w-[280px] rounded-xl border bg-[#1a1f29] shadow-lg select-none ${selected ? accent : 'border-[#303b4b] hover:border-gray-500'}`;
 const handleClass = '!h-3 !w-3 !border-2 !bg-[#111827] transition-colors hover:!bg-slate-700';
 const stopNodeClick = (event: React.MouseEvent) => event.stopPropagation();
 
@@ -31,20 +31,28 @@ function useHandleGeometry(id?: string, layoutKey?: string) {
   };
 }
 
-function NodeHeading({ icon, title }: { icon: React.ReactNode; title: string }) {
+function NodeHeading({ icon, title, execution, hideIdle = false }: { icon: React.ReactNode; title: string; execution?: NodeExecutionState; hideIdle?: boolean }) {
   return (
+    <>
     <div className="flex items-center gap-2 rounded-t-xl border-b border-[#293241] bg-[#141922] px-3 py-2.5">
       <span className="flex h-6 w-6 shrink-0 items-center justify-center">{icon}</span>
       <span className="min-w-0 truncate text-xs font-semibold text-gray-100" title={title}>
         {title}
       </span>
     </div>
+    {(!hideIdle || execution && execution.state !== 'idle') && <div role="status" className={`workflow-node-status workflow-node-status--${execution?.state || 'idle'}`}>
+      {execution?.state === 'running' ? <RefreshCw size={12} className="workflow-status-spinner" />
+        : execution?.state === 'success' ? <CheckCircle2 size={12} />
+        : ['warning', 'error'].includes(execution?.state || '') ? <AlertTriangle size={12} /> : <span className="workflow-idle-dot" />}
+      <span title={execution?.label}>{execution?.label || 'Chưa chạy'}</span>
+    </div>}
+    </>
   );
 }
 
 export const SheetsTriggerNode: React.FC<any> = ({ id, data, selected }) => {
   const nodeData = data as OrchestrationNodeData;
-  const refreshHandles = useHandleGeometry(id);
+  const refreshHandles = useHandleGeometry(id, String(!!nodeData.executionState && nodeData.executionState.state !== 'idle'));
   const status = nodeData.readStatus || 'idle';
   const statusText =
     status === 'loading'
@@ -58,7 +66,7 @@ export const SheetsTriggerNode: React.FC<any> = ({ id, data, selected }) => {
     nodeData.spreadsheetTitle ||
     (nodeData.spreadsheetId ? 'Chưa lấy được tên file' : 'Chưa chọn file');
   return (
-    <div className={cardClass(selected, 'border-emerald-400 ring-2 ring-emerald-500/20')}>
+    <div className={cardClass(selected, 'border-emerald-400 ring-2 ring-emerald-500/20', nodeData.executionState)}>
       <Handle
         type="target"
         position={Position.Left}
@@ -68,6 +76,8 @@ export const SheetsTriggerNode: React.FC<any> = ({ id, data, selected }) => {
       <NodeHeading
         icon={<ExcelIcon size={24} />}
         title={`Sheet · Nguồn ${nodeData.sourceNumber || 1}`}
+        hideIdle
+        execution={nodeData.executionState}
       />
       <div className="space-y-1.5 px-3 py-2.5 text-[11px]">
         <p className="truncate font-medium text-gray-100" title={fileTitle}>
@@ -154,7 +164,7 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
     `${legacy}:${nodeData.hasConflict}:${sheets.length}`,
   );
   return (
-    <div className={cardClass(selected, 'border-purple-400 ring-2 ring-purple-500/20')}>
+    <div className={cardClass(selected, 'border-purple-400 ring-2 ring-purple-500/20', nodeData.executionState)}>
       <Handle
         type="target"
         position={Position.Top}
@@ -166,6 +176,7 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
       <NodeHeading
         icon={<Sparkles size={18} className="text-purple-300" />}
         title="Điều phối & Đồng bộ"
+        execution={nodeData.executionState}
       />
       <div className="space-y-1.5 px-3 py-2.5 text-[11px]">
         <div className="flex items-center justify-between gap-2 text-gray-400">
@@ -278,7 +289,7 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
 export const StorageActionNode: React.FC<any> = ({ data, selected }) => {
   const nodeData = data as OrchestrationNodeData;
   return (
-    <div className={cardClass(selected, 'border-blue-400 ring-2 ring-blue-500/20')}>
+    <div className={cardClass(selected, 'border-blue-400 ring-2 ring-blue-500/20', nodeData.executionState)}>
       <Handle
         type="target"
         position={Position.Left}
@@ -286,7 +297,7 @@ export const StorageActionNode: React.FC<any> = ({ data, selected }) => {
         title="Nhận dữ liệu từ khối So khớp."
         className={`${handleClass} !border-emerald-400`}
       />
-      <NodeHeading icon={<Database size={20} className="text-blue-300" />} title="Kho lưu trữ" />
+      <NodeHeading icon={<Database size={20} className="text-blue-300" />} title="Kho lưu trữ" execution={nodeData.executionState} />
       <div className="space-y-1 px-3 py-2.5 text-[11px]">
         <p className="text-gray-500">Vùng lưu trữ</p>
         <p className="truncate font-medium text-blue-200" title={nodeData.tableName}>
@@ -304,7 +315,7 @@ export const TelegramActionNode: React.FC<any> = ({ id, data, selected }) => {
     nodeData.telegramRecipientName ||
     (nodeData.chatId ? 'Đã có nơi nhận · mở để kiểm tra' : 'Chưa chọn nơi nhận');
   return (
-    <div className={cardClass(selected, 'border-sky-400 ring-2 ring-sky-500/20')}>
+    <div className={cardClass(selected, 'border-sky-400 ring-2 ring-sky-500/20', nodeData.executionState)}>
       <Handle
         type="target"
         position={Position.Top}
@@ -313,7 +324,7 @@ export const TelegramActionNode: React.FC<any> = ({ id, data, selected }) => {
         aria-label="Nhận cảnh báo từ phía trên"
         className={`${handleClass} !border-amber-400`}
       />
-      <NodeHeading icon={<TelegramIcon size={24} />} title="Telegram" />
+      <NodeHeading icon={<TelegramIcon size={24} />} title="Telegram" execution={nodeData.executionState} />
       <div className="space-y-1.5 px-3 py-2.5 text-[11px]">
         <p className="text-gray-500">Nơi nhận cảnh báo</p>
         <p
@@ -355,10 +366,11 @@ export const ScheduleTriggerNode: React.FC<any> = ({ id, data, selected }) => {
         : `Mỗi ${interval} phút`;
 
   return (
-    <div className={cardClass(selected, 'border-emerald-400 ring-2 ring-emerald-500/20')}>
+    <div className={cardClass(selected, 'border-emerald-400 ring-2 ring-emerald-500/20', nodeData.executionState)}>
       <NodeHeading
         icon={<Clock size={18} className="text-emerald-400" />}
         title={nodeData.label || 'Hẹn Giờ Định Kỳ'}
+        execution={nodeData.executionState}
       />
       <div className="space-y-1.5 px-3 py-2.5 text-[11px]">
         <div className="flex items-center justify-between gap-2 text-gray-400">
@@ -379,10 +391,10 @@ export const ScheduleTriggerNode: React.FC<any> = ({ id, data, selected }) => {
           >
             <span
               className={`h-2 w-2 rounded-full ${
-                isEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'
+                isEnabled ? 'bg-emerald-400' : 'bg-gray-500'
               }`}
             />
-            {isEnabled ? 'Đang kích hoạt' : 'Tạm dừng'}
+            {isEnabled ? 'Đang bật · chờ đến giờ' : 'Tạm dừng'}
           </span>
         </div>
         <p className="text-[10px] text-gray-500">Bấm khối để đổi chu kỳ phút / giờ</p>

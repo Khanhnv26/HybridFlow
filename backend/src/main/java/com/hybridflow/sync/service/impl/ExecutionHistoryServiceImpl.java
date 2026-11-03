@@ -37,4 +37,10 @@ public class ExecutionHistoryServiceImpl implements ExecutionHistoryService {
     public List<Map<String, Object>> list(String flowId) {
         return repository.findByFlowId(flowId);
     }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void phase(String executionId, List<String> nodeIds, String stage, String label) {
+        repository.appendProgress(executionId, codec.encode(Map.of("nodes", nodeIds, "stage", stage, "label", label)));
+    }
 }

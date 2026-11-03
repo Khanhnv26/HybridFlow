@@ -53,6 +53,7 @@ const bundle = await build({
       export const Background = () => null, Controls = () => null, MiniMap = () => null, Handle = () => null;
       export const Panel = ({ children }) => React.createElement('div', null, children);
       export const Position = { Left: 'left', Right: 'right' }, BackgroundVariant = { Dots: 'dots' };
+      export const BaseEdge = () => null, getSmoothStepPath = () => ['M0 0L100 100', 50, 50];
       export function addEdge(edge, edges) { return [...edges, edge]; }
     `,
         }));
@@ -91,13 +92,13 @@ const source = (id, file, tab) => ({
 function text(node) {
   return typeof node === 'string' ? node : (node.children || []).map(text).join('');
 }
-async function mount() {
+async function mount(options = {}) {
   const storage = new Map([
     ['google_access_token', 'test-token'],
     ['hybridflow-workflow-id', 'test-editor'],
     [
       'hybridflow-workflow-v2',
-      JSON.stringify({
+      JSON.stringify(options.draft || {
         nodes: [source('a', 'file-a', 'Tab A'), source('b', 'file-b', 'Tab B')],
         edges: [],
       }),
@@ -114,12 +115,44 @@ async function mount() {
     sheets: [],
   });
   api.workflowService = { load: async () => ({}), save: async () => ({}) };
-  api.syncService = {};
+  api.syncService = options.syncService || {};
   api.telegramService = {};
   await act(async () => {
     renderer = create(React.createElement(App));
   });
 }
+
+test('scheduled completions update history and source data without reloading the page', async (context) => {
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  let history = [];
+  const reads = [];
+  api.googleService = {
+    readSheet: async (_token, file, tab) => { reads.push([file, tab]); return rows(file, tab, 3); },
+  };
+  await mount({
+    draft: {
+      nodes: [source('a', 'file-a', 'Tab A'),
+        { id: 'diff', type: 'diffEngine', position: { x: 0, y: 0 }, data: { uniqueKey: 'id', conflictPolicy: 'SOURCE_WINS' } },
+        { id: 'vault', type: 'storageAction', position: { x: 0, y: 0 }, data: { tableName: 'vault' } }],
+      edges: [
+        { source: 'a', sourceHandle: 'out', target: 'diff', targetHandle: 'in' },
+        { source: 'diff', sourceHandle: 'clean', target: 'vault', targetHandle: 'in' },
+      ],
+    },
+    syncService: { getOpenConflicts: async () => [], getHistory: async () => history },
+  });
+  // Drain the real asynchronous crypto digest used to derive the flow identity.
+  for (let attempt = 0; attempt < 5; attempt++) await act(async () => new Promise(setImmediate));
+  assert.match(text(renderer.root), /Lịch sử \(0\)/);
+  history = [{ id: 'scheduled-run', status: 'SUCCESS', started_at: '2026-11-03T03:00:00Z',
+    result: JSON.stringify({ cleanRecordIds: ['1'], conflicts: [], totalRowsProcessed: 1, notificationsSent: 0, notificationsFailed: 0 }) }];
+  await act(async () => context.mock.timers.tick(5000));
+  assert.match(text(renderer.root), /Lịch sử \(1\)/);
+  assert.match(text(renderer.root), /Đồng bộ 1 bản ghi/);
+  assert.deepEqual(reads, [['file-a', 'Tab A']]);
+  await act(async () => context.mock.timers.tick(5000));
+  assert.equal(reads.length, 1, 'Unchanged history must not trigger another Google Sheets read');
+});
 function rows(file, tab, count) {
   return {
     spreadsheetId: file,
@@ -129,6 +162,40 @@ function rows(file, tab, count) {
     totalRows: count,
   };
 }
+
+test('scheduled backend phases animate the actual node and retain completion without manual execution', async (context) => {
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  let phases = [{ nodes: ['timer'], stage: 'TRIGGER', label: 'Kích hoạt theo lịch' }, { nodes: ['a'], stage: 'READ', label: 'Đang đọc trang tính' }];
+  let status = 'RUNNING';
+  const reads = [];
+  api.googleService = { readSheet: async (_token, file, tab) => { reads.push(file); return rows(file, tab, 3); } };
+  await mount({ draft: {
+    nodes: [source('a', 'file-a', 'Tab A'),
+      { id: 'diff', type: 'diffEngine', position: { x: 0, y: 0 }, data: { uniqueKey: 'id', conflictPolicy: 'SOURCE_WINS' } },
+      { id: 'vault', type: 'storageAction', position: { x: 0, y: 0 }, data: { tableName: 'vault' } },
+      { id: 'timer', type: 'scheduleTrigger', position: { x: 0, y: 0 }, data: {} }],
+    edges: [
+      { id: 'read', source: 'a', sourceHandle: 'out', target: 'diff', targetHandle: 'in' },
+      { id: 'write', source: 'diff', sourceHandle: 'clean', target: 'vault', targetHandle: 'in' },
+      { id: 'trigger', source: 'timer', sourceHandle: 'out', target: 'diff', targetHandle: 'trigger' }],
+  }, syncService: { getOpenConflicts: async () => [], getHistory: async () => [{ id: 'backend-run', status, started_at: '2026-11-03T03:00:00Z', result: null, progress: JSON.stringify(phases) }] } });
+  for (let attempt = 0; attempt < 5; attempt++) await act(async () => new Promise(setImmediate));
+  const activeCards = () => renderer.root.findAllByType('div').filter(node => node.props.className?.includes('workflow-node--running'));
+  assert.equal(activeCards().length, 1);
+  assert.match(text(activeCards()[0]), /Sheet · Nguồn 1/);
+  assert.match(text(renderer.root), /Đang đọc trang tính/);
+  phases = [...phases, { nodes: ['diff'], stage: 'COMPARE', label: 'Đang so khớp dữ liệu' }];
+  await act(async () => context.mock.timers.tick(1000));
+  assert.equal(activeCards().length, 1);
+  assert.match(text(activeCards()[0]), /Điều phối & Đồng bộ/);
+  status = 'SUCCESS';
+  phases = [...phases, { nodes: ['vault'], stage: 'WRITE', label: 'Đang lưu Vault' }];
+  await act(async () => context.mock.timers.tick(1000));
+  assert.equal(activeCards().length, 0);
+  assert.match(text(renderer.root), /Đồng bộ hoàn tất/);
+  assert.equal(renderer.root.findAllByType('div').filter(node => node.props.className?.includes('workflow-node--success')).length, 4);
+  assert.deepEqual(reads, ['file-a']);
+});
 test('selecting the second source reads and edits its own file and tab while counts stay independent', async () => {
   const calls = [],
     writes = [];

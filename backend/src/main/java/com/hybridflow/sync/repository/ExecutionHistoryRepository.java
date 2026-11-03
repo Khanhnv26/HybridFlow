@@ -22,7 +22,11 @@ public class ExecutionHistoryRepository {
     }
 
     public List<Map<String, Object>> findByFlowId(String flowId) {
-        return jdbc.queryForList("SELECT id,status,result::text AS result,error,started_at,finished_at "
+        return jdbc.queryForList("SELECT id,status,result::text AS result,error,started_at,finished_at,progress::text AS progress "
                 + "FROM sync_executions WHERE flow_id=? ORDER BY started_at DESC LIMIT 50", flowId);
+    }
+
+    public void appendProgress(String executionId, String event) {
+        jdbc.update("UPDATE sync_executions SET progress=progress || jsonb_build_array(?::jsonb) WHERE id=? AND status='RUNNING'", event, executionId);
     }
 }

@@ -80,8 +80,8 @@ export const syncService = {
   },
 
   // Lấy danh sách xung đột đang OPEN
-  getOpenConflicts: async (flowId: string): Promise<SyncConflictDto[]> => {
-    const response = await apiClient.get<SyncConflictDto[]>('/conflicts', { params: { flowId } });
+  getOpenConflicts: async (flowId: string, signal?: AbortSignal): Promise<SyncConflictDto[]> => {
+    const response = await apiClient.get<SyncConflictDto[]>('/conflicts', { params: { flowId }, signal });
     return response.data;
   },
 
@@ -109,8 +109,8 @@ export const syncService = {
     );
     return response.data;
   },
-  getHistory: async (flowId: string): Promise<ExecutionHistoryDto[]> =>
-    (await apiClient.get<ExecutionHistoryDto[]>(`/workflows/${encodeURIComponent(flowId)}/history`))
+  getHistory: async (flowId: string, signal?: AbortSignal): Promise<ExecutionHistoryDto[]> =>
+    (await apiClient.get<ExecutionHistoryDto[]>(`/workflows/${encodeURIComponent(flowId)}/history`, { signal }))
       .data,
   getVault: async (flowId: string): Promise<Record<string, string>[]> =>
     (

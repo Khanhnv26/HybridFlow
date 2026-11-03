@@ -82,6 +82,7 @@ public class WorkflowJobServiceImpl implements WorkflowJobService {
             throw new IllegalArgumentException("Cấu hình luồng không hợp lệ.");
         }
         credentials.resolveAccessToken(connection);
+        request.setScheduledExecution(true);
         RunSyncResponse result = execution.executeSync(request);
         String state = result.isBootstrapRequired() ? "NEEDS_BOOTSTRAP" : "SUCCEEDED";
         jobs.finish(job, state, result.isBootstrapRequired() ? "Chạy tay và xác nhận khởi tạo trước khi bật lịch." : null, clock.instant());

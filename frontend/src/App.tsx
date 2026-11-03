@@ -32,7 +32,10 @@ import { googleService, syncService, workflowService, telegramService } from './
 import { connectedSheetSources, flowIdFor, workflowConfig } from './services/workflow';
 import { historyLog } from './services/history';
 import { useSheetReads } from './hooks/useSheetReads';
-import type { RunHistoryItem, OrchestrationNodeData, SyncConflictDto } from './types';
+import { useWorkflowPolling } from './hooks/useWorkflowPolling';
+import { executionVisuals } from './services/executionVisuals';
+import { ExecutionEdge } from './components/orchestration/ExecutionEdge';
+import type { RunHistoryItem, OrchestrationNodeData, SyncConflictDto, ExecutionHistoryDto } from './types';
 
 const initialNodes: Node<OrchestrationNodeData>[] = [
   {
@@ -132,7 +135,12 @@ export default function App() {
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [isTableModalOpen, setIsTableModalOpen] = useState(false);
   const [isConflictModalOpen, setIsConflictModalOpen] = useState(false);
-  const [isRunning, setIsRunning] = useState(false);
+  const [manualRunning, setIsRunning] = useState(false);
+  const [latestExecution, setLatestExecution] = useState<ExecutionHistoryDto | null>(null);
+  const [manualBaseline, setManualBaseline] = useState<string | undefined>();
+  const isRunning = manualRunning || latestExecution?.status === 'RUNNING';
+  const backendRunning = useRef(false);
+  backendRunning.current = latestExecution?.status === 'RUNNING';
   const running = useRef(false);
   const [isPaletteOpen, setIsPaletteOpen] = useState(true);
   const [isMinimapOpen, setIsMinimapOpen] = useState(false);
@@ -140,6 +148,7 @@ export default function App() {
   const [logs, setLogs] = useState<RunHistoryItem[]>([]);
   const [conflicts, setConflicts] = useState<SyncConflictDto[]>([]);
   const refreshRevision = useRef(0);
+  const observedRunData = useRef<{ flowId: string; fingerprint: string } | null>(null);
   useEffect(() => {
     if (conflicts.length === 0) setIsConflictModalOpen(false);
   }, [conflicts.length]);
@@ -269,7 +278,9 @@ export default function App() {
   }, [showToast]);
   useEffect(() => {
     let live = true;
-    const revision = ++refreshRevision.current;
+    ++refreshRevision.current;
+    observedRunData.current = null;
+    setLatestExecution(null);
     setFlowId('');
     currentFlow.current = '';
     setConflicts([]);
@@ -277,18 +288,10 @@ export default function App() {
     setBootstrapRequired(false);
     if (configState.config)
       flowIdFor(configState.config)
-        .then(async (id) => {
+        .then((id) => {
           if (!live) return;
           currentFlow.current = id;
           setFlowId(id);
-          const [open, history] = await Promise.all([
-            syncService.getOpenConflicts(id),
-            syncService.getHistory(id),
-          ]);
-          if (live && revision === refreshRevision.current) {
-            setConflicts(open);
-            setLogs(history.map(historyLog));
-          }
         })
         .catch((error) => {
           if (live) showToast(message(error));
@@ -297,16 +300,23 @@ export default function App() {
       live = false;
     };
   }, [configKey, showToast]);
-  const refreshRunData = useCallback(async (id: string) => {
+  const refreshRunData = useCallback(async (id: string, signal?: AbortSignal) => {
     const revision = ++refreshRevision.current;
     const [open, history] = await Promise.all([
-      syncService.getOpenConflicts(id),
-      syncService.getHistory(id),
+      syncService.getOpenConflicts(id, signal),
+      syncService.getHistory(id, signal),
     ]);
-    if (currentFlow.current === id && revision === refreshRevision.current) {
+    if (!signal?.aborted && currentFlow.current === id && revision === refreshRevision.current) {
+      const fingerprint = JSON.stringify([open, history.filter((run) => run.status !== 'RUNNING')]);
+      const changed = observedRunData.current?.flowId === id && observedRunData.current.fingerprint !== fingerprint;
+      observedRunData.current = { flowId: id, fingerprint };
       setConflicts(open);
       setLogs(history.map(historyLog));
+      setLatestExecution(history[0] || null);
+      setBootstrapRequired(history.find((run) => run.status !== 'RUNNING')?.status === 'AWAITING_CONFIRMATION');
+      return changed;
     }
+    return false;
   }, []);
   const token = useCallback(() => {
     const value = localStorage.getItem('google_access_token');
@@ -314,18 +324,23 @@ export default function App() {
     return value;
   }, []);
   const fetchData = useCallback(
-    async (target: Node<OrchestrationNodeData>) =>
+    async (target: Node<OrchestrationNodeData>, signal?: AbortSignal) =>
       readSheetSource({
         nodeId: target.id,
         spreadsheetId: target.data.spreadsheetId || '',
         sheetName: target.data.sheetName || '',
-      }),
+      }, signal),
     [readSheetSource],
   );
-  const refreshSources = useCallback(async () => {
+  const refreshSources = useCallback(async (signal?: AbortSignal) => {
     invalidateReads();
-    await Promise.allSettled(sheetNodes.map((node) => fetchData(node)));
+    await Promise.allSettled(sheetNodes.map((node) => fetchData(node, signal)));
   }, [sheetNodes, fetchData, invalidateReads]);
+  useWorkflowPolling(flowId, async (id, signal) => {
+    if (await refreshRunData(id, signal)) {
+      if (!signal.aborted && currentFlow.current === id && !running.current) await refreshSources(signal);
+    }
+  }, (error) => showToast(`Chưa cập nhật được kết quả đồng bộ: ${message(error)}`), isRunning ? 500 : 1000);
   const openTable = useCallback(
     (nodeId?: string) => {
       const target = sheetNodes.find((node) => node.id === nodeId) || sheetNodes[0];
@@ -345,7 +360,8 @@ export default function App() {
   }, [workflowId, nodes, edges, flowId]);
   const runWorkflow = useCallback(
     async (bootstrapConfirmed = false) => {
-      if (running.current) return;
+      if (running.current || backendRunning.current) return;
+      setManualBaseline(latestExecution?.id);
       running.current = true;
       setIsRunning(true);
       let id = '';
@@ -379,7 +395,7 @@ export default function App() {
         setIsRunning(false);
       }
     },
-    [configState, token, saveWorkflow, refreshRunData, refreshSources, showToast, workflowId],
+    [configState, token, saveWorkflow, refreshRunData, refreshSources, showToast, workflowId, latestExecution?.id],
   );
   useEffect(() => {
     if (!autoActive) return;
@@ -457,6 +473,9 @@ export default function App() {
     (connection: Connection) => setEdges((items) => addEdge(connection, items)),
     [setEdges],
   );
+  const pendingExecution = manualRunning && latestExecution?.id === manualBaseline;
+  const executionView = useMemo(() => executionVisuals(nodes, edges, pendingExecution ? null : latestExecution, pendingExecution),
+    [nodes, edges, latestExecution, pendingExecution]);
   const enhancedNodes = useMemo(
     () =>
       nodes.map((node) => ({
@@ -464,6 +483,7 @@ export default function App() {
         data: {
           ...node.data,
           isRunning,
+          executionState: executionView.nodeStates[node.id],
           userAccount: node.type === 'sheetsTrigger' && connected ? 'Google OAuth' : undefined,
           spreadsheetTitle:
             node.type === 'sheetsTrigger'
@@ -510,7 +530,7 @@ export default function App() {
             ),
         },
       })),
-    [nodes, edges, sheetNodes, isRunning, connected, stateFor, openTable, conflicts.length],
+    [nodes, edges, sheetNodes, isRunning, connected, stateFor, openTable, conflicts.length, executionView],
   );
   const nodeTypes = useMemo(
     () => ({
@@ -530,14 +550,17 @@ export default function App() {
     () =>
       edges.map((edge) => ({
         ...edge,
-        animated: isRunning,
+        type: 'execution',
+        animated: false,
+        data: { ...edge.data, ...executionView.edgeStates[edge.id] },
         label:
           edge.sourceHandle === 'conflict' && conflicts.length > 0
             ? `${conflicts.length} xung đột`
             : undefined,
       })),
-    [edges, isRunning, conflicts.length],
+    [edges, executionView, conflicts.length],
   );
+  const edgeTypes = useMemo(() => ({ execution: ExecutionEdge }), []);
   const activeNode = nodes.find((n) => n.id === activeNodeId) || null;
   const connectGoogle = async () => {
     const opened = window.open('about:blank', 'hybridflow-google', 'width=600,height=700');
@@ -675,6 +698,7 @@ export default function App() {
             onConnect={onConnect}
             onNodeClick={(_: React.MouseEvent, node: Node) => setActiveNodeId(node.id)}
             nodeTypes={nodeTypes}
+            edgeTypes={edgeTypes}
             nodesDraggable={!isRunning}
             nodesConnectable={!isRunning}
             deleteKeyCode={isRunning ? null : ['Backspace', 'Delete']}
@@ -685,6 +709,14 @@ export default function App() {
             defaultEdgeOptions={{ type: 'smoothstep' }}
           >
             <Background variant={BackgroundVariant.Dots} gap={24} size={1.5} color="#2d3748" />
+            {executionView.label && <Panel position="top-right">
+              <div role="status" aria-live="polite" className={`workflow-run-summary workflow-run-summary--${executionView.running ? 'running' : latestExecution?.status === 'ERROR' ? 'error' : ['CONFLICT', 'AWAITING_CONFIRMATION'].includes(latestExecution?.status || '') ? 'warning' : 'success'}`}>
+                <span className="workflow-run-indicator" />
+                <div><strong>{executionView.label}</strong>
+                  <span>{pendingExecution ? 'Đang chờ backend nhận yêu cầu' : executionView.running ? 'Trạng thái từ lượt chạy hiện tại' : 'Kết quả lượt gần nhất · giữ đến lượt tiếp theo'}</span>
+                </div>
+              </div>
+            </Panel>}
             <Panel position="top-left" className="flex gap-2">
               <button
                 onClick={() => setIsPaletteOpen(!isPaletteOpen)}

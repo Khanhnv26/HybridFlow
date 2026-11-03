@@ -41,6 +41,7 @@ class SyncApiIntegrationTest {
     @MockBean TelegramNotificationService telegram;
     @Autowired com.hybridflow.connection.service.GoogleCredentialService credentials;
     @Autowired com.hybridflow.sync.service.WorkflowJobService scheduler;
+    @Autowired com.hybridflow.sync.service.SyncExecutionService execution;
 
     @BeforeEach void cleanDatabase() {
         jdbc.execute("TRUNCATE workflow_jobs,sheet_write_journal,sync_conflicts,sync_snapshots,vault_records,sync_flow_bindings,sync_executions,workflow_definitions,google_connections RESTART IDENTITY");
@@ -174,9 +175,44 @@ class SyncApiIntegrationTest {
         assertEquals("UPDATED", statusOf("sync_snapshots", flow));
         assertEquals("UPDATED", statusOf("vault_records", flow));
         assertEquals("SUCCEEDED", jdbc.queryForObject("SELECT state FROM workflow_jobs", String.class));
+        List<String> progress = jdbc.queryForList("SELECT progress::text FROM sync_executions WHERE flow_id=? ORDER BY started_at", String.class, flow);
+        assertFalse(progress.get(0).contains("TRIGGER"), "Manual runs must not claim to have been triggered by a timer");
+        assertTrue(progress.get(1).contains("TRIGGER"));
+        assertTrue(progress.get(1).contains("READ"));
+        assertTrue(progress.get(1).contains("COMPARE"));
+        assertTrue(progress.get(1).contains("WRITE"));
+        assertFalse(progress.get(1).contains("NOTIFY"), "No conflict means the Telegram branch was not executed");
         mvc.perform(get("/api/v1/workflows/editor/schedule")).andExpect(status().isOk())
                 .andExpect(jsonPath("$.state").value("SUCCEEDED")).andExpect(jsonPath("$.last_run_at").isNotEmpty());
         assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM sync_executions WHERE flow_id=?", Integer.class, flow));
+    }
+
+    @Test void actualReadPhaseIsVisibleBeforeTheSyncTransactionCompletes() throws Exception {
+        java.util.concurrent.CountDownLatch reading = new java.util.concurrent.CountDownLatch(1);
+        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        when(sheets.readSheet(any())).thenAnswer(invocation -> {
+            reading.countDown();
+            assertTrue(release.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            return SheetDataResponse.builder().spreadsheetId("sheet").sheetName("Data").headers(List.of("id", "status"))
+                    .rows(List.of(Map.of("id", "1", "status", "NEW"))).totalRows(1).build();
+        });
+        com.hybridflow.sync.dto.request.RunSyncRequest request = com.hybridflow.sync.dto.request.RunSyncRequest.builder()
+                .flowId("live-progress").accessToken("test-access").spreadsheetId("sheet").sheetName("Data").idColumn("id")
+                .bootstrapConfirmed(true).executionNodes(Map.of("sheets", List.of("sheet-node"), "diff", List.of("diff-node"), "storage", List.of("vault-node"))).build();
+        try (java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor()) {
+            java.util.concurrent.Future<?> running = pool.submit(() -> execution.executeSync(request));
+            try {
+                assertTrue(reading.await(5, java.util.concurrent.TimeUnit.SECONDS));
+                assertEquals("RUNNING", jdbc.queryForObject("SELECT status FROM sync_executions WHERE flow_id='live-progress'", String.class));
+                String progress = jdbc.queryForObject("SELECT progress::text FROM sync_executions WHERE flow_id='live-progress'", String.class);
+                assertTrue(progress.contains("READ"));
+                assertTrue(progress.contains("sheet-node"));
+                assertFalse(progress.contains("WRITE"));
+            } finally { release.countDown(); }
+            running.get(5, java.util.concurrent.TimeUnit.SECONDS);
+        }
+        assertEquals("SUCCESS", jdbc.queryForObject("SELECT status FROM sync_executions WHERE flow_id='live-progress'", String.class));
+        assertTrue(jdbc.queryForObject("SELECT progress::text FROM sync_executions WHERE flow_id='live-progress'", String.class).contains("vault-node"));
     }
     private String multiRequest() {
         return """

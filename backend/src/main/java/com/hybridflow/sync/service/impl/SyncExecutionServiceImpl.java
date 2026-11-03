@@ -58,6 +58,8 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         store.lock(flow);
         String executionId = history.start(flow);
         try {
+            if (request.isScheduledExecution()) phase(request, executionId, "trigger", "TRIGGER", "Kích hoạt theo lịch");
+            phase(request, executionId, "diff", "PREPARE", "Đang chuẩn bị và chờ quyền đồng bộ");
             if (request.getSheets() != null && request.getSheets().size() >= 2) {
                 return executeMultiSheetSync(request, flow, idColumn, executionId, start);
             }
@@ -82,12 +84,14 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         List<String> spreadsheetIds = endpoints.stream().map(SheetEndpointRequest::getSpreadsheetId).peek(id -> require(id, "Spreadsheet ID"))
                 .distinct().sorted().toList();
         spreadsheetIds.forEach(id -> store.lock("sheet:" + id));
+        phase(request, executionId, "sheets", "RECOVER", "Đang kiểm tra lần ghi trước");
         writes.recover(request.getAccessToken(), spreadsheetIds);
         List<SheetDataResponse> data = new ArrayList<>();
         List<Map<String, Integer>> indexes = new ArrayList<>();
         List<SheetWritePlan> plans = new ArrayList<>();
         Set<String> targets = new HashSet<>();
         for (SheetEndpointRequest endpoint : endpoints) {
+            phase(executionId, endpoint.getNodeId() == null ? List.of() : List.of(endpoint.getNodeId()), "READ", "Đang đọc trang tính");
             SheetDataResponse sheet = googleSheetsService.readSheet(ReadSheetRequest.builder().accessToken(request.getAccessToken())
                     .spreadsheetId(endpoint.getSpreadsheetId()).sheetname(endpoint.getSheetName()).build());
             endpoint.setSheetName(sheet.getSheetName());
@@ -98,6 +102,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             indexes.add(SheetRowUtils.index(sheet, idColumn));
             plans.add(new SheetWritePlan(endpoint.getSpreadsheetId(), sheet.getSheetName(), idColumn, sheet.getHeaders(), new ArrayList<>()));
         }
+        phase(request, executionId, "diff", "COMPARE", "Đang so khớp dữ liệu");
         if (request.getSyncColumns() == null || request.getSyncColumns().isEmpty())
             throw new IllegalArgumentException("Chọn rõ các cột được phép đồng bộ trong khối So khớp. Cột trùng tên không tự động được chia sẻ.");
         Set<String> columns = new TreeSet<>(request.getSyncColumns());
@@ -177,11 +182,14 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             checkpoints.put(id, checkpoint);
             if (!unresolved) clean.add(id);
         }
+        phase(request, executionId, "sheets", "WRITE", "Đang ghi và lưu checkpoint");
         writes.apply(request.getAccessToken(), plans);
         checkpoints.forEach((id, row) -> store.saveSnapshot(flow, id, row));
         syncConflictService.retainOpenConflicts(flow, detected.stream().map(SyncConflict::getId).toList());
         int sent = 0, failed = 0;
         if (request.isNotifyConflicts()) {
+            if (detected.stream().anyMatch(conflict -> !previouslyOpen.contains(conflict.getId())))
+                phase(request, executionId, "telegram", "NOTIFY", "Đang gửi cảnh báo xung đột");
             for (SyncConflict conflict : detected) {
                 if (previouslyOpen.contains(conflict.getId())) continue;
                 if (telegramNotificationService.sendConflictAlert(conflict, request.getChatId())) sent++; else failed++;
@@ -205,10 +213,13 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         require(request.getSpreadsheetId(), "Spreadsheet ID");
         require(request.getStorageName(), "Vùng lưu trữ");
         store.lock("sheet:" + request.getSpreadsheetId());
+        phase(request, executionId, "sheets", "RECOVER", "Đang kiểm tra lần ghi trước");
         writes.recover(request.getAccessToken(), List.of(request.getSpreadsheetId()));
+        phase(request, executionId, "sheets", "READ", "Đang đọc trang tính");
         SheetDataResponse sheet = googleSheetsService.readSheet(ReadSheetRequest.builder()
                 .accessToken(request.getAccessToken()).spreadsheetId(request.getSpreadsheetId())
                 .sheetname(request.getSheetName()).build());
+        phase(request, executionId, "diff", "COMPARE", "Đang so khớp dữ liệu");
         Map<String, Integer> index = SheetRowUtils.index(sheet, idColumn);
         Set<String> columns = new LinkedHashSet<>(request.getSyncColumns() == null || request.getSyncColumns().isEmpty()
                 ? sheet.getHeaders() : request.getSyncColumns());
@@ -274,11 +285,14 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             snapshotWrites.put(id, checkpoint);
             if (unresolved.isEmpty()) clean.add(id);
         }
+        phase(request, executionId, "sheets", "WRITE", "Đang đối soát và ghi trang tính");
         googleSheetsService.updateCells(request.getAccessToken(), request.getSpreadsheetId(), sheetWrites);
+        phase(request, executionId, "storage", "WRITE", "Đang lưu Vault và checkpoint");
         vaultWrites.forEach((id, row) -> store.saveVaultRecord(flow, id, row));
         snapshotWrites.forEach((id, row) -> store.saveSnapshot(flow, id, row));
         int sent = 0, failed = 0;
         if (request.isNotifyConflicts()) {
+            if (!detected.isEmpty()) phase(request, executionId, "telegram", "NOTIFY", "Đang gửi cảnh báo xung đột");
             for (SyncConflict conflict : detected) {
                 if (telegramNotificationService.sendConflictAlert(conflict, request.getChatId())) sent++; else failed++;
             }
@@ -289,6 +303,14 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
                 .notificationsSent(sent).notificationsFailed(failed).latency((System.currentTimeMillis() - start) + " ms").build();
         completeAfterCommit(executionId, result);
         return result;
+    }
+
+    private void phase(RunSyncRequest request, String executionId, String role, String stage, String label) {
+        if (request.getExecutionNodes() != null) phase(executionId, request.getExecutionNodes().getOrDefault(role, List.of()), stage, label);
+    }
+
+    private void phase(String executionId, List<String> nodes, String stage, String label) {
+        if (executionId != null && !nodes.isEmpty()) history.phase(executionId, nodes, stage, label);
     }
 
     private void completeAfterCommit(String executionId, RunSyncResponse result) {

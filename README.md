@@ -51,6 +51,10 @@ Các lần ghi nhiều ô dùng [Google Sheets values.batchUpdate](https://devel
 
 ## API chính
 
+Editor tự tải lịch sử và xung đột mỗi giây khi tab đang hiển thị, tăng lên mỗi 500 ms khi một phiên đang chạy, đồng thời cập nhật ngay khi quay lại tab. Khi có kết quả đồng bộ mới, dữ liệu các nguồn được đọc lại; lịch sử không đổi không gây đọc Google Sheets lặp lại. Cơ chế theo dõi này chỉ đọc trạng thái, không kích hoạt thêm lượt đồng bộ.
+
+Migration V9 bổ sung tiến trình từng bước vào lịch sử, được lưu bằng giao dịch riêng để giao diện đọc được khi phiên đồng bộ vẫn đang chạy. Khối đang thực hiện có viền xanh dương, biểu tượng xoay và nhãn bước; điểm sáng trên dây đi theo chiều đọc/ghi thực tế. Thành công giữ màu xanh, xung đột/chờ xác nhận giữ màu cam, lỗi giữ màu đỏ đến lượt kế tiếp. Nhánh chưa thực hiện không được đánh dấu thành công; timer chỉ tham gia khi backend ghi nhận kích hoạt theo lịch. Lượt chạy quá nhanh hiện kết quả tĩnh, không dựng lại animation giả. Lịch sử cũ chưa có tiến trình chỉ hiện trạng thái tổng thể. Khi bật giảm chuyển động trong hệ điều hành, vẫn giữ chữ và màu trạng thái nhưng dừng chuyển động.
+
 - `POST /api/v1/sync/run`: `flowId`, `accessToken`, `spreadsheetId`, `sheetName`, `idColumn`, `storageName`, `conflictPolicy`, `notifyConflicts`, `chatId` (khi bật thông báo), `bootstrapConfirmed`. Có thể truyền `syncColumns` để chọn cột.
 - Kết quả gồm `executionId`, `status`, `bootstrapRequired`, `cleanRecordIds`, `conflicts`, `notificationsSent`, `notificationsFailed`, `totalRowsProcessed`, `comparedColumns`, `latency`.
 - `GET /api/v1/conflicts?flowId=...`: chỉ xung đột đang mở của luồng.
