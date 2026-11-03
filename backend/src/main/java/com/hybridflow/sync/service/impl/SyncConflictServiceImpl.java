@@ -56,9 +56,9 @@ public class SyncConflictServiceImpl implements SyncConflictService {
                 result.add(repository.save(SyncConflict.builder().flowId(context.getFlowId())
                         .spreadsheetId(context.getSpreadsheetId()).sheetName(sheetName).idColumn(context.getIdColumn())
                         .recordId(diff.getRecordId()).columnName(field.getColumn()).baseValue(field.getBaseValue())
-                        .endpointsJson(context.getTransforms() == null || context.getTransforms().isEmpty() ? null : codec.encode(List.of(
+                        .endpointsJson((context.getTransforms() == null || context.getTransforms().isEmpty()) && (context.getColumnTypes() == null || context.getColumnTypes().isEmpty()) ? null : codec.encode(List.of(
                                 SheetEndpointRequest.builder().spreadsheetId(context.getSpreadsheetId()).sheetName(sheetName)
-                                        .transforms(context.getTransforms()).writeBackCleanData(context.isWriteBackCleanData()).build())))
+                                        .columnTypes(context.getColumnTypes()).transforms(context.getTransforms()).writeBackCleanData(context.isWriteBackCleanData()).build())))
                         .valueA(field.getValueA()).valueB(field.getValueB()).status("OPEN").createdAt(LocalDateTime.now()).build()));
             }
         }
@@ -169,8 +169,10 @@ public class SyncConflictServiceImpl implements SyncConflictService {
             throw new IllegalArgumentException("Chỉ được chọn một trong hai giá trị đang xung đột.");
         store.lock("sheet:" + conflict.getSpreadsheetId());
         writes.recover(accessToken, List.of(conflict.getSpreadsheetId()));
+        Map<String, String> columnTypes = endpoints.isEmpty() || endpoints.getFirst().getColumnTypes() == null ? Map.of() : endpoints.getFirst().getColumnTypes();
         SheetDataResponse sheet = sheets.readSheet(ReadSheetRequest.builder().accessToken(accessToken)
-                .spreadsheetId(conflict.getSpreadsheetId()).sheetname(conflict.getSheetName()).build());
+                .spreadsheetId(conflict.getSpreadsheetId()).sheetname(conflict.getSheetName()).columnTypes(columnTypes).build());
+        List<Map<String, String>> sourceRows = sheet.getRows();
         if (!endpoints.isEmpty() && endpoints.getFirst().getTransforms() != null)
             sheet.setRows(dataTransformerService.transformRows(sheet.getRows(), endpoints.getFirst().getTransforms()));
         Map<String, Integer> index = SheetRowUtils.index(sheet, conflict.getIdColumn());
@@ -183,7 +185,9 @@ public class SyncConflictServiceImpl implements SyncConflictService {
             throw new IllegalArgumentException("Dữ liệu đã đổi từ lúc phát hiện xung đột. Chạy lại đồng bộ trước khi chọn.");
         Map<String, String> cells = new LinkedHashMap<>();
         cells.put(SheetRowUtils.range(sheet, rowIndex, conflict.getColumnName()), value);
-        sheets.updateCells(accessToken, conflict.getSpreadsheetId(), cells);
+        if (columnTypes.isEmpty()) sheets.updateCells(accessToken, conflict.getSpreadsheetId(), cells);
+        else writes.apply(accessToken, List.of(new SheetWritePlan(conflict.getSpreadsheetId(), sheet.getSheetName(), conflict.getIdColumn(), sheet.getHeaders(),
+                List.of(new SheetCellChange(rowIndex, conflict.getColumnName(), sourceRows.get(rowIndex).get(conflict.getIdColumn()), sourceRows.get(rowIndex).getOrDefault(conflict.getColumnName(), ""), value)), columnTypes)));
         vault = new LinkedHashMap<>(vault);
         base = new LinkedHashMap<>(base);
         vault.put(conflict.getColumnName(), value);
@@ -216,7 +220,7 @@ public class SyncConflictServiceImpl implements SyncConflictService {
         List<SheetWritePlan> plans = new ArrayList<>();
         for (SheetEndpointRequest ep : endpoints) {
             SheetDataResponse sheet = sheets.readSheet(ReadSheetRequest.builder().accessToken(accessToken)
-                    .spreadsheetId(ep.getSpreadsheetId()).sheetname(ep.getSheetName()).build());
+                    .spreadsheetId(ep.getSpreadsheetId()).sheetname(ep.getSheetName()).columnTypes(ep.getColumnTypes()).build());
             List<Map<String, String>> raw = sheet.getRows();
             if (ep.getTransforms() != null && !ep.getTransforms().isEmpty())
                 sheet.setRows(dataTransformerService.transformRows(raw, ep.getTransforms()));
@@ -226,9 +230,9 @@ public class SyncConflictServiceImpl implements SyncConflictService {
                     || !Objects.equals(expected, sheet.getRows().get(rowIndex).getOrDefault(conflict.getColumnName(), "")))
                 throw new IllegalArgumentException("Dữ liệu đã đổi từ lúc phát hiện xung đột. Chạy lại đồng bộ trước khi chọn.");
             String rawValue = raw.get(rowIndex).getOrDefault(conflict.getColumnName(), "");
-            List<SheetCellChange> changes = Objects.equals(rawValue, value) ? List.of() : List.of(
+            List<SheetCellChange> changes = Objects.equals(rawValue, value) && !SheetRowUtils.requiresTypeWrite(sheet, rowIndex, conflict.getColumnName(), value, ep.getColumnTypes()) ? List.of() : List.of(
                     new SheetCellChange(rowIndex, conflict.getColumnName(), raw.get(rowIndex).get(conflict.getIdColumn()), rawValue, value));
-            plans.add(new SheetWritePlan(ep.getSpreadsheetId(), sheet.getSheetName(), conflict.getIdColumn(), sheet.getHeaders(), changes));
+            plans.add(new SheetWritePlan(ep.getSpreadsheetId(), sheet.getSheetName(), conflict.getIdColumn(), sheet.getHeaders(), changes, ep.getColumnTypes()));
         }
         writes.apply(accessToken, plans);
 

@@ -1,5 +1,7 @@
 package com.hybridflow.connector.google.service.impl;
 
+import com.hybridflow.connector.google.util.SheetValueTypes;
+
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
 import com.google.api.client.googleapis.json.GoogleJsonResponseException;
 import com.google.api.client.json.gson.GsonFactory;
@@ -146,18 +148,32 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
                     .map(Object::toString)
                     .toList();
 
+            boolean typed = request.getColumnTypes() != null && !request.getColumnTypes().isEmpty();
+            List<List<Object>> rawValues = typed ? sheets.spreadsheets().values().get(request.getSpreadsheetId(), range)
+                    .setValueRenderOption("UNFORMATTED_VALUE").execute().getValues() : values;
             List<Map<String, String>> rowsList = new ArrayList<>();
+            List<Map<String, String>> valueTypes = new ArrayList<>();
+            List<Map<String, String>> rawRows = new ArrayList<>();
 
             for (int i = 1; i < values.size(); i++) {
                 List<Object> row = values.get(i);
                 Map<String, String> rowMap = new LinkedHashMap<>();
+                Map<String, String> rowTypes = new LinkedHashMap<>();
+                Map<String, String> rawRow = new LinkedHashMap<>();
 
                 for (int col = 0; col < headers.size(); col++) {
                     String colName = headers.get(col);
                     String cellValue = col < row.size() ? row.get(col).toString() : "";
+                    Object raw = rawValues != null && i < rawValues.size() && col < rawValues.get(i).size() ? rawValues.get(i).get(col) : "";
+                    rowTypes.put(colName, raw instanceof Number ? "NUMBER" : "TEXT");
+                    rawRow.put(colName, raw == null ? "" : raw.toString());
+                    if (typed && "NUMBER".equals(request.getColumnTypes().get(colName)))
+                        cellValue = SheetValueTypes.canonical(raw == null ? "" : raw.toString(), "NUMBER");
                     rowMap.put(colName, cellValue);
                 }
                 rowsList.add(rowMap);
+                valueTypes.add(rowTypes);
+                rawRows.add(rawRow);
             }
 
             return SheetDataResponse.builder()
@@ -165,7 +181,7 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
                     .spreadsheetTitle(spreadsheet.getProperties() == null ? null : spreadsheet.getProperties().getTitle())
                     .sheetName(targetSheetName)
                     .headers(headers)
-                    .rows(rowsList)
+                    .rows(rowsList).valueTypes(valueTypes).rawRows(rawRows)
                     .totalRows(rowsList.size())
                     .build();
 
@@ -191,7 +207,7 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
         Sheets sheets = createSheetsClient(request.getAccessToken());
 
         try {
-            ValueRange body = new ValueRange().setValues(List.of(List.of(request.getValue())));
+            ValueRange body = new ValueRange().setValues(List.of(List.of(SheetValueTypes.rawValue(request.getValue(), request.getValueType()))));
             sheets.spreadsheets().values()
                     .update(request.getSpreadsheetId(), request.getRange(), body)
                     .setValueInputOption("RAW")
@@ -214,9 +230,14 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
 
     @Override
     public void updateCells(String accessToken, String spreadsheetId, Map<String, String> cells) {
+        updateTypedCells(accessToken, spreadsheetId, cells, Map.of());
+    }
+
+    @Override
+    public void updateTypedCells(String accessToken, String spreadsheetId, Map<String, String> cells, Map<String, String> valueTypes) {
         if (cells.isEmpty()) return;
         List<ValueRange> ranges = cells.entrySet().stream().map(cell -> new ValueRange()
-                .setRange(cell.getKey()).setValues(List.of(List.of(cell.getValue() == null ? "" : cell.getValue())))).toList();
+                .setRange(cell.getKey()).setValues(List.of(List.of(SheetValueTypes.rawValue(cell.getValue(), valueTypes.get(cell.getKey())))))).toList();
         try {
             createSheetsClient(accessToken).spreadsheets().values().batchUpdate(spreadsheetId,
                     new BatchUpdateValuesRequest().setValueInputOption("RAW").setData(ranges)).execute();

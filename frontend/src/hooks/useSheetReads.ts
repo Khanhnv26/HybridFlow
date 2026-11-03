@@ -2,12 +2,14 @@ import { useCallback, useRef, useState } from 'react';
 import type { SheetDataResponse, SheetReadState } from '../types';
 
 export interface ReadSource {
+  columnTypes?: Record<string, 'TEXT' | 'NUMBER'>;
   nodeId: string;
   spreadsheetId: string;
   sheetName: string;
 }
 export function readSourceKey(source: ReadSource) {
-  return JSON.stringify([source.nodeId, source.spreadsheetId.trim(), source.sheetName.trim()]);
+  const types = Object.entries(source.columnTypes || {}).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+  return JSON.stringify([source.nodeId, source.spreadsheetId.trim(), source.sheetName.trim(), ...(types.length ? [types] : [])]);
 }
 const idle: SheetReadState = { status: 'idle', data: null };
 type Reader = (source: ReadSource, signal?: AbortSignal) => Promise<SheetDataResponse>;

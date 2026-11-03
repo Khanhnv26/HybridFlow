@@ -189,6 +189,7 @@ export default function App() {
   const currentFlow = useRef('');
   const sheetNodes = useMemo(() => nodes.filter((node) => node.type === 'sheetsTrigger'), [nodes]);
   const tableSource = sheetNodes.find((node) => node.id === tableNodeId) || sheetNodes[0];
+  const columnTypes = nodes.find(node => node.type === 'diffEngine')?.data.columnTypes;
   const {
     read: readSheetSource,
     stateFor,
@@ -203,6 +204,7 @@ export default function App() {
       target.spreadsheetId.trim(),
       target.sheetName.trim(),
       signal,
+      target.columnTypes,
     );
     return data;
   });
@@ -210,6 +212,7 @@ export default function App() {
     nodeId: node.id,
     spreadsheetId: node.data.spreadsheetId || '',
     sheetName: node.data.sheetName || '',
+    columnTypes,
   });
   const tableState = tableSource
     ? stateFor(sourceDescriptor(tableSource))
@@ -370,8 +373,9 @@ export default function App() {
         nodeId: target.id,
         spreadsheetId: target.data.spreadsheetId || '',
         sheetName: target.data.sheetName || '',
+        columnTypes,
       }, signal),
-    [readSheetSource],
+    [readSheetSource, columnTypes],
   );
   const refreshSources = useCallback(async (signal?: AbortSignal) => {
     invalidateReads();
@@ -510,6 +514,12 @@ export default function App() {
         spreadsheetId: tableSource.data.spreadsheetId,
         range,
         value,
+        valueType: (() => {
+          const letters = range.match(/!([A-Z]+)[0-9]+$/)?.[1];
+          const index = letters ? [...letters].reduce((value, letter) => value * 26 + letter.charCodeAt(0) - 64, 0) - 1 : -1;
+          const column = tableState.data?.headers[index];
+          return column ? nodes.find(node => node.type === 'diffEngine')?.data.columnTypes?.[column] || 'TEXT' : 'TEXT';
+        })(),
       });
       if (!result.success) throw new Error(result.message);
       showToast('Đã cập nhật ô trên trang tính đang chọn. Chạy luồng để đồng bộ các nguồn.');
@@ -517,7 +527,7 @@ export default function App() {
         showToast(`Đã ghi ô; tải lại bảng thất bại: ${message(error)}`),
       );
     },
-    [tableSource, token, fetchData, showToast],
+    [tableSource, tableState.data, nodes, token, fetchData, showToast],
   );
   const onConnect = useCallback(
     (connection: Connection) => setEdges((items) => addEdge(connection, items)),
@@ -928,7 +938,7 @@ export default function App() {
         onConnectGoogle={connectGoogle}
         onSaveSource={saveSource}
         onReadSource={(nodeId, spreadsheetId, sheetName, signal) =>
-          readSheetSource({ nodeId, spreadsheetId, sheetName }, signal)
+          readSheetSource({ nodeId, spreadsheetId, sheetName, columnTypes }, signal)
         }
         onSaveTelegram={saveTelegram}
         notificationConnected={edges.some(

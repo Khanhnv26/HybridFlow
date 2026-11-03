@@ -50,6 +50,7 @@ export const googleService = {
     spreadsheetId: string,
     sheetname?: string,
     signal?: AbortSignal,
+    columnTypes?: Record<string, 'TEXT' | 'NUMBER'>,
   ): Promise<SheetDataResponse> => {
     const response = await apiClient.post<SheetDataResponse>(
       '/connections/google/sheets/read',
@@ -57,6 +58,7 @@ export const googleService = {
         accessToken,
         spreadsheetId,
         sheetname,
+        ...(columnTypes && Object.keys(columnTypes).length ? { columnTypes } : {}),
       },
       { signal },
     );

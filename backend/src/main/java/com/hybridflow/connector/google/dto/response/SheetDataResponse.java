@@ -18,4 +18,6 @@ public class SheetDataResponse {
     private List<String> headers;
     private List<Map<String, String>> rows;
     private int totalRows;
+    private List<Map<String, String>> valueTypes;
+    private List<Map<String, String>> rawRows;
 }

@@ -27,6 +27,7 @@ public class RunSyncRequest {
     @Builder.Default
     private String idColumn = "id";
     private Set<String> syncColumns;
+    private java.util.Map<String, String> columnTypes;
     private boolean bootstrapConfirmed;
     private boolean notifyConflicts;
     private String chatId;

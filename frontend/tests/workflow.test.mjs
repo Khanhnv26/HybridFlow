@@ -413,3 +413,16 @@ test('an unconnected Telegram is rejected instead of silently omitted', () => {
   nodes.push({ id: 'unused', type: 'telegramAction', data: { chatId: '123' } });
   assert.throws(() => workflowConfig(nodes, edges), /dây vào/);
 });
+
+test('explicit column types reach requests and change flow identity using the backend fixture', async () => {
+  assert.equal(await flowIdFor({ spreadsheetId: 'sheet', sheetName: 'Data', idColumn: 'id', storageName: 'vault',
+    syncColumns: ['price'], columnTypes: { price: 'NUMBER' } }), 'flow-f56be653711ec4ae95c3a0f8e1e6a80a37620d79c1b42c67341634dd59af1bcb');
+  const { nodes, edges } = graph();
+  nodes.find(node => node.id === 'diff').data.columnTypes = { price: 'NUMBER' };
+  assert.deepEqual(workflowConfig(nodes, edges).columnTypes, { price: 'NUMBER' });
+  const before = await flowIdFor(workflowConfig(nodes, edges));
+  nodes.find(node => node.id === 'diff').data.columnTypes.price = 'TEXT';
+  assert.notEqual(await flowIdFor(workflowConfig(nodes, edges)), before);
+  nodes.find(node => node.id === 'diff').data.columnTypes = { sku: 'NUMBER' };
+  assert.throws(() => workflowConfig(nodes, edges), /Cột khóa/);
+});

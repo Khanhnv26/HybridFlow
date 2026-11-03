@@ -248,6 +248,33 @@ test('a failed router preview read is shown once and can be retried without trap
   assert.equal(renderer.root.findAllByProps({ role: 'dialog' }).length, 0);
 });
 
+test('the comparison dialog persists a numeric price column and keeps the key as text', async () => {
+  const reads = [];
+  api.googleService = { readSheet: async (...args) => {
+    reads.push(args);
+    return { spreadsheetId: 'file-a', sheetName: 'Tab A', headers: ['id', 'price', 'phone'], rows: [{ id: '00123', price: '20000', phone: '0901234567' }], totalRows: 1 };
+  } };
+  await mount({ draft: {
+    nodes: [source('a', 'file-a', 'Tab A'),
+      { id: 'diff', type: 'diffEngine', position: { x: 0, y: 0 }, data: { uniqueKey: 'id', sharedColumns: 'price,phone', conflictPolicy: 'ASK_TELEGRAM' } },
+      { id: 'vault', type: 'storageAction', position: { x: 0, y: 0 }, data: { tableName: 'vault' } }],
+    edges: [{ source: 'a', sourceHandle: 'out', target: 'diff', targetHandle: 'in' },
+      { source: 'diff', sourceHandle: 'clean', target: 'vault', targetHandle: 'in' }],
+  } });
+  let saved;
+  api.workflowService.save = async (_id, definition) => { saved = definition; };
+  await act(async () => renderer.root.find(node => node.props['data-workflow-node'] === 'diff').props.onClick());
+  assert.equal(renderer.root.findByProps({ 'aria-label': 'Kiểu cột id' }).props.disabled, true);
+  await act(async () => renderer.root.findByProps({ 'aria-label': 'Kiểu cột price' }).props.onChange({ target: { value: 'NUMBER' } }));
+  const dialog = renderer.root.findByProps({ role: 'dialog' });
+  await act(async () => dialog.findAllByType('button').find(node => text(node).includes('Lưu cấu hình')).props.onClick());
+  assert.deepEqual(saved.nodes.find(node => node.id === 'diff').data.columnTypes, { price: 'NUMBER' });
+  await act(async () => renderer.root.find(node => node.props['data-workflow-node'] === 'a')
+    .findAllByType('button').find(node => text(node).includes('Xem dữ liệu')).props.onClick({ stopPropagation() {} }));
+  assert.deepEqual(reads.at(-1)[4], { price: 'NUMBER' }, 'The data viewer must read using the saved numeric-column configuration');
+  assert.match(text(renderer.root), /00123/);
+});
+
 test('opening and closing a router across parent updates never reuses another modal key', async context => {
   const warnings = [];
   context.mock.method(console, 'error', (...args) => warnings.push(args.join(' ')));

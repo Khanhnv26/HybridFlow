@@ -7,6 +7,18 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.*;
 
 class WorkflowGraphParserTest {
+    @Test void typedColumnConfigurationMatchesFrontendIdentityAndSurvivesParsing() throws Exception {
+        com.fasterxml.jackson.databind.JsonNode graph = new com.fasterxml.jackson.databind.ObjectMapper().readTree("""
+                {"nodes":[{"id":"s","type":"sheetsTrigger","data":{"spreadsheetId":"sheet","sheetName":"Data"}},
+                {"id":"d","type":"diffEngine","data":{"uniqueKey":"id","sharedColumns":"price","conflictPolicy":"ASK_TELEGRAM","columnTypes":{"price":"NUMBER"}}},
+                {"id":"v","type":"storageAction","data":{"tableName":"vault"}}],
+                "edges":[{"source":"s","sourceHandle":"out","target":"d","targetHandle":"in"},
+                {"source":"d","sourceHandle":"clean","target":"v","targetHandle":"in"}]}
+                """);
+        com.hybridflow.sync.dto.request.RunSyncRequest request = parser.buildSyncRequest("editor", graph, "token").orElseThrow();
+        assertEquals(java.util.Map.of("price", "NUMBER"), request.getColumnTypes());
+        assertEquals("flow-f56be653711ec4ae95c3a0f8e1e6a80a37620d79c1b42c67341634dd59af1bcb", request.getFlowId());
+    }
     private final WorkflowGraphParser parser = new WorkflowGraphParser();
     @Test void dailyTimeUsesConfiguredZoneInsteadOfJvmZone() {
         assertEquals(Instant.parse("2026-11-04T01:00:00Z"), parser.computeNextRun("daily", 5, "08:00", "Asia/Ho_Chi_Minh", Instant.parse("2026-11-03T02:00:00Z")));

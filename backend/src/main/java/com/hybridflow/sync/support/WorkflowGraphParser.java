@@ -347,6 +347,14 @@ public class WorkflowGraphParser {
         if (timer != null && !hasEdge(edges, timer.path("id").asText(), "out", diffId, "trigger"))
             throw new IllegalArgumentException("Nối khối hẹn giờ vào cổng kích hoạt.");
 
+        java.util.Map<String, String> columnTypes = new java.util.TreeMap<>();
+        if (diffData.has("columnTypes")) {
+            if (!diffData.path("columnTypes").isObject()) throw new IllegalArgumentException("Cấu hình kiểu cột không hợp lệ.");
+            diffData.path("columnTypes").fields().forEachRemaining(entry -> columnTypes.put(entry.getKey(), entry.getValue().asText()));
+            for (String type : columnTypes.values()) if (!Set.of("TEXT", "NUMBER").contains(type)) throw new IllegalArgumentException("Kiểu cột không hợp lệ.");
+            if ("NUMBER".equals(columnTypes.get(idColumn))) throw new IllegalArgumentException("Cột khóa phải giữ kiểu Văn bản.");
+        }
+        if (!columnTypes.isEmpty()) connectedSheets.forEach(endpoint -> endpoint.setColumnTypes(columnTypes));
         String resolvedFlowId = computeFlowId(connectedSheets, idColumn, storageName, syncColumns);
         java.util.Map<String, List<String>> executionNodes = new java.util.LinkedHashMap<>(transformNodes);
         executionNodes.put("sheets", connectedSheets.stream().map(SheetEndpointRequest::getNodeId).toList());
@@ -371,6 +379,7 @@ public class WorkflowGraphParser {
                 .writeBackCleanData(connectedSheets.get(0).isWriteBackCleanData())
                 .sheets(connectedSheets.size() >= 2 ? connectedSheets : null)
                 .idColumn(idColumn)
+                .columnTypes(columnTypes.isEmpty() ? null : columnTypes)
                 .syncColumns(syncColumns)
                 .storageName(storageName)
                 .conflictPolicy(conflictPolicy)
@@ -489,6 +498,9 @@ public class WorkflowGraphParser {
                         .map(c -> List.of(c.getColumnName(), c.getRules(), c.getDefaultValue() == null ? "" : c.getDefaultValue())).toList(),
                     s.isWriteBackCleanData())).toList());
         }
+        java.util.Map<String, String> columnTypes = sheets.get(0).getColumnTypes();
+        if (columnTypes != null && !columnTypes.isEmpty()) identity.add(List.of("columnTypes", new java.util.TreeMap<>(columnTypes).entrySet().stream()
+                .map(entry -> List.of(entry.getKey(), entry.getValue())).toList()));
         try {
             byte[] bytes = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsBytes(identity);
             return "flow-" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));

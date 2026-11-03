@@ -6,6 +6,16 @@ import java.util.*;
 
 
 public final class SheetRowUtils {
+    public static String valueType(com.hybridflow.connector.google.dto.response.SheetDataResponse sheet, int row, String column) {
+        return sheet.getValueTypes() != null && row < sheet.getValueTypes().size()
+                ? sheet.getValueTypes().get(row).getOrDefault(column, "TEXT") : "TEXT";
+    }
+
+    public static boolean requiresTypeWrite(com.hybridflow.connector.google.dto.response.SheetDataResponse sheet, int row,
+                                            String column, String value, java.util.Map<String, String> columnTypes) {
+        return columnTypes != null && columnTypes.containsKey(column) && value != null && !value.isEmpty()
+                && sheet.getValueTypes() != null && !columnTypes.get(column).equals(valueType(sheet, row, column));
+    }
     private SheetRowUtils() {}
 
     public static Map<String, Integer> index(SheetDataResponse sheet, String idColumn) {

@@ -11,4 +11,5 @@ public class ReadSheetRequest {
     private String accessToken;
     private String spreadsheetId;
     private String sheetname;
+    private java.util.Map<String, String> columnTypes;
 }

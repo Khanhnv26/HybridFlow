@@ -1,4 +1,5 @@
 export interface SheetDataResponse {
+  valueTypes?: Record<string, 'TEXT' | 'NUMBER'>[];
   spreadsheetId: string;
   spreadsheetTitle?: string;
   sheetName: string;
@@ -14,6 +15,7 @@ export interface SpreadsheetMetadataResponse {
 }
 
 export interface UpdateCellRequest {
+  valueType?: 'TEXT' | 'NUMBER';
   accessToken: string;
   spreadsheetId: string;
   range: string;
@@ -140,6 +142,7 @@ export interface DataTransformNodeData extends OrchestrationNodeData {
 }
 
 export interface OrchestrationNodeData extends Record<string, unknown> {
+  columnTypes?: Record<string, 'TEXT' | 'NUMBER'>;
   writeBackBySource?: Record<string, boolean>;
   transformSourceCount?: number;
   transformWriteBackCount?: number;
@@ -250,6 +253,7 @@ export interface SyncConflictDto {
 }
 
 export interface RunSyncRequestPayload {
+  columnTypes?: Record<string, 'TEXT' | 'NUMBER'>;
   transforms?: ColumnTransformConfig[];
   writeBackCleanData?: boolean;
   flowId: string;

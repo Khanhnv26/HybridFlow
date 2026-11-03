@@ -107,3 +107,11 @@ Mỗi khối Sheet hiển thị riêng tên file thật, tên trang tính và s�
 Nút Xem bảng tính có bộ chọn nguồn; nút Xem dữ liệu trên từng khối mở thẳng nguồn đó. Làm mới và sửa ô chỉ áp dụng cho file/tab đang chọn. Preview trong cấu hình dùng cùng trạng thái đọc theo nguồn; xem thử file/tab khác không đổi cấu hình đã lưu. Sau đồng bộ hoặc duyệt conflict, ứng dụng đọc lại từng nguồn để cập nhật trạng thái. Popup conflict mới hiển thị tên file, trang tính và giá trị thành các thẻ riêng, nút chọn dùng nhãn nguồn ngắn; dữ liệu conflict cũ còn giữ trong phần chi tiết.
 
 Khối So khớp có hai cổng Sheet cùng tham gia đồng bộ hai chiều (trái màu tím, phải màu xanh ngọc) và cổng Cảnh báo xung đột màu cam để nối Telegram. Bấm “Đã nối X trang tính” để xem tên file → trang tính của các khối đã nối; khối chưa cấu hình được báo riêng. Luồng Sheet–Vault cũ hiển thị “Kho lưu trữ” ở cổng bên phải. Các định danh cổng và luồng đã lưu vẫn tương thích.
+
+## Kiểu cột khi ghi Google Sheets
+
+Trong khối **Điều phối & Đồng bộ**, chọn cột được đồng bộ rồi đặt **Kiểu dữ liệu khi ghi Sheet**: chọn **Số** cho `price`/số lượng, giữ **Văn bản** cho mã và số điện thoại. Cột khóa luôn là Văn bản. Mặc định không tự đoán chuỗi chữ số thành số.
+
+Cấu hình lưu ở `columnTypes`, ví dụ `{"price":"NUMBER","phone":"TEXT"}`. Ghi vẫn dùng RAW: chỉ ô thuộc cột NUMBER được gửi thành JSON number, các ô khác là chuỗi. Giá trị NUMBER dùng dấu chấm thập phân, không chứa dấu phân cách hàng nghìn; ô trống vẫn được xóa bình thường. Dữ liệu không hợp lệ hoặc vượt độ chính xác 15 chữ số bị từ chối trước khi ghi.
+
+Đổi kiểu cột tạo flowId mới để không dùng nhầm snapshot; chạy tay và xác nhận khởi tạo trước khi tiếp tục lịch. Khi đồng bộ, các ô còn lưu dạng văn bản trong cột NUMBER được sửa cả khi giá trị hiển thị không đổi. Sửa kiểu ô không tự phát sự kiện bản ghi. Sửa ô trực tiếp trong bảng xem dữ liệu và duyệt xung đột cũng áp dụng kiểu đã chọn. Nhật ký phục hồi giữ kiểu và giá trị gốc của ô để rollback đúng.

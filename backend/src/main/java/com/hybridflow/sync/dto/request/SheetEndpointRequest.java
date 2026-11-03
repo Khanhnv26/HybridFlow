@@ -16,5 +16,6 @@ public class SheetEndpointRequest {
     private String sheetName;
     private java.util.List<ColumnTransformConfig> transforms;
     private boolean writeBackCleanData;
+    private java.util.Map<String, String> columnTypes;
 
 }

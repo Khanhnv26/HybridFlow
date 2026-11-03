@@ -3,6 +3,7 @@ package com.hybridflow.sync.service.impl;
 import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
 import com.hybridflow.connector.google.dto.response.SheetDataResponse;
 import com.hybridflow.connector.google.service.GoogleSheetsService;
+import com.hybridflow.connector.google.util.SheetValueTypes;
 import com.hybridflow.sync.dto.request.ActionPlan;
 import com.hybridflow.sync.dto.request.ColumnTransformConfig;
 import com.hybridflow.sync.dto.request.RouterPlan;
@@ -112,9 +113,10 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         List<SheetWritePlan> plans = new ArrayList<>();
         Set<String> targets = new HashSet<>();
         for (SheetEndpointRequest endpoint : endpoints) {
+            endpoint.setColumnTypes(request.getColumnTypes());
             phase(executionId, endpoint.getNodeId() == null ? List.of() : List.of(endpoint.getNodeId()), "READ", "Đang đọc trang tính");
             SheetDataResponse sheet = googleSheetsService.readSheet(ReadSheetRequest.builder().accessToken(request.getAccessToken())
-                    .spreadsheetId(endpoint.getSpreadsheetId()).sheetname(endpoint.getSheetName()).build());
+                    .spreadsheetId(endpoint.getSpreadsheetId()).sheetname(endpoint.getSheetName()).columnTypes(request.getColumnTypes()).build());
             endpoint.setSheetName(sheet.getSheetName());
             endpoint.setSpreadsheetTitle(sheet.getSpreadsheetTitle());
             if (!targets.add(SheetEndpointUtils.identity(endpoint)))
@@ -142,6 +144,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         List<String> boundColumns = new ArrayList<>(boundColumnsSet);
         store.bindMultiSheets(flow, endpoints, idColumn, boundColumns);
 
+        validateColumnTypes(request, boundColumnsSet, data);
         validateNotifications(request, boundColumnsSet);
 
         boolean initial = !store.hasSnapshots(flow);
@@ -211,7 +214,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
                 if (winner == null) winner = "";
                 checkpoint.put(column, winner);
                 for (int i = 0; i < endpoints.size(); i++) {
-                    if (!Objects.equals(values.get(i), winner)) plans.get(i).getChanges().add(
+                    if (!Objects.equals(values.get(i), winner) || SheetRowUtils.requiresTypeWrite(data.get(i), positions.get(i), column, winner, request.getColumnTypes())) plans.get(i).getChanges().add(
                             new SheetCellChange(positions.get(i), column, id, values.get(i), winner));
                 }
             }
@@ -219,6 +222,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             if (!unresolved) clean.add(id);
             if (!initial) addRecordEvent(recordEvents, id, base, checkpoint, columns, conflictedColumns);
         }
+        for (SheetWritePlan plan : plans) plan.setColumnTypes(request.getColumnTypes());
         phase(request, executionId, "sheets", "WRITE", "Đang ghi và lưu checkpoint");
         for (int i = 0; i < plans.size(); i++) {
             mergeTransformWrites(plans.get(i), rawRows.get(i), data.get(i).getRows(), endpoints.get(i).isWriteBackCleanData());
@@ -253,7 +257,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         phase(request, executionId, "sheets", "READ", "Đang đọc trang tính");
         SheetDataResponse sheet = googleSheetsService.readSheet(ReadSheetRequest.builder()
                 .accessToken(request.getAccessToken()).spreadsheetId(request.getSpreadsheetId())
-                .sheetname(request.getSheetName()).build());
+                .sheetname(request.getSheetName()).columnTypes(request.getColumnTypes()).build());
         List<Map<String, String>> rawRows = sheet.getRows();
         if (request.getTransforms() != null && !request.getTransforms().isEmpty()) {
             phase(request, executionId, "transforms", "TRANSFORM", "Đang chuẩn hóa dữ liệu");
@@ -273,6 +277,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         List<String> boundColumns = new ArrayList<>(boundColumnsSet);
         store.bind(flow, request.getSpreadsheetId(), sheet.getSheetName(), idColumn, sheet.getHeaders(), request.getStorageName());
 
+        validateColumnTypes(request, boundColumnsSet, List.of(sheet));
         validateNotifications(request, boundColumnsSet);
 
         boolean initial = !store.hasSnapshots(flow);
@@ -291,6 +296,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         Map<String, Map<String, String>> vaultWrites = new LinkedHashMap<>();
         Map<String, Map<String, String>> snapshotWrites = new LinkedHashMap<>();
         Map<String, String> sheetWrites = new LinkedHashMap<>();
+        Set<String> conflictedCells = new HashSet<>();
         if (request.isWriteBackCleanData()) for (int row = 0; row < rawRows.size(); row++) {
             for (String column : sheet.getHeaders()) {
                 String value = sheet.getRows().get(row).getOrDefault(column, "");
@@ -337,6 +343,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
                     default -> unresolved.add(conflict.getColumn());
                 }
             }
+            for (String column : unresolved) conflictedCells.add(SheetRowUtils.range(sheet, entry.getValue(), column));
             SyncDiffResult openDiff = new SyncDiffResult(id);
             for (FieldConflict conflict : diff.getConflicts()) {
                 if (unresolved.contains(conflict.getColumn())) openDiff.addConflict(conflict.getColumn(),
@@ -353,15 +360,24 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             if (unresolved.isEmpty()) clean.add(id);
             if (!initial) addRecordEvent(recordEvents, id, base, checkpoint, columns, unresolved);
         }
+        if (request.getColumnTypes() != null) for (Map.Entry<String, Integer> row : index.entrySet()) {
+            for (String column : request.getColumnTypes().keySet()) {
+                String range = SheetRowUtils.range(sheet, row.getValue(), column);
+                String value = snapshotWrites.get(row.getKey()).getOrDefault(column, "");
+                if (!conflictedCells.contains(range) && SheetRowUtils.requiresTypeWrite(sheet, row.getValue(), column, value, request.getColumnTypes()))
+                    sheetWrites.putIfAbsent(range, value);
+            }
+        }
         phase(request, executionId, "sheets", "WRITE", "Đang đối soát và ghi trang tính");
-        if (request.getTransforms() != null && !request.getTransforms().isEmpty()) {
+        if ((request.getTransforms() != null && !request.getTransforms().isEmpty()) || (request.getColumnTypes() != null && !request.getColumnTypes().isEmpty())) {
             List<SheetCellChange> changes = new ArrayList<>();
             for (int row = 0; row < rawRows.size(); row++) for (String column : sheet.getHeaders()) {
                 String range = SheetRowUtils.range(sheet, row, column);
-                if (sheetWrites.containsKey(range) && !Objects.equals(rawRows.get(row).getOrDefault(column, ""), sheetWrites.get(range)))
+                if (sheetWrites.containsKey(range) && (!Objects.equals(rawRows.get(row).getOrDefault(column, ""), sheetWrites.get(range))
+                        || SheetRowUtils.requiresTypeWrite(sheet, row, column, sheetWrites.get(range), request.getColumnTypes())))
                     changes.add(new SheetCellChange(row, column, rawRows.get(row).get(idColumn), rawRows.get(row).getOrDefault(column, ""), sheetWrites.get(range)));
             }
-            writes.apply(request.getAccessToken(), List.of(new SheetWritePlan(request.getSpreadsheetId(), sheet.getSheetName(), idColumn, sheet.getHeaders(), changes)));
+            writes.apply(request.getAccessToken(), List.of(new SheetWritePlan(request.getSpreadsheetId(), sheet.getSheetName(), idColumn, sheet.getHeaders(), changes, request.getColumnTypes())));
         } else googleSheetsService.updateCells(request.getAccessToken(), request.getSpreadsheetId(), sheetWrites);
         phase(request, executionId, "storage", "WRITE", "Đang lưu Vault và checkpoint");
         vaultWrites.forEach((id, row) -> store.saveVaultRecord(flow, id, row));
@@ -376,6 +392,20 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
                 .latency((System.currentTimeMillis() - start) + " ms").build();
         completeAfterCommit(executionId, result);
         return result;
+    }
+
+    private void validateColumnTypes(RunSyncRequest request, Set<String> columns, List<SheetDataResponse> sheets) {
+        SheetValueTypes.validate(request.getColumnTypes(), columns, request.getIdColumn());
+        if (request.getColumnTypes() == null || request.getColumnTypes().isEmpty()) return;
+        for (SheetDataResponse sheet : sheets) {
+            List<Map<String, String>> normalized = new ArrayList<>();
+            for (Map<String, String> row : sheet.getRows()) {
+                Map<String, String> copy = new LinkedHashMap<>(row);
+                request.getColumnTypes().forEach((column, type) -> copy.put(column, SheetValueTypes.canonical(row.getOrDefault(column, ""), type)));
+                normalized.add(copy);
+            }
+            sheet.setRows(normalized);
+        }
     }
 
     private void validateNotifications(RunSyncRequest request, Set<String> columns) {
@@ -468,7 +498,8 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             }
             cells.put(cell.getRowIndex() + ":" + cell.getColumn(), cell);
         }
-        plan.setChanges(cells.values().stream().filter(cell -> !Objects.equals(cell.getBefore(), cell.getAfter())).toList());
+        plan.setChanges(cells.values().stream().filter(cell -> !Objects.equals(cell.getBefore(), cell.getAfter())
+                || plan.getColumnTypes() != null && plan.getColumnTypes().containsKey(cell.getColumn())).toList());
     }
 
     private void phase(RunSyncRequest request, String executionId, String role, String stage, String label) {

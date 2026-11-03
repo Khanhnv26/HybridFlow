@@ -83,6 +83,9 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
   const diffs = nodes.filter((n) => n.type === 'diffEngine');
   if (diffs.length !== 1) throw new Error('Luồng cần đúng một khối diffEngine.');
   const diff = diffs[0];
+  const columnTypes = diff.data.columnTypes || {};
+  if (Object.values(columnTypes).some(type => !['TEXT', 'NUMBER'].includes(type))) throw new Error('Kiểu cột không hợp lệ.');
+  if (columnTypes[diff.data.uniqueKey?.trim() || 'id'] === 'NUMBER') throw new Error('Cột khóa phải giữ kiểu Văn bản.');
 
   const edgeSignatures = new Set<string>();
   for (const edge of edges) {
@@ -285,6 +288,7 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
       conflictPolicy,
       notifyConflicts: conflictActionIds.length > 0,
       chatId: actionPlans[0]?.chatId || telegramNodes[0]?.data.chatId?.trim(),
+      ...(Object.keys(columnTypes).length ? { columnTypes } : {}),
       ...(routerPlans.length ? { routers: routerPlans } : {}),
       ...(actionPlans.length ? { actions: actionPlans } : {}),
       ...(conflictActionIds.length ? { conflictActionIds } : {}),
@@ -347,13 +351,15 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
     notifyConflicts: conflictActionIds.length > 0,
     chatId: actionPlans[0]?.chatId || telegramNodes[0]?.data.chatId?.trim(),
     ...(syncColumns.length ? { syncColumns } : {}),
-    ...(routerPlans.length ? { routers: routerPlans } : {}),
+    ...(Object.keys(columnTypes).length ? { columnTypes } : {}),
+      ...(routerPlans.length ? { routers: routerPlans } : {}),
     ...(actionPlans.length ? { actions: actionPlans } : {}),
     ...(conflictActionIds.length ? { conflictActionIds } : {}),
   };
 }
 
 export async function flowIdFor(config: {
+  columnTypes?: Record<string, 'TEXT' | 'NUMBER'>;
   spreadsheetId: string;
   sheetName: string;
   sheets?: SheetEndpointPayload[];
@@ -378,6 +384,8 @@ export async function flowIdFor(config: {
       (s.transforms || []).map(c => [c.columnName, c.rules, c.defaultValue || '']),
       !!s.writeBackCleanData,
     ]));
+  const types = Object.entries(config.columnTypes || {}).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0);
+  if (types.length) payload.push(['columnTypes', types]);
   const data = JSON.stringify(payload);
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(data));
   return `flow-${Array.from(new Uint8Array(bytes), (b) => b.toString(16).padStart(2, '0')).join('')}`;

@@ -66,7 +66,8 @@ class SyncExecutionServiceTest {
             ReadSheetRequest read = call.getArgument(0);
             Map<String, String> row = "b".equals(read.getSpreadsheetId()) ? destination : source;
             return SheetDataResponse.builder().spreadsheetId(read.getSpreadsheetId()).sheetName("Data")
-                    .headers(List.of("id", "status", "note")).rows(List.of(row)).totalRows(1).build();
+                    .headers(List.of("id", "status", "note")).rows(List.of(row))
+                    .valueTypes(read.getColumnTypes() == null ? null : List.of(Map.of("status", "TEXT"))).totalRows(1).build();
         });
         RunSyncRequest request = RunSyncRequest.builder().flowId("events").accessToken("token").spreadsheetId("a")
                 .sheetName("Data").idColumn("id").storageName("vault").bootstrapConfirmed(initial)
@@ -126,6 +127,25 @@ class SyncExecutionServiceTest {
         assertEquals("CREATED", event.getKind());
         assertTrue(event.getBefore().isEmpty());
         assertEquals(row, event.getAfter());
+    }
+
+    @ParameterizedTest @ValueSource(booleans = {false, true})
+    void numericColumnsRepairTextCellsEvenWhenTheirDisplayedValueIsUnchanged(boolean multi) {
+        Map<String, String> row = Map.of("id", "1", "status", "20000", "note", "old");
+        RunSyncRequest request = eventRequest(multi, false, row, row, row);
+        request.setColumnTypes(Map.of("status", "NUMBER"));
+        service.executeSync(request);
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<List<com.hybridflow.sync.model.SheetWritePlan>> plans = ArgumentCaptor.forClass(List.class);
+        verify(writes).apply(eq("token"), plans.capture());
+        assertEquals(multi ? 2 : 1, plans.getValue().size());
+        for (com.hybridflow.sync.model.SheetWritePlan plan : plans.getValue()) {
+            assertEquals("NUMBER", plan.getColumnTypes().get("status"));
+            assertEquals(1, plan.getChanges().size(), new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(plan).toString());
+            assertEquals("20000", plan.getChanges().getFirst().getBefore());
+            assertEquals("20000", plan.getChanges().getFirst().getAfter());
+        }
+        assertTrue(capturedEvents().isEmpty(), "Repairing the cell type must not emit a false record update");
     }
 
     private RunSyncRequest transformRequest(boolean writeBack, boolean confirm) {

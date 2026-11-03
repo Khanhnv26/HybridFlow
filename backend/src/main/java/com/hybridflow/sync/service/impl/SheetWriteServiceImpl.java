@@ -38,7 +38,15 @@ public class SheetWriteServiceImpl implements SheetWriteService {
     public void apply(String token, List<SheetWritePlan> requested) {
         List<SheetWritePlan> plans = requested.stream().filter(p -> !p.getChanges().isEmpty()).toList();
         if (plans.isEmpty()) return;
-        for (SheetWritePlan plan : plans) validate(plan, read(token, plan), false);
+        for (SheetWritePlan plan : plans) {
+            SheetDataResponse live = read(token, plan);
+            validate(plan, live, false);
+            for (SheetCellChange cell : plan.getChanges()) {
+                cell.setBeforeValueType(SheetRowUtils.valueType(live, cell.getRowIndex(), cell.getColumn()));
+                cell.setBeforeRawValue(live.getRawRows() != null && cell.getRowIndex() < live.getRawRows().size()
+                        ? live.getRawRows().get(cell.getRowIndex()).getOrDefault(cell.getColumn(), "") : cell.getBefore());
+            }
+        }
         String operationId = UUID.randomUUID().toString();
         journal.start(operationId, codec.encode(plans));
         boolean synchronizedTransaction = TransactionSynchronizationManager.isSynchronizationActive();
@@ -55,7 +63,7 @@ public class SheetWriteServiceImpl implements SheetWriteService {
         try {
             for (SheetWritePlan plan : plans) {
                 validate(plan, read(token, plan), false);
-                sheets.updateCells(token, plan.getSpreadsheetId(), cells(plan));
+                send(token, plan.getSpreadsheetId(), cells(plan), types(plan, false));
             }
             journal.complete(operationId);
         } catch (RuntimeException failure) {
@@ -74,16 +82,17 @@ public class SheetWriteServiceImpl implements SheetWriteService {
             validate(plan, live, true);
             Map<String, String> rollback = new LinkedHashMap<>();
             for (SheetCellChange cell : plan.getChanges()) {
-                if (!Objects.equals(value(live, cell.getRowIndex(), cell.getColumn()), cell.getBefore()))
-                    rollback.put(SheetRowUtils.range(live, cell.getRowIndex(), cell.getColumn()), cell.getBefore());
+                if (!Objects.equals(value(live, cell.getRowIndex(), cell.getColumn()), cell.getBefore())
+                        || cell.getBeforeValueType() != null && !cell.getBeforeValueType().equals(SheetRowUtils.valueType(live, cell.getRowIndex(), cell.getColumn())))
+                    rollback.put(SheetRowUtils.range(live, cell.getRowIndex(), cell.getColumn()), cell.getBeforeRawValue() == null ? cell.getBefore() : cell.getBeforeRawValue());
             }
-            if (!rollback.isEmpty()) sheets.updateCells(token, plan.getSpreadsheetId(), rollback);
+            if (!rollback.isEmpty()) send(token, plan.getSpreadsheetId(), rollback, types(plan, true));
         }
     }
 
     private SheetDataResponse read(String token, SheetWritePlan plan) {
         return sheets.readSheet(ReadSheetRequest.builder().accessToken(token).spreadsheetId(plan.getSpreadsheetId())
-                .sheetname(plan.getSheetName()).build());
+                .sheetname(plan.getSheetName()).columnTypes(plan.getColumnTypes()).build());
     }
 
     private void validate(SheetWritePlan plan, SheetDataResponse live, boolean recovering) {
@@ -120,6 +129,20 @@ public class SheetWriteServiceImpl implements SheetWriteService {
         Map<String, String> cells = new LinkedHashMap<>();
         for (SheetCellChange cell : plan.getChanges()) cells.put(SheetRowUtils.range(layout, cell.getRowIndex(), cell.getColumn()), cell.getAfter());
         return cells;
+    }
+
+    private Map<String, String> types(SheetWritePlan plan, boolean restoring) {
+        if (plan.getColumnTypes() == null || plan.getColumnTypes().isEmpty()) return Map.of();
+        SheetDataResponse layout = SheetDataResponse.builder().sheetName(plan.getSheetName()).headers(plan.getHeaders()).build();
+        Map<String, String> types = new LinkedHashMap<>();
+        for (SheetCellChange cell : plan.getChanges()) types.put(SheetRowUtils.range(layout, cell.getRowIndex(), cell.getColumn()),
+                restoring ? (cell.getBeforeValueType() == null ? "TEXT" : cell.getBeforeValueType()) : plan.getColumnTypes().getOrDefault(cell.getColumn(), "TEXT"));
+        return types;
+    }
+
+    private void send(String token, String spreadsheetId, Map<String, String> cells, Map<String, String> types) {
+        if (types.isEmpty()) sheets.updateCells(token, spreadsheetId, cells);
+        else sheets.updateTypedCells(token, spreadsheetId, cells, types);
     }
 
     private String value(SheetDataResponse sheet, int row, String column) {

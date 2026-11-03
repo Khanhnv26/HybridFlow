@@ -141,6 +141,8 @@ export const NaturalLanguageConfigModal: React.FC<Props> = ({
         await onSaveSource(node.id, {
           uniqueKey: node.data.uniqueKey,
           sharedColumns: node.data.sharedColumns,
+          columnTypes: Object.fromEntries(Object.entries(node.data.columnTypes || {}).filter(([column]) =>
+            column === (node.data.uniqueKey || 'id') || (currentShared.length ? currentShared : availableColumns).includes(column))),
           conflictPolicy: node.data.conflictPolicy,
         });
       } else if (node.type === 'storageAction') {
@@ -217,7 +219,7 @@ export const NaturalLanguageConfigModal: React.FC<Props> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80" onClick={onClose}>
+    <div role="dialog" aria-modal="true" aria-label={node.type === 'diffEngine' ? 'Điều phối & Đồng bộ' : node.data.label} className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80" onClick={onClose}>
       <div
         className="bg-[#141922] border border-[#2d3748] rounded-2xl w-full max-w-4xl h-[88vh] max-h-[850px] flex flex-col text-gray-100 shadow-2xl overflow-hidden"
         onClick={(e) => e.stopPropagation()}
@@ -423,6 +425,19 @@ export const NaturalLanguageConfigModal: React.FC<Props> = ({
                 </div>
 
                 {/* 3. Khi dữ liệu hai bên xung đột (Dropdown chuẩn hệ thống, gọn gàng 1 dòng) */}
+                <section className="space-y-2 border-t border-gray-700 pt-3">
+                  <h4 className="text-xs font-semibold text-gray-300">Kiểu dữ liệu khi ghi Sheet</h4>
+                  <p className="text-xs text-gray-500">Chọn Số cho price, số lượng; giữ Văn bản cho mã và số điện thoại. Số thập phân dùng dấu chấm, không có dấu phân cách hàng nghìn. Đổi kiểu cột sẽ yêu cầu xác nhận khởi tạo luồng mới.</p>
+                  {[...new Set([node.data.uniqueKey || 'id', ...(currentShared.length ? currentShared : availableColumns)])].map(column => <label key={column} className="flex items-center justify-between gap-3 text-xs text-gray-300">
+                    <span>{column}</span>
+                    <select aria-label={'Kiểu cột ' + column} disabled={disabled || testing || column === (node.data.uniqueKey || 'id')}
+                      value={node.data.columnTypes?.[column] || 'TEXT'}
+                      onChange={event => { setResult(null); onUpdateData(node.id, { columnTypes: { ...node.data.columnTypes, [column]: event.target.value as 'TEXT' | 'NUMBER' } }); }}
+                      className="rounded border border-gray-700 bg-[#0b0e14] px-2 py-1 text-xs">
+                      <option value="TEXT">Văn bản</option><option value="NUMBER">Số</option>
+                    </select>
+                  </label>)}
+                </section>
                 <div className="space-y-1.5 min-w-0">
                   <label htmlFor="conflict-policy-select" className="text-xs font-semibold text-gray-300 block">
                     Khi dữ liệu hai bên xung đột

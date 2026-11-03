@@ -4,6 +4,12 @@ Ngày: 03/11/2026. Phạm vi: mã nguồn hiện tại, gồm cả thay đổi c
 
 **Kết luận sau sửa: các lỗi F1–F12 đã được xử lý và kiểm thử tự động đạt.** Phần đầu là kết quả xác minh mới nhất; phần sau giữ lại các phát hiện nghiệm thu ban đầu để truy vết.
 
+## Bổ sung sửa kiểu số trên Google Sheets — 03/11/2026
+
+Đã thêm cấu hình columnTypes (TEXT/NUMBER) trong khối Điều phối & Đồng bộ, truyền qua luồng chạy tay/chạy lịch, đọc dữ liệu xem trước, sửa ô trực tiếp, đồng bộ và duyệt xung đột. NUMBER gửi số JSON bằng RAW; mã/số điện thoại giữ chuỗi. Các ô đang là text trong cột NUMBER được chuyển kiểu dù nội dung không đổi; không phát event bản ghi giả. Nhật ký giữ cả kiểu và giá trị gốc (kể cả text 20000.50) để phục hồi đúng khi rollback. Kiểu cột tham gia flowId; đổi kiểu yêu cầu xác nhận khởi tạo luồng mới.
+
+Xác minh mới nhất: **109/109 test frontend**, build thành công; **178/178 test backend** gồm PostgreSQL thật, không test bị bỏ qua. HTTP Google được giả lập để kiểm tra trực tiếp payload số/chữ; chưa thao tác lên Sheet thật của người dùng. Cách áp dụng: mở Điều phối & Đồng bộ → Kiểu dữ liệu khi ghi Sheet → price: Số → Lưu → chạy tay/xác nhận khởi tạo.
+
 ## Kết quả sau sửa — 03/11/2026
 
 **Đã sửa F1–F12 và vượt qua bộ kiểm thử tự động.** Frontend: **107/107 test**, build thành công. Backend: **169/169 test**, không failure/error và **không test bị bỏ qua**. Kiểm thử tích hợp chạy trên PostgreSQL **18.6** tạm, chỉ lắng nghe localhost:15432; không dùng dữ liệu ứng dụng đang vận hành.

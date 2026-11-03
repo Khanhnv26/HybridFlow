@@ -143,6 +143,30 @@ class SyncApiIntegrationTest {
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM notification_outbox", Integer.class));
     }
 
+    @Test void numericPriceRepairAndConflictResolutionKeepTheNumericWriteContract() throws Exception {
+        String body = request("numeric-price").replace("\"conflictPolicy\":\"ASK_TELEGRAM\"", "\"conflictPolicy\":\"ASK_TELEGRAM\",\"columnTypes\":{\"price\":\"NUMBER\"}");
+        when(sheets.readSheet(any())).thenReturn(SheetDataResponse.builder().sheetName("Data").headers(List.of("id", "price"))
+                .rows(List.of(Map.of("id", "00123", "price", "20000"))).valueTypes(List.of(Map.of("price", "TEXT"))).build());
+        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk());
+        verify(sheets).updateTypedCells("test-token", "sheet", Map.of("'Data'!B2", "20000"), Map.of("'Data'!B2", "NUMBER"));
+        assertEquals("20000", jdbc.queryForObject("SELECT data->>'price' FROM sync_snapshots WHERE flow_id='numeric-price'", String.class));
+        when(sheets.readSheet(any())).thenReturn(SheetDataResponse.builder().sheetName("Data").headers(List.of("id", "price"))
+                .rows(List.of(Map.of("id", "00123", "price", "30000"))).valueTypes(List.of(Map.of("price", "NUMBER"))).build());
+        jdbc.update("UPDATE vault_records SET data=jsonb_set(data,'{price}','\"40000\"') WHERE flow_id='numeric-price'");
+        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk());
+        Long conflictId = jdbc.queryForObject("SELECT id FROM sync_conflicts WHERE status='OPEN'", Long.class);
+        mvc.perform(post("/api/v1/conflicts/" + conflictId + "/resolve").contentType(MediaType.APPLICATION_JSON)
+                .content("{\"resolvedValue\":\"40000\",\"accessToken\":\"test-token\"}"))
+                .andExpect(status().isOk());
+        verify(sheets).updateTypedCells("test-token", "sheet", Map.of("'Data'!B2", "40000"), Map.of("'Data'!B2", "NUMBER"));
+        assertEquals("40000", jdbc.queryForObject("SELECT data->>'price' FROM sync_snapshots WHERE flow_id='numeric-price'", String.class));
+        when(sheets.readSheet(any())).thenReturn(SheetDataResponse.builder().sheetName("Data").headers(List.of("id", "price"))
+                .rows(List.of(Map.of("id", "00123", "price", "not-a-number"))).build());
+        clearInvocations(sheets);
+        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isBadRequest());
+        verify(sheets, never()).updateTypedCells(any(), any(), any(), any());
+    }
+
     @Test void apiRoundTripPersistsBothDirectionsAndConflictApproval() throws Exception {
         run("flow-one");
         assertEquals("NEW", statusOf("vault_records", "flow-one"));

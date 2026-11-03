@@ -44,6 +44,27 @@ class SheetWriteServiceTest {
             return null;
         }).when(sheets).updateCells(anyString(), anyString(), anyMap());
     }
+
+    @Test void typedWriteRollbackRestoresTheOriginalTextTypeEvenWhenTheDisplayedValueDidNotChange() {
+        java.util.concurrent.atomic.AtomicReference<String> type = new java.util.concurrent.atomic.AtomicReference<>("TEXT");
+        java.util.concurrent.atomic.AtomicReference<String> raw = new java.util.concurrent.atomic.AtomicReference<>("20000.50");
+        doAnswer(call -> SheetDataResponse.builder().sheetName("Data").headers(List.of("id", "price"))
+                .rows(List.of(Map.of("id", "00123", "price", "20000.5"))).valueTypes(List.of(Map.of("price", type.get()))).rawRows(List.of(Map.of("price", raw.get()))).build()).when(sheets).readSheet(any());
+        doAnswer(call -> { Map<String, String> types = call.getArgument(3); type.set(types.get("'Data'!B2")); Map<String, String> values = call.getArgument(2); raw.set(values.get("'Data'!B2")); return null; })
+                .when(sheets).updateTypedCells(any(), any(), any(), any());
+        SheetWritePlan plan = new SheetWritePlan("file", "Data", "id", List.of("id", "price"),
+                List.of(new SheetCellChange(0, "price", "00123", "20000.5", "20000.5")), Map.of("price", "NUMBER"));
+        TransactionSynchronizationManager.initSynchronization();
+        try {
+            service.apply("token", List.of(plan));
+            assertEquals("NUMBER", type.get());
+            for (TransactionSynchronization callback : TransactionSynchronizationManager.getSynchronizations())
+                callback.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
+            assertEquals("TEXT", type.get());
+            assertEquals("20000.50", raw.get());
+            verify(journal).recovered(any());
+        } finally { TransactionSynchronizationManager.clearSynchronization(); }
+    }
     @Test void failureOnLastSheetRestoresEarlierWritesIncludingAmbiguousTimeout() {
         doAnswer(inv -> {
             Map<String, String> cells = inv.getArgument(2);

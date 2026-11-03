@@ -13,4 +13,5 @@ public class UpdateCellRequest {
     private String spreadsheetId;
     private String range;
     private String value;
+    private String valueType;
 }
