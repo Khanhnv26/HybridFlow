@@ -22,7 +22,7 @@ class GoogleSheetsMetadataTest {
         };
         Sheets client = new Sheets.Builder(transport, GsonFactory.getDefaultInstance(), null)
                 .setApplicationName("HybridFlow test").build();
-        return new GoogleSheetsServiceImpl() {
+        return new GoogleSheetsServiceImpl(org.mockito.Mockito.mock(com.hybridflow.connection.service.GoogleCredentialService.class)) {
             @Override protected Sheets createSheetsClient(String accessToken) { return client; }
         };
     }

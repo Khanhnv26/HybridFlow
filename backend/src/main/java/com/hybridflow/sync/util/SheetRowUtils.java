@@ -4,7 +4,7 @@ import com.hybridflow.connector.google.dto.response.SheetDataResponse;
 
 import java.util.*;
 
-/** Validates identifiers before any writes and retains physical sheet row positions. */
+
 public final class SheetRowUtils {
     private SheetRowUtils() {}
 

@@ -10,6 +10,8 @@ import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import java.util.List;
 import java.util.Map;
@@ -38,5 +40,16 @@ public class WorkflowController {
     @PutMapping("/{workflowId}/definition")
     public SaveWorkflowResponse save(@PathVariable String workflowId, @RequestBody JsonNode definition) {
         return workflowService.saveDefinition(workflowId, definition);
+    }
+
+    @PostMapping("/{workflowId}/run")
+    public com.hybridflow.sync.dto.response.RunSyncResponse run(@PathVariable String workflowId,
+            @RequestParam(defaultValue = "false") boolean bootstrapConfirmed) {
+        return workflowService.runDefinition(workflowId, bootstrapConfirmed);
+    }
+
+    @GetMapping("/{workflowId}/schedule")
+    public Map<String, Object> schedule(@PathVariable String workflowId) {
+        return workflowService.getScheduleStatus(workflowId);
     }
 }

@@ -121,6 +121,10 @@ export const syncService = {
 };
 
 export const workflowService = {
+  run: async (id: string, bootstrapConfirmed: boolean): Promise<RunSyncResponse> =>
+    (await apiClient.post(`/workflows/${encodeURIComponent(id)}/run`, null, { params: { bootstrapConfirmed } })).data,
+  scheduleStatus: async (id: string, signal?: AbortSignal): Promise<{ enabled: boolean; state?: string; error?: string; next_run_at?: string; last_run_at?: string }> =>
+    (await apiClient.get(`/workflows/${encodeURIComponent(id)}/schedule`, { signal })).data,
   load: async (id: string) =>
     (await apiClient.get(`/workflows/${encodeURIComponent(id)}/definition`)).data,
   save: async (id: string, definition: unknown) =>

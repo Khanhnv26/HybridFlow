@@ -27,7 +27,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 @EnabledIfEnvironmentVariable(named = "HYBRIDFLOW_TEST_DB_URL", matches = "jdbc:postgresql://(localhost|127[.]0[.]0[.]1):15432/hybridflow_test")
 @SpringBootTest(properties = {
         "spring.datasource.url=${HYBRIDFLOW_TEST_DB_URL}", "spring.datasource.username=hybridflow_test",
+        "spring.datasource.hikari.maximum-pool-size=6", "spring.datasource.hikari.minimum-idle=1",
         "spring.datasource.password=hybridflow_test", "spring.jpa.show-sql=false",
+        "hybridflow.scheduler.enabled=false",
+        "google.oauth.encryption-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
         "logging.level.com.hybridflow=WARN", "logging.level.org.hibernate=WARN" })
 @AutoConfigureMockMvc
 class SyncApiIntegrationTest {
@@ -36,9 +39,11 @@ class SyncApiIntegrationTest {
     @MockBean GoogleSheetsService sheets;
     @MockBean GoogleOAuthService oauth;
     @MockBean TelegramNotificationService telegram;
+    @Autowired com.hybridflow.connection.service.GoogleCredentialService credentials;
+    @Autowired com.hybridflow.sync.service.WorkflowJobService scheduler;
 
     @BeforeEach void cleanDatabase() {
-        jdbc.execute("TRUNCATE sheet_write_journal,sync_conflicts,sync_snapshots,vault_records,sync_flow_bindings,sync_executions,workflow_definitions RESTART IDENTITY");
+        jdbc.execute("TRUNCATE workflow_jobs,sheet_write_journal,sync_conflicts,sync_snapshots,vault_records,sync_flow_bindings,sync_executions,workflow_definitions,google_connections RESTART IDENTITY");
         source("NEW");
     }
     private void source(String status) {
@@ -141,6 +146,37 @@ class SyncApiIntegrationTest {
                 .andExpect(status().isOk());
         mvc.perform(get("/api/v1/workflows/editor-id/definition"))
                 .andExpect(status().isOk()).andExpect(content().json(definition));
+    }
+
+    @Test void savedWorkflowManualBootstrapThenScheduledRunUsesTheSameCheckpoint() throws Exception {
+        String connection = credentials.store(new com.google.api.client.googleapis.auth.oauth2.GoogleTokenResponse()
+                .setAccessToken("test-access").setRefreshToken("test-refresh").setExpiresInSeconds(3600L));
+        String graph = """
+                {"accessToken":"%s","nodes":[
+                 {"id":"timer","type":"scheduleTrigger","data":{"scheduleIntervalMinutes":5}},
+                 {"id":"sheet","type":"sheetsTrigger","data":{"spreadsheetId":"sheet","sheetName":"Data"}},
+                 {"id":"diff","type":"diffEngine","data":{"uniqueKey":"id","sharedColumns":"status","conflictPolicy":"SOURCE_WINS"}},
+                 {"id":"vault","type":"storageAction","data":{"tableName":"vault"}}],
+                 "edges":[{"source":"timer","sourceHandle":"out","target":"diff","targetHandle":"trigger"},
+                 {"source":"sheet","sourceHandle":"out","target":"diff","targetHandle":"in"},
+                 {"source":"diff","sourceHandle":"clean","target":"vault","targetHandle":"in"}]}
+                """.formatted(connection);
+        mvc.perform(put("/api/v1/workflows/editor/definition").contentType(MediaType.APPLICATION_JSON).content(graph)).andExpect(status().isOk());
+        mvc.perform(get("/api/v1/workflows/editor/definition")).andExpect(status().isOk()).andExpect(jsonPath("$.accessToken").doesNotExist());
+        String manual = mvc.perform(post("/api/v1/workflows/editor/run").param("bootstrapConfirmed", "true"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.bootstrapRequired").value(false)).andReturn().getResponse().getContentAsString();
+        String flow = new com.fasterxml.jackson.databind.ObjectMapper().readTree(manual).path("flowId").asText();
+        assertEquals("flow-985d2076bff98552d3637ea2b5f4678c6861575eb9f169e9bf2d6bb3ad92b15e", flow);
+        assertEquals("NEW", statusOf("sync_snapshots", flow));
+        source("UPDATED");
+        jdbc.update("UPDATE workflow_definitions SET next_run_at=now()-interval '1 second' WHERE flow_id='editor'");
+        scheduler.enqueueDue(); scheduler.runNext();
+        assertEquals("UPDATED", statusOf("sync_snapshots", flow));
+        assertEquals("UPDATED", statusOf("vault_records", flow));
+        assertEquals("SUCCEEDED", jdbc.queryForObject("SELECT state FROM workflow_jobs", String.class));
+        mvc.perform(get("/api/v1/workflows/editor/schedule")).andExpect(status().isOk())
+                .andExpect(jsonPath("$.state").value("SUCCEEDED")).andExpect(jsonPath("$.last_run_at").isNotEmpty());
+        assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM sync_executions WHERE flow_id=?", Integer.class, flow));
     }
     private String multiRequest() {
         return """

@@ -27,9 +27,12 @@ import java.util.List;
 import java.util.Map;
 
 @Service
+@lombok.RequiredArgsConstructor
 public class GoogleSheetsServiceImpl implements GoogleSheetsService {
+    private final com.hybridflow.connection.service.GoogleCredentialService credentials;
 
     protected Sheets createSheetsClient(String accessToken) {
+        accessToken = credentials.resolveAccessToken(accessToken);
         if (accessToken == null || accessToken.isBlank() || "ya29.mock".equals(accessToken))
             throw new IllegalArgumentException("Cần access token Google hợp lệ.");
         try {
@@ -67,6 +70,7 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
             return new SpreadsheetMetadataResponse(request.getSpreadsheetId(),
                     metadata.getProperties() == null ? "" : metadata.getProperties().getTitle(), tabs);
         } catch (GoogleJsonResponseException e) {
+            if (e.getStatusCode() == 401) throw new com.hybridflow.connection.exception.GoogleReconnectRequiredException();
             throw new IllegalArgumentException(switch (e.getStatusCode()) {
                 case 401 -> "Phiên Google hết hạn. Kết nối lại Google để tải danh sách trang tính.";
                 case 403 -> "Tài khoản Google chưa có quyền đọc file này. Kiểm tra quyền chia sẻ hoặc kết nối tài khoản khác.";
@@ -164,6 +168,7 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
                     .build();
 
         } catch (GoogleJsonResponseException e) {
+            if (e.getStatusCode() == 401) throw new com.hybridflow.connection.exception.GoogleReconnectRequiredException();
             throw new IllegalArgumentException(switch (e.getStatusCode()) {
                 case 401 -> "Phiên Google đã hết hạn. Kết nối Google lại để đọc dữ liệu.";
                 case 403 -> "Tài khoản Google chưa có quyền đọc file này. Kiểm tra quyền chia sẻ file.";
@@ -197,8 +202,11 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
                     .message("Cập nhật ô thành công")
                     .build();
 
+        } catch (GoogleJsonResponseException e) {
+            if (e.getStatusCode() == 401) throw new com.hybridflow.connection.exception.GoogleReconnectRequiredException();
+            throw new IllegalStateException("Không thể cập nhật ô trên Google Sheets.");
         } catch (IOException e) {
-            throw new RuntimeException("Lỗi cập nhật ô trong Google Sheets: " + e.getMessage(), e);
+            throw new IllegalStateException("Không thể kết nối Google để cập nhật ô.");
         }
     }
 
@@ -210,8 +218,11 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
         try {
             createSheetsClient(accessToken).spreadsheets().values().batchUpdate(spreadsheetId,
                     new BatchUpdateValuesRequest().setValueInputOption("RAW").setData(ranges)).execute();
+        } catch (GoogleJsonResponseException e) {
+            if (e.getStatusCode() == 401) throw new com.hybridflow.connection.exception.GoogleReconnectRequiredException();
+            throw new IllegalStateException("Không thể ghi dữ liệu đồng bộ vào Google Sheets.");
         } catch (IOException e) {
-            throw new IllegalStateException("Không thể ghi dữ liệu đồng bộ vào Google Sheets.", e);
+            throw new IllegalStateException("Không thể ghi dữ liệu đồng bộ vào Google Sheets.");
         }
     }
 

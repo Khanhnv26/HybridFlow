@@ -14,4 +14,7 @@ public class ScheduledWorkflowRow {
     private int intervalMinutes;
     private String dailyTime;
     private String accessToken;
+    private java.time.Instant nextRunAt;
+    private String timezone;
+    private long revision;
 }

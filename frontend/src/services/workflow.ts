@@ -24,6 +24,7 @@ export function workflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
   const diff = diffs[0];
 
   const schedules = nodes.filter((n) => n.type === 'scheduleTrigger');
+  if (schedules.length > 1) throw new Error('Chỉ hỗ trợ một khối hẹn giờ trong mỗi luồng.');
   const scheduleIds = new Set(schedules.map((s) => s.id));
   if (
     schedules.some(
@@ -176,6 +177,10 @@ export function workflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
   if (notifyConflicts && !chatId)
     throw new Error('Điền Telegram Chat ID hoặc bỏ dây nối đến Telegram.');
 
+  const syncColumns = [...new Set((diff.data.sharedColumns || '').split(',').map((column) => column.trim()).filter((column) => column && column !== idColumn))].sort();
+  if ((diff.data.sharedColumns || '').trim() && !syncColumns.length)
+    throw new Error('Chọn ít nhất một cột dữ liệu ngoài cột khóa.');
+
   return {
     spreadsheetId,
     sheetName,
@@ -184,6 +189,7 @@ export function workflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
     conflictPolicy,
     notifyConflicts,
     chatId,
+    ...(syncColumns.length ? { syncColumns } : {}),
   };
 }
 
@@ -202,7 +208,8 @@ export async function flowIdFor(config: {
           config.idColumn,
           [...(config.syncColumns || [])].sort(),
         ]
-      : [config.spreadsheetId, config.sheetName, config.idColumn, config.storageName];
+      : [config.spreadsheetId, config.sheetName, config.idColumn, config.storageName,
+          ...((config.syncColumns || []).length ? [[...(config.syncColumns || [])].sort()] : [])];
   const data = JSON.stringify(payload);
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(data));
   return `flow-${Array.from(new Uint8Array(bytes), (b) => b.toString(16).padStart(2, '0')).join('')}`;

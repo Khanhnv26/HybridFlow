@@ -2,7 +2,7 @@ package com.hybridflow.sync.model;
 
 import lombok.*;
 
-import java.time.LocalDateTime;
+import java.time.Instant;
 
 @Getter
 @Setter
@@ -14,7 +14,9 @@ public class ParsedSchedule {
     private String scheduleType;
     private int intervalMinutes;
     private String dailyTime;
-    private LocalDateTime nextRunAt;
+    private Instant nextRunAt;
+    @Builder.Default
+    private String timezone = "Asia/Ho_Chi_Minh";
 
     public static ParsedSchedule disable() {
         return ParsedSchedule.builder()

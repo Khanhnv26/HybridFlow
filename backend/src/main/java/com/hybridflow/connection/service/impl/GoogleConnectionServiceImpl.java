@@ -4,6 +4,7 @@ import com.google.api.client.googleapis.auth.oauth2.GoogleTokenResponse;
 import com.hybridflow.connection.dto.GoogleOAuthConfigResponse;
 import com.hybridflow.connection.service.GoogleConnectionService;
 import com.hybridflow.connection.service.GoogleOAuthService;
+import com.hybridflow.connection.service.GoogleCredentialService;
 import com.hybridflow.connection.view.GoogleOAuthCallbackRenderer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -16,6 +17,7 @@ import java.net.URI;
 public class GoogleConnectionServiceImpl implements GoogleConnectionService {
     private final GoogleOAuthService oauth;
     private final GoogleOAuthCallbackRenderer renderer;
+    private final GoogleCredentialService credentials;
 
     @Value("${google.oauth.redirect-uri}")
     private String redirectUri;
@@ -37,6 +39,6 @@ public class GoogleConnectionServiceImpl implements GoogleConnectionService {
     @Override
     public String completeAuthorization(String code) {
         GoogleTokenResponse token = oauth.exChangeCode(code);
-        return renderer.render(token.getAccessToken(), frontendOrigin);
+        return renderer.render(credentials.store(token), frontendOrigin);
     }
 }

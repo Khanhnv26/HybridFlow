@@ -30,7 +30,9 @@ class WorkflowServiceTest {
 
     @BeforeEach
     void setup() {
-        service = new WorkflowServiceImpl(repository, mapper, store, history, codec, parser);
+        service = new WorkflowServiceImpl(repository, mapper, store, history, codec, parser,
+                java.time.Clock.fixed(java.time.Instant.parse("2026-11-03T02:00:00Z"), java.time.ZoneOffset.UTC),
+                mock(com.hybridflow.connection.service.GoogleCredentialService.class), mock(SyncExecutionService.class));
     }
 
     @Test
@@ -59,5 +61,17 @@ class WorkflowServiceTest {
     void corruptStoredJsonIsReportedByTheService() {
         when(repository.findDefinition("workflow")).thenReturn(Optional.of("invalid-json"));
         assertThrows(IllegalStateException.class, () -> service.getDefinition("workflow"));
+    }
+
+    @Test
+    void credentialsAreNeverStoredInOrReturnedWithTheDefinition() throws Exception {
+        JsonNode definition = mapper.readTree("{\"nodes\":[],\"edges\":[],\"accessToken\":\"secret\",\"refreshToken\":\"private\"}");
+        service.saveDefinition("workflow", definition);
+        org.mockito.ArgumentCaptor<Object> encoded = org.mockito.ArgumentCaptor.forClass(Object.class);
+        verify(codec).encode(encoded.capture());
+        assertFalse(((JsonNode) encoded.getValue()).has("accessToken"));
+        assertFalse(((JsonNode) encoded.getValue()).has("refreshToken"));
+        when(repository.findDefinition("workflow")).thenReturn(Optional.of(definition.toString()));
+        assertFalse(service.getDefinition("workflow").has("accessToken"));
     }
 }

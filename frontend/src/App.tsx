@@ -146,7 +146,7 @@ export default function App() {
   const [flowId, setFlowId] = useState('');
   const [bootstrapRequired, setBootstrapRequired] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [connected, setConnected] = useState(() => !!localStorage.getItem('google_access_token'));
+  const [connected, setConnected] = useState(() => !!localStorage.getItem('google_access_token')?.startsWith('gconn-'));
   const [connectionVersion, setConnectionVersion] = useState(0);
   const [autoActive, setAutoActive] = useState(false);
   const [intervalMs, setIntervalMs] = useState(300000);
@@ -350,17 +350,12 @@ export default function App() {
       setIsRunning(true);
       let id = '';
       try {
-        const accessToken = token();
+        token();
         if (!configState.config) throw new Error(configState.error);
         const config = configState.config;
         id = await flowIdFor(config);
         await saveWorkflow();
-        const result = await syncService.runSync({
-          ...config,
-          flowId: id,
-          accessToken,
-          bootstrapConfirmed,
-        });
+        const result = await workflowService.run(workflowId, bootstrapConfirmed);
         if (currentFlow.current !== id) return;
         setBootstrapRequired(result.bootstrapRequired);
         setConflicts(result.conflicts);
@@ -384,7 +379,7 @@ export default function App() {
         setIsRunning(false);
       }
     },
-    [configState, token, saveWorkflow, refreshRunData, refreshSources, showToast],
+    [configState, token, saveWorkflow, refreshRunData, refreshSources, showToast, workflowId],
   );
   useEffect(() => {
     if (!autoActive) return;
@@ -726,6 +721,7 @@ export default function App() {
         </div>
       )}
       <NaturalLanguageConfigModal
+        workflowId={workflowId}
         key={activeNodeId}
         node={activeNode}
         onClose={() => setActiveNodeId(null)}

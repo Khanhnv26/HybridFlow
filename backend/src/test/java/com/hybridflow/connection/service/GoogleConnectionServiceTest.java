@@ -15,14 +15,16 @@ class GoogleConnectionServiceTest {
     void configurationAndTokenExchangeAreHandledOutsideTheController() {
         GoogleOAuthService oauth = mock(GoogleOAuthService.class);
         GoogleOAuthCallbackRenderer renderer = mock(GoogleOAuthCallbackRenderer.class);
-        GoogleConnectionService service = new GoogleConnectionServiceImpl(oauth, renderer);
+        GoogleCredentialService credentials = mock(GoogleCredentialService.class);
+        GoogleConnectionService service = new GoogleConnectionServiceImpl(oauth, renderer, credentials);
         ReflectionTestUtils.setField(service, "redirectUri", "https://backend.example/api/v1/connections/google/callback");
         ReflectionTestUtils.setField(service, "frontendOrigin", "https://frontend.example");
         when(oauth.exChangeCode("code")).thenReturn(new GoogleTokenResponse().setAccessToken("test-token"));
-        when(renderer.render("test-token", "https://frontend.example")).thenReturn("callback-html");
+        when(credentials.store(any())).thenReturn("gconn-test");
+        when(renderer.render("gconn-test", "https://frontend.example")).thenReturn("callback-html");
         assertEquals("https://backend.example", service.getConfiguration().getCallbackOrigin());
         assertEquals("callback-html", service.completeAuthorization("code"));
-        verify(renderer).render("test-token", "https://frontend.example");
+        verify(renderer).render("gconn-test", "https://frontend.example");
     }
 
     @Test

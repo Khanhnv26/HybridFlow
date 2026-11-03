@@ -350,7 +350,7 @@ export const ScheduleTriggerNode: React.FC<any> = ({ id, data, selected }) => {
   const scheduleDescription =
     type === 'daily'
       ? `${time} mỗi ngày`
-      : interval >= 60
+      : interval >= 60 && interval % 60 === 0
         ? `Mỗi ${Math.floor(interval / 60)} giờ`
         : `Mỗi ${interval} phút`;
 

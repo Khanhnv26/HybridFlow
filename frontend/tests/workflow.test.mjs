@@ -31,6 +31,25 @@ function graph() {
     ],
   };
 }
+
+test('single-sheet shared columns change scope and identity while timer changes do not', async () => {
+  const { nodes, edges } = graph();
+  const before = await flowIdFor(workflowConfig(nodes, edges));
+  nodes.find(node => node.id === 'diff').data.sharedColumns = 'status, sku, status';
+  const config = workflowConfig(nodes, edges);
+  assert.deepEqual(config.syncColumns, ['status']);
+  assert.notEqual(await flowIdFor(config), before);
+  nodes.push({ id: 'timer', type: 'scheduleTrigger', data: { scheduleIntervalMinutes: 5 } });
+  edges.push({ source: 'timer', sourceHandle: 'out', target: 'diff', targetHandle: 'trigger' });
+  assert.equal(await flowIdFor(workflowConfig(nodes, edges)), await flowIdFor(config));
+  nodes.push({ id: 'timer2', type: 'scheduleTrigger', data: {} });
+  assert.throws(() => workflowConfig(nodes, edges), /một khối hẹn giờ/);
+});
+
+test('flow identity matches the backend canonical fixture', async () => {
+  assert.equal(await flowIdFor({ spreadsheetId: 'sheet', sheetName: 'Data', idColumn: 'id', storageName: 'vault', syncColumns: ['status'] }),
+    'flow-985d2076bff98552d3637ea2b5f4678c6861575eb9f169e9bf2d6bb3ad92b15e');
+});
 test('request uses node configuration and connected notification path', () => {
   const { nodes, edges } = graph();
   assert.deepEqual(workflowConfig(nodes, edges), {

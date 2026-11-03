@@ -12,6 +12,8 @@ Backend đọc các biến môi trường:
 - `TELEGRAM_BOT_TOKEN`: token bot Telegram; Chat ID gửi cảnh báo lấy từ khối Telegram trên giao diện.
 - `GOOGLE_REDIRECT_URI`: mặc định `http://localhost:8080/api/v1/connections/google/callback`; phải khớp OAuth client trên Google Cloud.
 - `FRONTEND_ORIGIN`: mặc định `http://localhost:3000`, dùng cho CORS và đích nhận kết quả OAuth popup. Đổi khi dùng cổng/origin khác.
+- `GOOGLE_CREDENTIAL_ENCRYPTION_KEY`: khóa Base64 của 32 byte ngẫu nhiên, dùng AES-256-GCM để mã hóa access/refresh token trong database. Giữ nguyên khóa qua các lần restart và dùng cùng khóa trên mọi backend. Có thể đặt `google.oauth.encryption-key` trong `backend/application-local.properties` đã được Git bỏ qua. Không đưa khóa vào Git hoặc log; sao lưu khóa cùng quy trình sao lưu database.
+- `SCHEDULER_ENABLED` (mặc định `true`), `SCHEDULER_WORKERS` (mặc định `4`): bật bộ lập lịch và giới hạn số worker trên mỗi backend.
 
 File `client_secret.json` của Google OAuth đặt trong `backend/src/main/resources/` và được Git bỏ qua. Các thiết lập riêng đã có được giữ trong `backend/application-local.properties` (cũng được Git bỏ qua). Khi chạy từ thư mục `backend` hoặc gốc repo, Spring tự đọc file local này; biến môi trường có thể ghi đè các giá trị được chuyển sang đó. Không commit token hay file local. Nếu token từng được đưa lên Git, cần thay token tại nhà cung cấp.
 
@@ -31,7 +33,19 @@ Chạy frontend từ `frontend`: `npm install`, sau đó `npm run dev`. Vite ch�
 
 Nguồn file, tab, cột khóa và vùng lưu trữ tạo thành mã luồng ổn định. Đổi một trong các giá trị này tạo ngữ cảnh mới; backend kiểm tra binding để không dùng nhầm checkpoint. Cấu hình đang chỉnh được giữ ở trình duyệt; **Lưu cấu hình** và mỗi lần chạy sẽ lưu định nghĩa luồng lên backend. Lịch sử chạy và xung đột lấy từ backend theo mã luồng, không dựng mẫu khi API lỗi.
 
-Đồng bộ hỗ trợ thêm dòng và cập nhật trường trên các dòng đã có. Dòng bị xóa khỏi Sheet trong khi vẫn có ở Vault sẽ báo lỗi để tránh xóa dữ liệu ngầm; cần khôi phục dòng hoặc chủ động khởi tạo một luồng mới. Các khối hẹn giờ backend, webhook, rẽ nhánh, biến đổi và ghi Sheet độc lập chưa có bộ thực thi nên bị vô hiệu hóa. Tùy chọn **Tự động khi mở trang** thực sự chạy theo chu kỳ trong trình duyệt; mặc định tắt và dừng khi đóng trang. Token Google hết hạn cần đăng nhập lại.
+Đồng bộ hỗ trợ thêm dòng và cập nhật trường trên các dòng đã có. Dòng bị xóa khỏi Sheet trong khi vẫn có ở Vault sẽ báo lỗi để tránh xóa dữ liệu ngầm; cần khôi phục dòng hoặc chủ động khởi tạo một luồng mới. Các khối webhook, rẽ nhánh, biến đổi và ghi Sheet độc lập chưa có bộ thực thi nên bị vô hiệu hóa. Tùy chọn **Tự động khi mở trang** chạy trong trình duyệt và dừng khi đóng trang; lịch backend bên dưới hoạt động độc lập với tùy chọn này.
+
+## Lập lịch backend
+
+Nối duy nhất một khối Hẹn giờ (`out`) vào cổng kích hoạt (`trigger`) của So khớp. Chọn chu kỳ 1–1440 phút hoặc giờ chạy hằng ngày; múi giờ mặc định là `Asia/Ho_Chi_Minh`. Chạy tay và xác nhận khởi tạo nguồn mới trước khi để lịch hoạt động. Chạy tay từ editor và chạy định kỳ dùng chung bộ tạo request, phạm vi cột và mã luồng. Với Sheet–Vault, thay đổi danh sách cột chia sẻ cũng tạo ngữ cảnh mới để không dùng nhầm checkpoint.
+
+Lưu lại cấu hình không thay đổi lịch sẽ giữ nguyên thời điểm chạy kế tiếp. Backend kiểm tra mỗi 5 giây và ghi job vào PostgreSQL; lưu job và tiến lịch nằm trong cùng giao dịch. Khi backend ngừng lâu, chỉ tạo một lượt bù rồi tính lượt kế tiếp từ thời điểm hiện tại, không chạy dồn tất cả lượt đã lỡ. Khóa duy nhất ngăn tạo trùng một lượt; worker claim bằng `FOR UPDATE SKIP LOCKED` và lease 120 giây. Job giữ khóa hàng trong suốt giao dịch đồng bộ, nên lease hết hạn không cho worker khác chiếm job còn đang chạy. Khi tiến trình chết, PostgreSQL nhả khóa và job có thể được nhận lại sau khi lease hết hạn. Những luồng dùng chung nguồn vẫn chịu khóa phối hợp của bộ đồng bộ.
+
+Tắt lịch hoặc đổi cấu hình sẽ hủy các job phiên bản cũ chưa bắt đầu; job đang chạy được phép hoàn tất. Lỗi tạm thời thử tối đa 3 lần, chờ 30 rồi 60 giây. Hết số lần thử chuyển `DEAD` và ngừng tạo lượt mới cho phiên bản đó; sửa cấu hình hoặc chạy tay thành công để tiếp tục. `NEEDS_BOOTSTRAP` yêu cầu chạy tay và xác nhận khởi tạo; `NEEDS_CONNECTION` yêu cầu kết nối lại Google rồi lưu cấu hình. Modal Hẹn giờ hiển thị trạng thái và thời điểm chạy gần nhất/kế tiếp. Google Sheets và Telegram không có giao dịch chung với PostgreSQL: phục hồi job không phải cam kết side effect bên ngoài xảy ra đúng một lần; cơ chế snapshot/nhật ký ghi hiện có tiếp tục đối soát các lần ghi chưa hoàn tất.
+
+OAuth lưu token được mã hóa ở backend và chỉ đưa mã kết nối ngẫu nhiên về trình duyệt. Token được làm mới trước khi hết hạn; refresh token bị thu hồi yêu cầu kết nối lại thay vì retry vô hạn. Định nghĩa workflow và job không chứa access/refresh token. API bearer-token cũ vẫn nhận token trực tiếp cho caller hiện có.
+
+**Nâng cấp từ V7:** migration V8 xóa token cũ trong định nghĩa/cột token vì chúng không có khả năng làm mới; cần kết nối lại Google và lưu workflow. Thời điểm lịch cũ được chuyển sang `TIMESTAMPTZ` với giả định trước đây backend chạy giờ Việt Nam; nếu triển khai cũ dùng múi giờ khác, điều chỉnh lịch trước khi bật scheduler. Không đổi hoặc xóa khóa mã hóa khi vẫn cần sử dụng các kết nối đã lưu.
 
 Các lần ghi nhiều ô dùng [Google Sheets values.batchUpdate](https://developers.google.com/workspace/sheets/api/reference/rest/v4/spreadsheets.values/batchUpdate) với [RAW](https://developers.google.com/workspace/sheets/api/reference/rest/v4/ValueInputOption). Google Sheets và PostgreSQL không có giao dịch phân tán: nếu Sheet ghi xong nhưng database lỗi sau đó, phiên được báo lỗi và cần chạy lại để đối soát; hệ thống không báo thành công trước khi cập nhật checkpoint.
 
@@ -44,6 +58,8 @@ Các lần ghi nhiều ô dùng [Google Sheets values.batchUpdate](https://devel
 - `POST /api/v1/conflicts/{id}/notify`: `chatId`; trả `success` theo kết quả nhà cung cấp.
 - `GET /api/v1/workflows/{flowId}/history`, `GET /api/v1/workflows/{flowId}/vault`.
 - `GET/PUT /api/v1/workflows/{workflowId}/definition`: đọc/lưu `{nodes, edges}`.
+- `POST /api/v1/workflows/{workflowId}/run?bootstrapConfirmed=false`: chạy định nghĩa đã lưu bằng kết nối Google do backend quản lý.
+- `GET /api/v1/workflows/{workflowId}/schedule`: trạng thái lịch/job, lỗi đã lược bỏ chi tiết nhạy cảm và lần chạy gần nhất/kế tiếp.
 - `GET /api/v1/connections/google/config`: origin callback OAuth để frontend xác minh thông điệp popup khi đi qua proxy.
 - `POST /api/v1/connections/google/sheets/metadata`: `accessToken`, `spreadsheetId`; trả tên file cùng danh sách `{sheetId,title}` cho dropdown, không đọc dữ liệu các ô. Nguồn vẫn được đối soát theo tên tab hiện tại; đổi tên tab cần chọn/lưu lại và tạo ngữ cảnh mới.
 - `GET /api/v1/connections/telegram/bot`: trạng thái/tên bot từ Telegram, không trả token.

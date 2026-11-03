@@ -11,4 +11,6 @@ public interface WorkflowService {
     List<Map<String, String>> getVault(String flowId);
     JsonNode getDefinition(String workflowId);
     SaveWorkflowResponse saveDefinition(String workflowId, JsonNode definition);
+    com.hybridflow.sync.dto.response.RunSyncResponse runDefinition(String workflowId, boolean bootstrapConfirmed);
+    Map<String, Object> getScheduleStatus(String workflowId);
 }

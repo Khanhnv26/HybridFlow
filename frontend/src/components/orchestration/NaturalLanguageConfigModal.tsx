@@ -6,6 +6,7 @@ import { SheetSourceConfig } from './SheetSourceConfig';
 import { TelegramConfig } from './TelegramConfig';
 import { ScheduleConfig } from './ScheduleConfig';
 interface Props {
+  workflowId?: string;
   node: Node<OrchestrationNodeData> | null;
   onClose: () => void;
   disabled: boolean;
@@ -37,6 +38,7 @@ export const NaturalLanguageConfigModal: React.FC<Props> = ({
   onReadSource,
   onSaveTelegram,
   notificationConnected,
+  workflowId,
 }) => {
   const [testing, setTesting] = useState(false);
   const [result, setResult] = useState<unknown>(null);
@@ -60,6 +62,7 @@ export const NaturalLanguageConfigModal: React.FC<Props> = ({
   if (node.type === 'scheduleTrigger')
     return (
       <ScheduleConfig
+        workflowId={workflowId}
         data={node.data}
         disabled={disabled}
         onClose={onClose}

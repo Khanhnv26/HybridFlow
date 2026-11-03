@@ -3,6 +3,12 @@ package com.hybridflow.sync.service.impl;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.hybridflow.connection.service.GoogleCredentialService;
+import com.hybridflow.connection.exception.GoogleReconnectRequiredException;
+import com.hybridflow.sync.service.SyncExecutionService;
+import com.hybridflow.sync.dto.request.RunSyncRequest;
+import com.hybridflow.sync.dto.response.RunSyncResponse;
 import com.hybridflow.sync.dto.response.SaveWorkflowResponse;
 import com.hybridflow.sync.model.ParsedSchedule;
 import com.hybridflow.sync.repository.WorkflowDefinitionRepository;
@@ -15,7 +21,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -29,6 +34,9 @@ public class WorkflowServiceImpl implements WorkflowService {
     private final ExecutionHistoryService history;
     private final SyncJsonCodec codec;
     private final WorkflowGraphParser parser;
+    private final java.time.Clock clock;
+    private final GoogleCredentialService credentials;
+    private final SyncExecutionService execution;
 
     @Override
     @Transactional(readOnly = true)
@@ -53,7 +61,7 @@ public class WorkflowServiceImpl implements WorkflowService {
             return mapper.createObjectNode();
         }
         try {
-            return mapper.readTree(definition.get());
+            return sanitize(mapper.readTree(definition.get()));
         } catch (JsonProcessingException exception) {
             throw new IllegalStateException("Không thể đọc cấu hình luồng.", exception);
         }
@@ -66,11 +74,42 @@ public class WorkflowServiceImpl implements WorkflowService {
         if (definition == null || !definition.path("nodes").isArray() || !definition.path("edges").isArray()) {
             throw new IllegalArgumentException("Cấu hình luồng không hợp lệ.");
         }
-        ParsedSchedule schedule = parser.extractSchedule(definition, LocalDateTime.now());
+        ParsedSchedule schedule = parser.extractSchedule(definition, clock.instant());
         String accessToken = definition.path("accessToken").asText(null);
-
-        repository.saveDefinitionWithSchedule(workflowId, codec.encode(definition), schedule, accessToken);
+        String connection = accessToken != null && accessToken.startsWith("gconn-") ? accessToken : null;
+        if (schedule.isEnabled()) {
+            parser.buildSyncRequest(workflowId, definition, "validation").orElseThrow(() -> new IllegalArgumentException("Cấu hình luồng chưa hợp lệ."));
+            String resolved = connection != null ? connection : repository.findConnection(workflowId).orElseThrow(GoogleReconnectRequiredException::new);
+            credentials.resolveAccessToken(resolved);
+        }
+        repository.saveDefinitionWithSchedule(workflowId, codec.encode(sanitize(definition)), schedule, connection);
         return new SaveWorkflowResponse(true);
+    }
+
+    @Override
+    public RunSyncResponse runDefinition(String workflowId, boolean bootstrapConfirmed) {
+        JsonNode definition = getDefinition(workflowId);
+        String connection = repository.findConnection(workflowId).orElseThrow(GoogleReconnectRequiredException::new);
+        credentials.resolveAccessToken(connection);
+        RunSyncRequest request = parser.buildSyncRequest(workflowId, definition, connection)
+                .orElseThrow(() -> new IllegalArgumentException("Cấu hình luồng chưa hợp lệ."));
+        request.setBootstrapConfirmed(bootstrapConfirmed);
+        RunSyncResponse response = execution.executeSync(request);
+        if (!response.isBootstrapRequired()) repository.resumeAfterManualRun(workflowId);
+        return response;
+    }
+
+    @Override
+    public Map<String, Object> getScheduleStatus(String workflowId) {
+        validateId(workflowId);
+        return repository.scheduleStatus(workflowId);
+    }
+
+    private JsonNode sanitize(JsonNode definition) {
+        if (!definition.isObject()) throw new IllegalArgumentException("Cấu hình luồng không hợp lệ.");
+        ObjectNode clean = ((ObjectNode) definition).deepCopy();
+        clean.remove(List.of("accessToken", "refreshToken", "googleConnectionId"));
+        return clean;
     }
 
     private void validateId(String id) {
