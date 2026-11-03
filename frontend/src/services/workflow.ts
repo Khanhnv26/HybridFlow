@@ -7,7 +7,13 @@ type WorkflowEdge = {
   sourceHandle?: string | null;
   targetHandle?: string | null;
 };
-const supported = new Set(['sheetsTrigger', 'diffEngine', 'storageAction', 'telegramAction']);
+const supported = new Set([
+  'sheetsTrigger',
+  'scheduleTrigger',
+  'diffEngine',
+  'storageAction',
+  'telegramAction',
+]);
 
 export function workflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
   if (nodes.some((n) => !supported.has(n.type || '')))
@@ -16,6 +22,22 @@ export function workflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
   const diffs = nodes.filter((n) => n.type === 'diffEngine');
   if (diffs.length !== 1) throw new Error('Luồng cần đúng một khối diffEngine.');
   const diff = diffs[0];
+
+  const schedules = nodes.filter((n) => n.type === 'scheduleTrigger');
+  const scheduleIds = new Set(schedules.map((s) => s.id));
+  if (
+    schedules.some(
+      (s) =>
+        !edges.some(
+          (e) =>
+            e.source === s.id &&
+            e.target === diff.id &&
+            e.sourceHandle === 'out' &&
+            e.targetHandle === 'trigger',
+        ),
+    )
+  )
+    throw new Error('Luồng có khối chưa được hỗ trợ thực thi hoặc chưa nối vào cổng kích hoạt.');
 
   const telegram = nodes.filter((n) => n.type === 'telegramAction');
   if (telegram.length > 1) throw new Error('Chỉ hỗ trợ một khối Telegram trong mỗi luồng.');
@@ -44,12 +66,18 @@ export function workflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
     }
 
     const allowedMultiEdge = (edge: WorkflowEdge) =>
-      edge.targetHandle === 'in' &&
-      ((sheetIds.has(edge.source) && edge.target === diff.id && edge.sourceHandle === 'out') ||
-        (edge.source === diff.id && sheetIds.has(edge.target) && edge.sourceHandle === 'clean') ||
-        (edge.source === diff.id &&
-          edge.target === telegram[0]?.id &&
-          edge.sourceHandle === 'conflict'));
+      (scheduleIds.has(edge.source) &&
+        edge.target === diff.id &&
+        edge.sourceHandle === 'out' &&
+        edge.targetHandle === 'trigger') ||
+      (edge.targetHandle === 'in' &&
+        ((sheetIds.has(edge.source) && edge.target === diff.id && edge.sourceHandle === 'out') ||
+          (edge.source === diff.id &&
+            sheetIds.has(edge.target) &&
+            edge.sourceHandle === 'clean') ||
+          (edge.source === diff.id &&
+            edge.target === telegram[0]?.id &&
+            edge.sourceHandle === 'conflict')));
     if (edges.some((e) => !allowedMultiEdge(e)))
       throw new Error('Có dây nối không được hỗ trợ trong luồng đồng bộ.');
 
@@ -119,12 +147,16 @@ export function workflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
     throw new Error('Nối Google Sheet → So khớp → Kho lưu trữ trước khi chạy.');
 
   const allowed = (edge: WorkflowEdge) =>
-    edge.targetHandle === 'in' &&
-    ((edge.source === source.id && edge.target === diff.id && edge.sourceHandle === 'out') ||
-      (edge.source === diff.id && edge.target === storage.id && edge.sourceHandle === 'clean') ||
-      (edge.source === diff.id &&
-        edge.target === telegram[0]?.id &&
-        edge.sourceHandle === 'conflict'));
+    (scheduleIds.has(edge.source) &&
+      edge.target === diff.id &&
+      edge.sourceHandle === 'out' &&
+      edge.targetHandle === 'trigger') ||
+    (edge.targetHandle === 'in' &&
+      ((edge.source === source.id && edge.target === diff.id && edge.sourceHandle === 'out') ||
+        (edge.source === diff.id && edge.target === storage.id && edge.sourceHandle === 'clean') ||
+        (edge.source === diff.id &&
+          edge.target === telegram[0]?.id &&
+          edge.sourceHandle === 'conflict')));
   if (edges.some((e) => !allowed(e)))
     throw new Error('Có dây nối không được hỗ trợ trong luồng đồng bộ.');
 

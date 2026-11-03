@@ -336,8 +336,13 @@ export default function App() {
     [sheetNodes, fetchData, showToast],
   );
   const saveWorkflow = useCallback(async () => {
-    await workflowService.save(workflowId, { nodes, edges });
-  }, [workflowId, nodes, edges]);
+    await workflowService.save(workflowId, {
+      nodes,
+      edges,
+      flowId: flowId || undefined,
+      accessToken: localStorage.getItem('google_access_token') || undefined,
+    });
+  }, [workflowId, nodes, edges, flowId]);
   const runWorkflow = useCallback(
     async (bootstrapConfirmed = false) => {
       if (running.current) return;
@@ -566,7 +571,12 @@ export default function App() {
       const updatedNodes = nodes.map((node) =>
         node.id === nodeId ? { ...node, data: { ...node.data, ...sourceData } } : node,
       );
-      await workflowService.save(workflowId, { nodes: updatedNodes, edges });
+      await workflowService.save(workflowId, {
+        nodes: updatedNodes,
+        edges,
+        flowId: flowId || undefined,
+        accessToken: localStorage.getItem('google_access_token') || undefined,
+      });
       setNodes(updatedNodes);
       setActiveNodeId(null);
       showToast(successMessage);

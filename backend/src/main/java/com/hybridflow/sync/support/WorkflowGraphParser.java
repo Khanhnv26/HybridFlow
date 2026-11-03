@@ -3,10 +3,14 @@ package com.hybridflow.sync.support;
 import java.time.LocalDateTime;
 import java.time.LocalTime;
 import java.time.format.DateTimeFormatter;
-import java.util.*;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
-import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.hybridflow.sync.dto.request.RunSyncRequest;
 import com.hybridflow.sync.dto.request.SheetEndpointRequest;
@@ -19,20 +23,20 @@ public class WorkflowGraphParser {
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm");
 
     public ParsedSchedule extractSchedule(JsonNode definition, LocalDateTime now) {
-        if(definition == null) {
+        if (definition == null) {
             return ParsedSchedule.disable();
         }
         JsonNode nodes = definition.path("nodes");
         JsonNode edges = definition.path("edges");
 
-        if(!nodes.isArray() || !edges.isArray()) {
+        if (!nodes.isArray() || !edges.isArray()) {
             return ParsedSchedule.disable();
         }
 
         JsonNode diffNode = findFirstByType(nodes, "diffEngine");
         JsonNode scheduleNode = findFirstByType(nodes, "scheduleTrigger");
 
-        if(diffNode == null || scheduleNode == null) {
+        if (diffNode == null || scheduleNode == null) {
             return ParsedSchedule.disable();
         }
 
@@ -47,11 +51,10 @@ public class WorkflowGraphParser {
             String target = edge.path("target").asText("");
             String targetHandle = edge.path("targetHandle").asText("");
 
-            if(scheduleId.equals(source)
+            if (scheduleId.equals(source)
                     && "out".equals(sourceHandle)
                     && diffId.equals(target)
-                    && "trigger".equals(targetHandle)
-            ) {
+                    && "trigger".equals(targetHandle)) {
                 wiredToTriggerPort = true;
                 break;
             }
@@ -75,8 +78,7 @@ public class WorkflowGraphParser {
     }
 
     public Optional<RunSyncRequest> buildSyncRequest(String flowId, JsonNode definition, String accessToken) {
-
-        if(accessToken == null || accessToken.isBlank() || definition == null) {
+        if (accessToken == null || accessToken.isBlank() || definition == null) {
             return Optional.empty();
         }
 
@@ -84,14 +86,14 @@ public class WorkflowGraphParser {
         JsonNode edges = definition.path("edges");
         JsonNode diffNode = findFirstByType(nodes, "diffEngine");
 
-        if(diffNode == null) {
+        if (diffNode == null) {
             return Optional.empty();
         }
 
         String diffId = diffNode.path("id").asText("");
         JsonNode diffData = diffNode.path("data");
         String idColumn = diffData.path("uniqueKey").asText("id").trim();
-        String conflictPolicy = diffData.path("conflictPolicy").asText("AS_TELEGRAM");
+        String conflictPolicy = diffData.path("conflictPolicy").asText("ASK_TELEGRAM");
 
         Set<String> syncColumns = Arrays.stream(diffData.path("sharedColumns").asText("").split(","))
                 .map(String::trim)
@@ -99,6 +101,7 @@ public class WorkflowGraphParser {
                 .collect(Collectors.toCollection(LinkedHashSet::new));
 
         List<SheetEndpointRequest> connectedSheets = new ArrayList<SheetEndpointRequest>();
+
         int index = 1;
         for (JsonNode node : nodes) {
             if (!"sheetsTrigger".equals(node.path("type").asText(""))) {
@@ -145,8 +148,13 @@ public class WorkflowGraphParser {
             chatId = telegramNode.path("data").path("chatId").asText("").trim();
         }
 
+        String resolvedFlowId = definition.path("flowId").asText("").trim();
+        if (resolvedFlowId.isEmpty()) {
+            resolvedFlowId = flowId;
+        }
+
         RunSyncRequest request = RunSyncRequest.builder()
-                .flowId(flowId)
+                .flowId(resolvedFlowId)
                 .accessToken(accessToken)
                 .spreadsheetId(connectedSheets.get(0).getSpreadsheetId())
                 .sheetName(connectedSheets.get(0).getSheetName())
@@ -161,7 +169,7 @@ public class WorkflowGraphParser {
         return Optional.of(request);
     }
 
-    private LocalDateTime computeNextRun(String scheduleType, int intervalMinutes, String dailyTime, LocalDateTime fromTime) {
+    public LocalDateTime computeNextRun(String scheduleType, int intervalMinutes, String dailyTime, LocalDateTime fromTime) {
         if ("daily".equalsIgnoreCase(scheduleType)) {
             LocalTime targetTime;
             try {
@@ -179,8 +187,8 @@ public class WorkflowGraphParser {
     }
 
     private JsonNode findFirstByType(JsonNode nodes, String type) {
-        for(JsonNode node : nodes) {
-            if(type.equals(node.path("type").asText(""))) {
+        for (JsonNode node : nodes) {
+            if (type.equals(node.path("type").asText(""))) {
                 return node;
             }
         }
@@ -202,6 +210,4 @@ public class WorkflowGraphParser {
         }
         return false;
     }
-
-
 }

@@ -4,15 +4,18 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hybridflow.sync.dto.response.SaveWorkflowResponse;
+import com.hybridflow.sync.model.ParsedSchedule;
 import com.hybridflow.sync.repository.WorkflowDefinitionRepository;
 import com.hybridflow.sync.service.ExecutionHistoryService;
 import com.hybridflow.sync.service.SyncStateService;
 import com.hybridflow.sync.service.WorkflowService;
 import com.hybridflow.sync.support.SyncJsonCodec;
+import com.hybridflow.sync.support.WorkflowGraphParser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -25,6 +28,7 @@ public class WorkflowServiceImpl implements WorkflowService {
     private final SyncStateService store;
     private final ExecutionHistoryService history;
     private final SyncJsonCodec codec;
+    private final WorkflowGraphParser parser;
 
     @Override
     @Transactional(readOnly = true)
@@ -62,7 +66,10 @@ public class WorkflowServiceImpl implements WorkflowService {
         if (definition == null || !definition.path("nodes").isArray() || !definition.path("edges").isArray()) {
             throw new IllegalArgumentException("Cấu hình luồng không hợp lệ.");
         }
-        repository.saveDefinition(workflowId, codec.encode(definition));
+        ParsedSchedule schedule = parser.extractSchedule(definition, LocalDateTime.now());
+        String accessToken = definition.path("accessToken").asText(null);
+
+        repository.saveDefinitionWithSchedule(workflowId, codec.encode(definition), schedule, accessToken);
         return new SaveWorkflowResponse(true);
     }
 

@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hybridflow.sync.repository.WorkflowDefinitionRepository;
 import com.hybridflow.sync.service.impl.WorkflowServiceImpl;
 import com.hybridflow.sync.support.SyncJsonCodec;
+import com.hybridflow.sync.support.WorkflowGraphParser;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -24,11 +25,12 @@ class WorkflowServiceTest {
     @Mock ExecutionHistoryService history;
     @Mock SyncJsonCodec codec;
     private final ObjectMapper mapper = new ObjectMapper();
+    private final WorkflowGraphParser parser = new WorkflowGraphParser();
     private WorkflowService service;
 
     @BeforeEach
     void setup() {
-        service = new WorkflowServiceImpl(repository, mapper, store, history, codec);
+        service = new WorkflowServiceImpl(repository, mapper, store, history, codec, parser);
     }
 
     @Test
@@ -44,7 +46,7 @@ class WorkflowServiceTest {
         JsonNode definition = mapper.readTree(json);
         when(codec.encode(definition)).thenReturn(json);
         assertTrue(service.saveDefinition("workflow", definition).isSuccess());
-        verify(repository).saveDefinition("workflow", json);
+        verify(repository).saveDefinitionWithSchedule(eq("workflow"), eq(json), any(), isNull());
     }
 
     @Test
