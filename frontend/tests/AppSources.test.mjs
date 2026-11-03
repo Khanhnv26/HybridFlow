@@ -264,8 +264,11 @@ test('the comparison dialog persists a numeric price column and keeps the key as
   let saved;
   api.workflowService.save = async (_id, definition) => { saved = definition; };
   await act(async () => renderer.root.find(node => node.props['data-workflow-node'] === 'diff').props.onClick());
-  assert.equal(renderer.root.findByProps({ 'aria-label': 'Kiểu cột id' }).props.disabled, true);
+  assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Kiểu cột id' }).length, 0);
+  assert.match(text(renderer.root), /Mã dòng luôn giữ dạng văn bản/);
   await act(async () => renderer.root.findByProps({ 'aria-label': 'Kiểu cột price' }).props.onChange({ target: { value: 'NUMBER' } }));
+  assert.equal(JSON.parse(localStorage.getItem('hybridflow-workflow-v2')).nodes.find(node => node.id === 'diff').data.columnTypes, undefined,
+    'Editing the modal must not update the running workflow or persisted browser draft before Save');
   const dialog = renderer.root.findByProps({ role: 'dialog' });
   await act(async () => dialog.findAllByType('button').find(node => text(node).includes('Lưu cấu hình')).props.onClick());
   assert.deepEqual(saved.nodes.find(node => node.id === 'diff').data.columnTypes, { price: 'NUMBER' });

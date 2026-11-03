@@ -110,7 +110,7 @@ Khối So khớp có hai cổng Sheet cùng tham gia đồng bộ hai chiều (t
 
 ## Kiểu cột khi ghi Google Sheets
 
-Trong khối **Điều phối & Đồng bộ**, chọn cột được đồng bộ rồi đặt **Kiểu dữ liệu khi ghi Sheet**: chọn **Số** cho `price`/số lượng, giữ **Văn bản** cho mã và số điện thoại. Cột khóa luôn là Văn bản. Mặc định không tự đoán chuỗi chữ số thành số.
+Trong khối **Điều phối & Đồng bộ**, mở phần **2. Giữ những cột nào giống nhau?**, chọn cột và kiểu dữ liệu trên cùng một hàng: chọn **Số** cho `price`/số lượng, giữ **Văn bản** cho mã và số điện thoại. Cột khóa luôn là Văn bản. Mặc định không tự đoán chuỗi chữ số thành số.
 
 Cấu hình lưu ở `columnTypes`, ví dụ `{"price":"NUMBER","phone":"TEXT"}`. Ghi vẫn dùng RAW: chỉ ô thuộc cột NUMBER được gửi thành JSON number, các ô khác là chuỗi. Giá trị NUMBER dùng dấu chấm thập phân, không chứa dấu phân cách hàng nghìn; ô trống vẫn được xóa bình thường. Dữ liệu không hợp lệ hoặc vượt độ chính xác 15 chữ số bị từ chối trước khi ghi.
 

@@ -454,13 +454,11 @@ export default function App() {
       const node = nodes.find((n) => n.id === nodeId);
       if (!node) throw new Error('Không tìm thấy khối.');
       if (node.type === 'sheetsTrigger') return (await fetchData(node)).rows;
+      if (node.type === 'diffEngine')
+        return Promise.all(connectedSheetSources(nodes, edges, node.id).map(source =>
+          googleService.readSheet(token(), source.spreadsheetId, source.sheetName, undefined, node.data.columnTypes)));
       if (!flowId) throw new Error(configState.error || 'Cấu hình luồng trước khi chạy thử.');
       if (node.type === 'storageAction') return syncService.getVault(flowId);
-      if (node.type === 'diffEngine')
-        return {
-          conflicts: await syncService.getOpenConflicts(flowId),
-          history: await syncService.getHistory(flowId),
-        };
       if (node.type === 'telegramAction') {
         if (!conflicts[0]) throw new Error('Chưa có xung đột thật để gửi lại thông báo.');
         const chatId = node.data.chatId?.trim();
@@ -471,7 +469,7 @@ export default function App() {
       }
       throw new Error('Khối này chưa được hỗ trợ thực thi.');
     },
-    [nodes, fetchData, flowId, configState.error, conflicts],
+    [nodes, edges, fetchData, flowId, configState.error, conflicts, token],
   );
   const resolveConflict = useCallback(
     async (value: string, conflict: SyncConflictDto) => {
@@ -678,6 +676,12 @@ export default function App() {
     return [...new Set([key, ...(configured?.length ? configured : common)])];
   }, [activeNode, diffUpstreamSheets, nodes, stateFor]);
   const previewRows = diffUpstreamSheets.flatMap(source => stateFor(sourceDescriptor(source)).data?.rows || []);
+  const comparisonSources = diffUpstreamSheets.map(source => ({
+    id: source.id,
+    name: source.data.spreadsheetTitle || stateFor(sourceDescriptor(source)).data?.spreadsheetTitle || source.data.label || 'Bảng tính',
+    sheetName: source.data.sheetName || '',
+    data: stateFor(sourceDescriptor(source)).data || undefined,
+  }));
   const previewConflict = conflicts[0] ? {
     recordId: conflicts[0].recordId, id: conflicts[0].recordId,
     columnName: conflicts[0].columnName, column: conflicts[0].columnName,
@@ -920,6 +924,15 @@ export default function App() {
           data={activeNode.data}
           availableColumns={diffAvailableColumns}
           previewRows={previewRows}
+          previewSources={comparisonSources.map(source => ({
+            id: source.id, name: source.name + ' · ' + source.sheetName, rows: source.data?.rows || [],
+            error: stateFor(sourceDescriptor(diffUpstreamSheets.find(item => item.id === source.id)!)).error,
+          }))}
+          idColumn={nodes.find(node => node.type === 'diffEngine')?.data.uniqueKey || 'id'}
+          actionNames={edges.filter(edge => edge.source === activeNode.id && edge.sourceHandle === 'out')
+            .map(edge => nodes.find(node => node.id === edge.target))
+            .filter((node): node is Node<OrchestrationNodeData> => !!node && node.type === 'telegramAction')
+            .map(node => node.data.telegramRecipientName || node.data.label || 'Telegram')}
           reading={configReading}
           readErrors={configReadErrors}
           onRetryRead={() => setConfigReadRetry(value => value + 1)}
@@ -954,6 +967,12 @@ export default function App() {
         previewConflict={previewConflict}
         onRetryNotification={retryNotification}
         upstreamSheets={diffUpstreamSheets.map(s => s.data.spreadsheetTitle || s.data.label || 'Sheet')}
+        comparisonSources={comparisonSources}
+        onReadComparisonSource={(id, types, signal) => {
+          const source = diffUpstreamSheets.find(item => item.id === id);
+          if (!source) return Promise.reject(new Error('Bảng tính chưa được nối vào khối đồng bộ.'));
+          return googleService.readSheet(token(), source.data.spreadsheetId || '', source.data.sheetName, signal, types);
+        }}
         disabled={isRunning}
         connected={connected}
         onUpdateData={(id, data) =>

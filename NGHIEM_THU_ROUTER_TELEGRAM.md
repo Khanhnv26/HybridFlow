@@ -4,6 +4,12 @@ Ngày: 03/11/2026. Phạm vi: mã nguồn hiện tại, gồm cả thay đổi c
 
 **Kết luận sau sửa: các lỗi F1–F12 đã được xử lý và kiểm thử tự động đạt.** Phần đầu là kết quả xác minh mới nhất; phần sau giữ lại các phát hiện nghiệm thu ban đầu để truy vết.
 
+## Cập nhật UI/UX no-code — 03/11/2026
+
+Hai màn Điều phối và Rẽ Nhánh dùng bố cục một cột, có thứ tự và ngôn ngữ gần với bảng tính. Chọn cột và kiểu dữ liệu cùng hàng; phần thêm tên cột thủ công được thu gọn. Điều phối có bản nháp riêng: Hủy/X không đổi workflow hay localStorage, Lưu mới áp dụng; lỗi lưu giữ bản nháp để thử lại. Nút Xem dữ liệu mẫu đọc Sheet thật theo từng nguồn, không dùng lịch sử cũ hoặc tự ghi dữ liệu. Router có câu tóm tắt điều kiện và đích nhận; xem mẫu theo một Sheet, không cộng lặp cùng mã ở nhiều Sheet.
+
+Xác minh: **115/115 test frontend**, build thành công. Sáu test mới kiểm tra bản nháp/Hủy, lỗi lưu/thử lại, đọc mẫu, hủy yêu cầu, số dòng theo nguồn và giữ đúng ngữ nghĩa bộ lọc. Chưa xác minh trực quan được đầy đủ hai modal trên phiên trình duyệt đang dùng.
+
 ## Bổ sung sửa kiểu số trên Google Sheets — 03/11/2026
 
 Đã thêm cấu hình columnTypes (TEXT/NUMBER) trong khối Điều phối & Đồng bộ, truyền qua luồng chạy tay/chạy lịch, đọc dữ liệu xem trước, sửa ô trực tiếp, đồng bộ và duyệt xung đột. NUMBER gửi số JSON bằng RAW; mã/số điện thoại giữ chuỗi. Các ô đang là text trong cột NUMBER được chuyển kiểu dù nội dung không đổi; không phát event bản ghi giả. Nhật ký giữ cả kiểu và giá trị gốc (kể cả text 20000.50) để phục hồi đúng khi rollback. Kiểu cột tham gia flowId; đổi kiểu yêu cầu xác nhận khởi tạo luồng mới.
