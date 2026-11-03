@@ -7,6 +7,31 @@
 :root {
   --canvas-bg: #0d1117;
   --grid-dot: #30363d;
+  color-scheme: dark;
+}
+
+/* Custom dark scrollbar across the application */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: #3b4252 transparent;
+}
+
+*::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: #374151;
+  border-radius: 9999px;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: #4b5563;
 }
 
 body {
