@@ -52,6 +52,7 @@ class SnapshotRevisionIntegrationTest {
             jdbc.execute(Files.readString(Path.of("src/main/resources/db/migration", migration)));
         }
         snapshots = new SyncStateRepository(jdbc, new SyncJsonCodec(new ObjectMapper()));
+        jdbc.execute("ALTER TABLE notification_outbox ADD COLUMN error_code VARCHAR(64), ADD COLUMN correlation_id VARCHAR(36)");
         repository = new NotificationOutboxRepository(jdbc);
         transaction = new TransactionTemplate(new DataSourceTransactionManager(source));
     }

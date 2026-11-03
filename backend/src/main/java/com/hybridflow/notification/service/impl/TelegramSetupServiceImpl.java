@@ -1,11 +1,14 @@
 package com.hybridflow.notification.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
+import com.hybridflow.common.exception.ApplicationException;
+import com.hybridflow.common.exception.ErrorCode;
+import com.hybridflow.common.exception.ValidationException;
+import com.hybridflow.notification.client.TelegramApiClient;
 import com.hybridflow.notification.dto.response.TelegramBotInfoResponse;
 import com.hybridflow.notification.dto.response.TelegramLinkResponse;
 import com.hybridflow.notification.dto.response.TelegramRecipientResponse;
 import com.hybridflow.notification.dto.response.TelegramTestResponse;
-import com.hybridflow.notification.client.TelegramApiClient;
 import com.hybridflow.notification.service.TelegramSetupService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
@@ -30,7 +33,7 @@ public class TelegramSetupServiceImpl implements TelegramSetupService {
                 "Bot Telegram chưa sẵn sàng. Liên hệ quản trị viên để thiết lập bot.");
         JsonNode bot = client.call("getMe", Map.of());
         String username = bot.path("username").asText();
-        if (!username.matches("[A-Za-z0-9_]+")) throw new IllegalStateException("Không lấy được thông tin bot. Vui lòng thử lại.");
+        if (!username.matches("[A-Za-z0-9_]+")) throw new ApplicationException(ErrorCode.UPSTREAM_FAILURE, "Không lấy được thông tin bot. Vui lòng thử lại.");
         return new TelegramBotInfoResponse(true, username, bot.path("first_name").asText(), bot.path("can_join_groups").asBoolean(true), "Bot đã sẵn sàng.");
     }
 
@@ -38,14 +41,14 @@ public class TelegramSetupServiceImpl implements TelegramSetupService {
     public synchronized TelegramLinkResponse startLink(String recipientType) {
         validateType(recipientType);
         TelegramBotInfoResponse bot = botInfo();
-        if (!bot.isConfigured()) throw new IllegalArgumentException(bot.getMessage());
+        if (!bot.isConfigured()) throw new ApplicationException(ErrorCode.CONFIGURATION_ERROR, bot.getMessage());
         if ("GROUP".equals(recipientType) && !bot.isCanJoinGroups())
-            throw new IllegalArgumentException("Bot chưa cho phép thêm vào nhóm. Liên hệ quản trị viên hoặc chọn Gửi cho tôi.");
+            throw new ValidationException("Bot chưa cho phép thêm vào nhóm. Liên hệ quản trị viên hoặc chọn Gửi cho tôi.");
         if (!client.call("getWebhookInfo", Map.of()).path("url").asText().isBlank())
-            throw new IllegalArgumentException("Bot đang được dùng bởi một kết nối khác. Mở Thiết lập nâng cao để nhập nơi nhận, hoặc liên hệ quản trị viên.");
+            throw new ValidationException("Bot đang được dùng bởi một kết nối khác. Mở Thiết lập nâng cao để nhập nơi nhận, hoặc liên hệ quản trị viên.");
         Instant now = Instant.now();
         sessions.entrySet().removeIf(entry -> !entry.getValue().expiresAt.isAfter(now));
-        if (sessions.size() >= 1000) throw new IllegalStateException("Đang có nhiều yêu cầu kết nối. Vui lòng thử lại sau.");
+        if (sessions.size() >= 1000) throw new ApplicationException(ErrorCode.RATE_LIMITED, "Đang có nhiều yêu cầu kết nối. Vui lòng thử lại sau.");
         String id = UUID.randomUUID().toString().replace("-", "");
         LinkSession session = new LinkSession(id, recipientType, bot.getUsername(), now, now.plus(Duration.ofMinutes(10)));
         sessions.put(id, session);
@@ -55,7 +58,7 @@ public class TelegramSetupServiceImpl implements TelegramSetupService {
     @Override
     public TelegramLinkResponse poll(String id) {
         LinkSession session = sessions.get(id);
-        if (session == null) throw new IllegalArgumentException("Kết nối đã hết hạn. Tạo liên kết mới để thử lại.");
+        if (session == null) throw new ValidationException("Kết nối đã hết hạn. Tạo liên kết mới để thử lại.");
         synchronized (session) {
             if (!session.expiresAt.isAfter(Instant.now()) || session.recipient != null) return response(session);
             JsonNode updates = updates();
@@ -79,7 +82,7 @@ public class TelegramSetupServiceImpl implements TelegramSetupService {
         if (cachedUpdates == null || lastRead.plusSeconds(2).isBefore(Instant.now())) {
             // No offset or allowed_updates: do not acknowledge other messages or change the bot's delivery filter.
             cachedUpdates = client.call("getUpdates", Map.of("timeout", 0, "limit", 100));
-            if (!cachedUpdates.isArray()) throw new IllegalStateException("Không đọc được kết quả kết nối Telegram. Thử lại sau.");
+            if (!cachedUpdates.isArray()) throw new ApplicationException(ErrorCode.UPSTREAM_FAILURE, "Không đọc được kết quả kết nối Telegram. Thử lại sau.");
             lastRead = Instant.now();
         }
         return cachedUpdates;
@@ -89,10 +92,10 @@ public class TelegramSetupServiceImpl implements TelegramSetupService {
     public TelegramRecipientResponse checkRecipient(String chatId, String recipientType) {
         validateType(recipientType);
         if (chatId == null || !chatId.trim().matches("-?[0-9]{1,20}"))
-            throw new IllegalArgumentException("Chat ID cần là mã số của cuộc trò chuyện Telegram.");
+            throw new ValidationException("Chat ID cần là mã số của cuộc trò chuyện Telegram.");
         JsonNode chat = client.call("getChat", Map.of("chat_id", chatId.trim()));
         if (!matchesType(chat.path("type").asText(), recipientType))
-            throw new IllegalArgumentException("Nơi nhận không khớp lựa chọn. Chọn lại Gửi cho tôi hoặc Gửi vào nhóm.");
+            throw new ValidationException("Nơi nhận không khớp lựa chọn. Chọn lại Gửi cho tôi hoặc Gửi vào nhóm.");
         return recipient(chat, recipientType);
     }
 
@@ -105,7 +108,7 @@ public class TelegramSetupServiceImpl implements TelegramSetupService {
     }
 
     private TelegramRecipientResponse recipient(JsonNode chat, String type) {
-        if (!chat.path("id").isIntegralNumber()) throw new IllegalStateException("Telegram chưa trả về nơi nhận hợp lệ.");
+        if (!chat.path("id").isIntegralNumber()) throw new ApplicationException(ErrorCode.UPSTREAM_FAILURE, "Telegram chưa trả về nơi nhận hợp lệ.");
         String name = "GROUP".equals(type) ? chat.path("title").asText()
                 : (chat.path("first_name").asText() + " " + chat.path("last_name").asText()).trim();
         if (name.isBlank()) name = chat.path("username").asText("GROUP".equals(type) ? "Nhóm Telegram" : "Tài khoản Telegram");
@@ -117,7 +120,7 @@ public class TelegramSetupServiceImpl implements TelegramSetupService {
                 : "group".equals(chatType) || "supergroup".equals(chatType);
     }
     private void validateType(String type) {
-        if (!"PRIVATE".equals(type) && !"GROUP".equals(type)) throw new IllegalArgumentException("Chọn nơi nhận cá nhân hoặc nhóm.");
+        if (!"PRIVATE".equals(type) && !"GROUP".equals(type)) throw new ValidationException("Chọn nơi nhận cá nhân hoặc nhóm.");
     }
     private TelegramLinkResponse response(LinkSession session) {
         boolean expired = !session.expiresAt.isAfter(Instant.now());

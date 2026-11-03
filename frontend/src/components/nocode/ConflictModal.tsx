@@ -1,3 +1,4 @@
+import { errorMessage } from '../../services/errors';
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { X, AlertTriangle, Check, RefreshCw } from 'lucide-react';
 import { TelegramIcon } from '../icons/BrandIcons';
@@ -99,9 +100,8 @@ export const ConflictModal: React.FC<Props> = ({
     try {
       await action();
     } catch (error) {
-      const detail = error as { response?: { data?: { message?: string } }; message?: string };
       setError(
-        detail.response?.data?.message || detail.message || 'Thao tác thất bại. Vui lòng thử lại.',
+        errorMessage(error, 'Thao tác thất bại. Vui lòng thử lại.'),
       );
     } finally {
       busy.current = false;

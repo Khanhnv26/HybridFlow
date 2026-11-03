@@ -1,5 +1,6 @@
 package com.hybridflow.sync.util;
 
+import com.hybridflow.common.exception.ValidationException;
 import com.hybridflow.connector.google.util.SheetValueTypes;
 import com.hybridflow.sync.dto.request.RouterConditionItem;
 
@@ -24,25 +25,25 @@ public final class RuleOperators {
     public static BigDecimal number(String value) {
         Object converted = SheetValueTypes.rawValue(value, "NUMBER");
         if (!(converted instanceof BigDecimal)) {
-            throw new IllegalArgumentException("Giá trị so sánh số không được để trống.");
+            throw new ValidationException("Giá trị so sánh số không được để trống.");
         }
         return (BigDecimal) converted;
     }
 
     public static void validate(RouterConditionItem condition, Map<String, String> columnTypes) {
         if (condition == null || condition.getColumnName() == null || condition.getColumnName().isBlank()) {
-            throw new IllegalArgumentException("Cột điều kiện không được để trống.");
+            throw new ValidationException("Cột điều kiện không được để trống.");
         }
         String operator = condition.getOperator();
         if (operator == null || !ALLOWED.contains(operator)) {
-            throw new IllegalArgumentException("Phép toán điều kiện không hợp lệ: " + operator);
+            throw new ValidationException("Phép toán điều kiện không hợp lệ: " + operator);
         }
         if (!WITHOUT_VALUE.contains(operator) && condition.getValue() == null) {
-            throw new IllegalArgumentException("Giá trị so sánh không được null.");
+            throw new ValidationException("Giá trị so sánh không được null.");
         }
         if (isNumeric(operator)) {
             if (columnTypes == null || !"NUMBER".equals(columnTypes.get(condition.getColumnName()))) {
-                throw new IllegalArgumentException("Chọn kiểu Số cho cột " + condition.getColumnName() + " trước khi so sánh số.");
+                throw new ValidationException("Chọn kiểu Số cho cột " + condition.getColumnName() + " trước khi so sánh số.");
             }
             number(condition.getValue());
         }

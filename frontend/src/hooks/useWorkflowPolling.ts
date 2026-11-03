@@ -1,3 +1,4 @@
+import { errorFingerprint } from '../services/errors';
 import { useEffect, useRef } from 'react';
 
 export function useWorkflowPolling(
@@ -25,9 +26,8 @@ export function useWorkflowPolling(
         await callbacks.current.refresh(flowId, controller.signal);
         previousError = '';
       } catch (error) {
-        const detail = error as { response?: { data?: { message?: string } }; message?: string };
-        const message = detail.response?.data?.message || detail.message || 'Không tải được trạng thái đồng bộ.';
-        if (!controller.signal.aborted && message !== previousError) {
+        const message = errorFingerprint(error);
+        if (!controller.signal.aborted && message && message !== previousError) {
           previousError = message;
           callbacks.current.onError(error);
         }

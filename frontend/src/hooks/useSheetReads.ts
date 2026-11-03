@@ -1,3 +1,4 @@
+import { errorMessage } from '../services/errors';
 import { useCallback, useRef, useState } from 'react';
 import type { SheetDataResponse, SheetReadState } from '../types';
 
@@ -39,7 +40,6 @@ export function useSheetReads(reader: Reader) {
         }));
       return data;
     } catch (error) {
-      const detail = error as { response?: { data?: { message?: string } }; message?: string };
       if (current() && !signal?.aborted)
         setStates((previous) => ({
           ...previous,
@@ -48,9 +48,7 @@ export function useSheetReads(reader: Reader) {
             data: null,
             readAt: previous[key]?.readAt,
             error:
-              detail.response?.data?.message ||
-              detail.message ||
-              'Không đọc được dữ liệu. Vui lòng thử lại.',
+              errorMessage(error, 'Không đọc được dữ liệu. Vui lòng thử lại.'),
           },
         }));
       throw error;

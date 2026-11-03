@@ -1,5 +1,9 @@
 package com.hybridflow.sync.service.impl;
 
+import com.hybridflow.common.dto.ErrorDetails;
+import com.hybridflow.common.exception.ApplicationException;
+import com.hybridflow.common.exception.ErrorCode;
+import com.hybridflow.common.util.ErrorClassifier;
 import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
 import com.hybridflow.connector.google.dto.response.SheetDataResponse;
 import com.hybridflow.connector.google.service.GoogleSheetsService;
@@ -36,7 +40,7 @@ public class SheetWriteServiceImpl implements SheetWriteService {
             List<SheetWritePlan> plans = codec.decodeWritePlans((String) entry.get("plans"));
             if (plans.stream().noneMatch(p -> spreadsheetIds.contains(p.getSpreadsheetId()))) continue;
             if (!spreadsheetIds.containsAll(plans.stream().map(SheetWritePlan::getSpreadsheetId).toList()))
-                throw new IllegalStateException("Có lần ghi dở dang liên quan Sheet này. Chạy lại luồng gốc để đối soát trước.");
+                throw new ApplicationException(ErrorCode.SYNC_RECOVERY_REQUIRED);
             restore(token, plans);
             journal.recovered((String) entry.get("id"));
         }
@@ -80,7 +84,9 @@ public class SheetWriteServiceImpl implements SheetWriteService {
                 try { restore(token, plans); journal.recovered(operationId); }
                 catch (RuntimeException recoveryFailure) { failure.addSuppressed(recoveryFailure); }
             }
-            throw new IllegalStateException("Lần ghi chưa hoàn tất. Hệ thống sẽ đối soát lần ghi dở dang trước khi cho chạy tiếp.", failure);
+            ErrorDetails details = ErrorClassifier.classify(failure);
+            ErrorCode code = details.getCode() == ErrorCode.INTERNAL_ERROR ? ErrorCode.SYNC_RECOVERY_REQUIRED : details.getCode();
+            throw new ApplicationException(code, code == ErrorCode.SYNC_RECOVERY_REQUIRED ? code.getMessage() : details.getMessage(), failure, details.getRetryAfterSeconds());
         }
     }
 
@@ -97,7 +103,7 @@ public class SheetWriteServiceImpl implements SheetWriteService {
             if (!Objects.equals(expectedId, value(live, cell.getRowIndex(), plan.getIdColumn()))
                     || !Objects.equals(cell.getAfter(), value(live, cell.getRowIndex(), cell.getColumn()))
                     || SheetRowUtils.requiresTypeWrite(live, cell.getRowIndex(), cell.getColumn(), cell.getAfter(), plan.getColumnTypes())) {
-                throw new IllegalStateException("Không xác minh được dữ liệu sau ghi. Chưa cập nhật checkpoint hoặc gửi thông báo.");
+                throw new ApplicationException(ErrorCode.SYNC_VERIFY_FAILED);
             }
         }
     }
@@ -177,6 +183,6 @@ public class SheetWriteServiceImpl implements SheetWriteService {
     }
 
     private void stale() {
-        throw new IllegalStateException("Dữ liệu hoặc vị trí dòng đã đổi. Không ghi đè; chạy lại đồng bộ để đối soát. Nếu lần ghi trước đang dở, khôi phục dữ liệu rồi chạy lại luồng gốc.");
+        throw new ApplicationException(ErrorCode.STATE_CONFLICT, "Dữ liệu hoặc vị trí dòng đã đổi. Chạy lại đồng bộ để đối soát trước khi ghi.");
     }
 }

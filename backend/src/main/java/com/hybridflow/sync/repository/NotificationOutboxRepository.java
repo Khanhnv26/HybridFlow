@@ -1,5 +1,6 @@
 package com.hybridflow.sync.repository;
 
+import com.hybridflow.common.dto.ErrorDetails;
 import com.hybridflow.sync.model.NotificationOutboxItem;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -42,6 +43,8 @@ public class NotificationOutboxRepository {
                     .leaseUntil(lease != null ? lease.toInstant() : null)
                     .owner(rs.getString("owner"))
                     .lastError(rs.getString("last_error"))
+                    .errorCode(rs.getString("error_code"))
+                    .correlationId(rs.getString("correlation_id"))
                     .createdAt(created != null ? created.toInstant() : null)
                     .sentAt(sent != null ? sent.toInstant() : null)
                     .build();
@@ -52,8 +55,8 @@ public class NotificationOutboxRepository {
         return jdbc.update("""
                 INSERT INTO notification_outbox(
                     id, flow_id, execution_id, action_node_id, channel, destination,
-                    source_type, source_key, message, state, attempts, available_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?)
+                    source_type, source_key, message, state, attempts, available_at, correlation_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
                 ON CONFLICT (action_node_id, source_type, source_key) DO NOTHING
                 """,
                 item.getId() != null ? item.getId() : UUID.randomUUID().toString(),
@@ -66,7 +69,7 @@ public class NotificationOutboxRepository {
                 item.getSourceKey(),
                 item.getMessage(),
                 item.getState() == null ? "PENDING" : item.getState(),
-                Timestamp.from(item.getAvailableAt() != null ? item.getAvailableAt() : Instant.now())
+                Timestamp.from(item.getAvailableAt() != null ? item.getAvailableAt() : Instant.now()), item.getCorrelationId()
         ) == 1;
     }
 
@@ -100,9 +103,14 @@ public class NotificationOutboxRepository {
     public void markSent(String id, String owner, Instant now) {
         jdbc.update("""
                 UPDATE notification_outbox
-                SET state = 'SENT', sent_at = ?, lease_until = NULL, last_error = NULL
+                SET state = 'SENT', sent_at = ?, lease_until = NULL, last_error = NULL, error_code = NULL
                 WHERE id = ? AND owner = ? AND state = 'SENDING'
                 """, Timestamp.from(now), id, owner);
+    }
+
+    public void recordFailure(String id, String owner, ErrorDetails details) {
+        jdbc.update("UPDATE notification_outbox SET error_code=?,correlation_id=? WHERE id=? AND owner=? AND state='SENDING'",
+                details.getCode().name(), details.getCorrelationId(), id, owner);
     }
 
     public void markFailed(String id, String owner, String error, Instant nextAvailable, boolean isDead) {

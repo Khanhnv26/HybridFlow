@@ -1,8 +1,10 @@
 package com.hybridflow.connection.controller;
 
 import com.hybridflow.common.exception.GlobalExceptionHandler;
-import com.hybridflow.connection.service.GoogleConnectionService;
+import com.hybridflow.common.exception.ValidationException;
+import com.hybridflow.connection.dto.GoogleOAuthCallbackResponse;
 import com.hybridflow.connection.dto.GoogleOAuthConfigResponse;
+import com.hybridflow.connection.service.GoogleConnectionService;
 import com.hybridflow.connector.google.dto.response.SpreadsheetMetadataResponse;
 import com.hybridflow.connector.google.service.GoogleSheetsService;
 import org.junit.jupiter.api.BeforeEach;
@@ -18,10 +20,15 @@ import java.util.List;
 
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.argThat;
-import static org.mockito.Mockito.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
 class GoogleConnectionControllerTest {
@@ -48,7 +55,7 @@ class GoogleConnectionControllerTest {
     }
 
     @Test void accessFailureIsReturnedAsAnErrorWithoutSampleOptions() throws Exception {
-        when(sheets.getMetadata(any())).thenThrow(new IllegalArgumentException("Không có quyền truy cập file."));
+        when(sheets.getMetadata(any())).thenThrow(new ValidationException("Không có quyền truy cập file."));
         mvc.perform(post("/api/v1/connections/google/sheets/metadata").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"spreadsheetId\":\"file\",\"accessToken\":\"test-token\"}"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("Không có quyền truy cập file."))
@@ -68,10 +75,10 @@ class GoogleConnectionControllerTest {
     }
 
     @Test void callbackOnlyReturnsThePagePreparedByTheService() throws Exception {
-        when(connection.completeAuthorization("code")).thenReturn("<html>Connected</html>");
+        when(connection.completeAuthorization("code", null)).thenReturn(new GoogleOAuthCallbackResponse(200, "<html>Connected</html>"));
         mvc.perform(get("/api/v1/connections/google/callback").param("code", "code"))
                 .andExpect(status().isOk()).andExpect(content().contentTypeCompatibleWith(MediaType.TEXT_HTML))
                 .andExpect(content().string("<html>Connected</html>"));
-        verify(connection).completeAuthorization("code");
+        verify(connection).completeAuthorization("code", null);
     }
 }

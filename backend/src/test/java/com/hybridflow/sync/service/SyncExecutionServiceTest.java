@@ -251,7 +251,7 @@ class SyncExecutionServiceTest {
         assertThrows(IllegalStateException.class, () -> service.executeSync(request()));
         verify(store, never()).saveSnapshot(anyString(), anyString(), anyMap());
         verify(store, never()).saveVaultRecord(anyString(), anyString(), anyMap());
-        verify(history).finish(isNull(), eq("ERROR"), isNull(), anyString());
+        verify(history).fail(isNull(), any());
     }
 
     @Test void sourceWinsActuallyUpdatesTheVault() {
@@ -320,7 +320,7 @@ class SyncExecutionServiceTest {
             verify(history, never()).finish(any(), eq("SUCCESS"), any(), any());
             for (TransactionSynchronization callback : TransactionSynchronizationManager.getSynchronizations())
                 callback.afterCompletion(TransactionSynchronization.STATUS_ROLLED_BACK);
-            verify(history).finish(isNull(), eq("ERROR"), isNull(), anyString());
+            verify(history).fail(isNull(), any());
         } finally { TransactionSynchronizationManager.clearSynchronization(); }
     }
 

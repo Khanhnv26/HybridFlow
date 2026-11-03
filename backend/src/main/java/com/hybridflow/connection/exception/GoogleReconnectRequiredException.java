@@ -1,5 +1,8 @@
 package com.hybridflow.connection.exception;
 
-public class GoogleReconnectRequiredException extends IllegalArgumentException {
-    public GoogleReconnectRequiredException() { super("Cần kết nối lại Google để tiếp tục đồng bộ."); }
+import com.hybridflow.common.exception.ApplicationException;
+import com.hybridflow.common.exception.ErrorCode;
+
+public class GoogleReconnectRequiredException extends ApplicationException {
+    public GoogleReconnectRequiredException() { super(ErrorCode.CONNECTION_REQUIRED, "Cần kết nối lại Google để tiếp tục đồng bộ."); }
 }

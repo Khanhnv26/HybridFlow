@@ -70,6 +70,19 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "logging.level.com.hybridflow=WARN", "logging.level.org.hibernate=WARN" })
 @AutoConfigureMockMvc
 class SyncApiIntegrationTest {
+    @Test void deliveryErrorsPersistMachineCodeAndCorrelationForHistoryQueries() throws Exception {
+        String body = routedRequest("delivery-error");
+        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk());
+        source("READY");
+        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk());
+        when(telegram.sendDetailedMessage(any(), anyString())).thenReturn(TelegramDeliveryResult.builder()
+                .success(false).retryable(false).errorCode("ACCESS_DENIED").error("Bot chưa có quyền gửi tin.").build());
+        assertTrue(outbox.processNext());
+        assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM notification_outbox WHERE state='DEAD' AND error_code='ACCESS_DENIED' AND correlation_id IS NOT NULL", Integer.class));
+        mvc.perform(get("/api/v1/workflows/delivery-error/notifications"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$[?(@.errorCode=='ACCESS_DENIED')].correlationId").isNotEmpty());
+    }
+
     @Autowired MockMvc mvc;
     @Autowired JdbcTemplate jdbc;
     @MockBean GoogleSheetsService sheets;
@@ -219,7 +232,7 @@ class SyncApiIntegrationTest {
         // Provider accepts the request but a subsequent read still contains the old value.
         doNothing().when(sheets).updateCells(anyString(), anyString(), anyMap());
         mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body))
-                .andExpect(status().isInternalServerError());
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SYNC_VERIFY_FAILED"));
         assertEquals("NEW", statusOf("sync_snapshots", "verify-failure"));
         assertEquals(1L, jdbc.queryForObject("SELECT revision FROM sync_snapshots WHERE flow_id='verify-failure'", Long.class));
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM notification_outbox", Integer.class));
@@ -288,8 +301,11 @@ class SyncApiIntegrationTest {
         run("flow-one");
         jdbc.update("UPDATE vault_records SET data=jsonb_set(data,'{status}','\"CANCELLED\"') WHERE flow_id='flow-one'");
         doThrow(new IllegalStateException("Provider unavailable")).when(sheets).updateCells(anyString(), anyString(), anyMap());
-        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(request("flow-one")))
-                .andExpect(status().isInternalServerError());
+        mvc.perform(post("/api/v1/sync/run").header("X-Correlation-ID", "ad97a658-4ab2-4a33-b176-8310219b04bd")
+                .contentType(MediaType.APPLICATION_JSON).content(request("flow-one")))
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SYNC_RECOVERY_REQUIRED"));
+        assertEquals("SYNC_RECOVERY_REQUIRED", jdbc.queryForObject("SELECT error_code FROM sync_executions WHERE status='ERROR'", String.class));
+        assertEquals("ad97a658-4ab2-4a33-b176-8310219b04bd", jdbc.queryForObject("SELECT correlation_id FROM sync_executions WHERE status='ERROR'", String.class));
         assertEquals("NEW", statusOf("sync_snapshots", "flow-one"));
         assertEquals("CANCELLED", statusOf("vault_records", "flow-one"));
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM sync_executions WHERE status='ERROR'", Integer.class));
@@ -313,7 +329,7 @@ class SyncApiIntegrationTest {
                 .andExpect(status().isOk()).andExpect(content().json("[]"));
         mvc.perform(post("/api/v1/conflicts/" + id + "/notify").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"chatId\":\"123\"}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isConflict());
         // The next read reflects the value that the successful resolution wrote to Google Sheets.
         source("CANCELLED");
         mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(notifyingRequest))
@@ -445,7 +461,7 @@ class SyncApiIntegrationTest {
         live.put("c", "LATER_EDIT");
         mvc.perform(post("/api/v1/conflicts/" + conflictId + "/resolve").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"resolvedValue\":\"SOURCE\",\"accessToken\":\"test-token\"}"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isConflict());
         verify(sheets, never()).updateCells(anyString(), anyString(), anyMap());
         runMulti();
         Long currentId = jdbc.queryForObject("SELECT id FROM sync_conflicts WHERE status='OPEN'", Long.class);
@@ -470,7 +486,7 @@ class SyncApiIntegrationTest {
             return null;
         }).when(sheets).updateCells(anyString(), eq("c"), anyMap());
         mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(multiRequest()))
-                .andExpect(status().isInternalServerError());
+                .andExpect(status().isConflict()).andExpect(jsonPath("$.code").value("SYNC_RECOVERY_REQUIRED"));
         assertEquals(Map.of("a", "EDITED", "b", "NEW", "c", "NEW"), live);
         assertEquals("NEW", statusOf("sync_snapshots", "multi"));
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM sheet_write_journal WHERE status='PENDING'", Integer.class));

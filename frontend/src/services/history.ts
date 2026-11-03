@@ -1,3 +1,4 @@
+import { errorMessage } from './errors';
 import type { ExecutionHistoryDto, RunHistoryItem, RunSyncResponse } from '../types';
 
 export function historyLog(item: ExecutionHistoryDto): RunHistoryItem {
@@ -20,7 +21,7 @@ export function historyLog(item: ExecutionHistoryDto): RunHistoryItem {
             : 'success',
     message:
       item.status === 'ERROR'
-        ? item.error || 'Đồng bộ thất bại.'
+        ? errorMessage({ response: { data: { message: item.error || 'Đồng bộ thất bại.', code: item.error_code, correlationId: item.correlation_id } } })
         : item.status === 'RUNNING'
           ? 'Phiên đang chạy.'
           : item.status === 'AWAITING_CONFIRMATION'

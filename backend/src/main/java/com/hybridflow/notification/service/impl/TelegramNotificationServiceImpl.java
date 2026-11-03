@@ -1,5 +1,9 @@
 package com.hybridflow.notification.service.impl;
 
+import com.hybridflow.common.exception.ApplicationException;
+import com.hybridflow.common.exception.ErrorCode;
+import com.hybridflow.common.util.ErrorContext;
+import com.hybridflow.common.util.ExternalErrors;
 import com.hybridflow.notification.dto.response.TelegramDeliveryResult;
 import com.hybridflow.notification.service.TelegramNotificationService;
 import com.hybridflow.sync.entity.SyncConflict;
@@ -11,6 +15,8 @@ import org.springframework.web.client.RestClient;
 import org.springframework.web.client.RestClientResponseException;
 
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 @RequiredArgsConstructor
@@ -71,11 +77,7 @@ public class TelegramNotificationServiceImpl implements TelegramNotificationServ
     @Override
     public TelegramDeliveryResult sendDetailedMessage(String message, String targetChatId) {
         if (botToken == null || botToken.isBlank() || targetChatId == null || targetChatId.isBlank()) {
-            return TelegramDeliveryResult.builder()
-                    .success(false)
-                    .retryable(false)
-                    .error("Bot token hoặc Chat ID chưa được cấu hình.")
-                    .build();
+            return failure(new ApplicationException(ErrorCode.CONFIGURATION_ERROR));
         }
         String url = "https://api.telegram.org/bot" + botToken + "/sendMessage";
 
@@ -88,42 +90,31 @@ public class TelegramNotificationServiceImpl implements TelegramNotificationServ
                     ))
                     .retrieve()
                     .body(Map.class);
-            boolean ok = response != null && Boolean.TRUE.equals(response.get("ok"));
-            return TelegramDeliveryResult.builder()
-                    .success(ok)
-                    .retryable(!ok)
-                    .error(ok ? null : "Telegram API trả về kết quả không thành công.")
-                    .build();
+            if (response == null) return failure(new ApplicationException(ErrorCode.UPSTREAM_FAILURE));
+            if (Boolean.TRUE.equals(response.get("ok"))) return TelegramDeliveryResult.builder().success(true).build();
+            int status = response.get("error_code") instanceof Number ? ((Number) response.get("error_code")).intValue() : 0;
+            int retryAfter = 30;
+            Object parameters = response.get("parameters");
+            if (parameters instanceof Map && ((Map<?, ?>) parameters).get("retry_after") instanceof Number)
+                retryAfter = Math.min(86400, Math.max(1, ((Number) ((Map<?, ?>) parameters).get("retry_after")).intValue()));
+            return failure(ExternalErrors.telegram(status, false, retryAfter));
         } catch (RestClientResponseException e) {
             int code = e.getStatusCode().value();
-            if (code == 429) {
-                int retryAfter = 30;
-                try {
-                    String body = e.getResponseBodyAsString();
-                    if (body != null && body.contains("retry_after")) {
-                        java.util.regex.Matcher m = java.util.regex.Pattern.compile("\"retry_after\"\\s*:\\s*(\\d+)").matcher(body);
-                        if (m.find()) retryAfter = Integer.parseInt(m.group(1));
-                    }
-                } catch (Exception ignored) {}
-                return TelegramDeliveryResult.builder()
-                        .success(false)
-                        .retryable(true)
-                        .retryAfterSeconds(retryAfter)
-                        .error("Telegram giới hạn tần suất (429).")
-                        .build();
+            int retryAfter = 30;
+            Matcher matcher = Pattern.compile("\"retry_after\"\\s*:\\s*(\\d+)").matcher(e.getResponseBodyAsString());
+            if (matcher.find()) {
+                try { retryAfter = Math.min(86400, Math.max(1, Integer.parseInt(matcher.group(1)))); }
+                catch (NumberFormatException ignored) { /* Keep safe default backoff. */ }
             }
-            boolean permanent = (code == 400 || code == 403);
-            return TelegramDeliveryResult.builder()
-                    .success(false)
-                    .retryable(!permanent)
-                    .error("Telegram trả lỗi HTTP " + code + ".")
-                    .build();
-        } catch (Exception e) {
-            return TelegramDeliveryResult.builder()
-                    .success(false)
-                    .retryable(true)
-                    .error("Không thể kết nối tới Telegram. Thông báo sẽ được thử lại.")
-                    .build();
+            return failure(ExternalErrors.telegram(code, e.getResponseBodyAsString().contains("chat not found"), retryAfter));
+        } catch (Exception exception) {
+            return failure(new ApplicationException(ErrorCode.UPSTREAM_UNAVAILABLE));
         }
+    }
+
+    private TelegramDeliveryResult failure(ApplicationException exception) {
+        return TelegramDeliveryResult.builder().success(false).retryable(exception.getErrorCode().isRetryable())
+                .retryAfterSeconds(exception.getRetryAfterSeconds()).error(exception.getMessage())
+                .errorCode(exception.getErrorCode().name()).correlationId(ErrorContext.currentId()).build();
     }
 }

@@ -1,5 +1,9 @@
 package com.hybridflow.sync.service.impl;
 
+import com.hybridflow.common.exception.ApplicationException;
+import com.hybridflow.common.exception.ErrorCode;
+import com.hybridflow.common.exception.ValidationException;
+import com.hybridflow.common.util.ErrorContext;
 import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
 import com.hybridflow.connector.google.dto.response.SheetDataResponse;
 import com.hybridflow.connector.google.service.GoogleSheetsService;
@@ -13,7 +17,6 @@ import com.hybridflow.sync.dto.response.FieldConflict;
 import com.hybridflow.sync.dto.response.RunSyncResponse;
 import com.hybridflow.sync.engine.ThreeWayDiffEngine;
 import com.hybridflow.sync.entity.SyncConflict;
-import com.hybridflow.sync.model.NotificationOutboxItem;
 import com.hybridflow.sync.model.RecordChangeEvent;
 import com.hybridflow.sync.model.SheetCellChange;
 import com.hybridflow.sync.model.SheetWritePlan;
@@ -65,12 +68,18 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
     @Override
     @Transactional
     public RunSyncResponse executeSync(RunSyncRequest request) {
+        try (ErrorContext context = ErrorContext.open(ErrorContext.currentId())) {
+            return executeWithContext(request);
+        }
+    }
+
+    private RunSyncResponse executeWithContext(RunSyncRequest request) {
         long start = System.currentTimeMillis();
         require(request.getAccessToken(), "Access token");
         require(request.getFlowId(), "Flow ID");
-        if (request.getFlowId().length() > 100) throw new IllegalArgumentException("Flow ID quá dài.");
-        if (!Set.of("ASK_TELEGRAM", "SOURCE_WINS", "DESTINATION_WINS").contains(request.getConflictPolicy()))
-            throw new IllegalArgumentException("Chính sách xung đột không hợp lệ.");
+        if (request.getFlowId().length() > 100) throw new ValidationException("Flow ID quá dài.");
+        if (request.getConflictPolicy() == null || !Set.of("ASK_TELEGRAM", "SOURCE_WINS", "DESTINATION_WINS").contains(request.getConflictPolicy()))
+            throw new ValidationException("Chính sách xung đột không hợp lệ.");
         normalizeLegacyNotifications(request);
 
         String flow = request.getFlowId();
@@ -88,10 +97,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             }
             return executeSheetToVaultSync(request, flow, idColumn, executionId, start);
         } catch (RuntimeException ex) {
-            String errorMsg = (ex.getMessage() != null && !ex.getMessage().isBlank())
-                    ? ex.getMessage()
-                    : "Không hoàn tất đồng bộ. Kiểm tra cấu hình nguồn và kết nối.";
-            history.finish(executionId, "ERROR", null, errorMsg);
+            history.fail(executionId, ex);
             throw ex;
         }
     }
@@ -122,7 +128,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             endpoint.setSheetName(sheet.getSheetName());
             endpoint.setSpreadsheetTitle(sheet.getSpreadsheetTitle());
             if (!targets.add(SheetEndpointUtils.identity(endpoint)))
-                throw new IllegalArgumentException("Không được nối hai khối vào cùng file và trang tính.");
+                throw new ValidationException("Không được nối hai khối vào cùng file và trang tính.");
             rawRows.add(sheet.getRows());
             if (endpoint.getTransforms() != null && !endpoint.getTransforms().isEmpty()) {
                 phase(request, executionId, "transform:" + endpoint.getNodeId(), "TRANSFORM", "Đang chuẩn hóa " + endpoint.getLabel());
@@ -134,11 +140,11 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         }
         phase(request, executionId, "diff", "COMPARE", "Đang so khớp dữ liệu");
         if (request.getSyncColumns() == null || request.getSyncColumns().isEmpty())
-            throw new IllegalArgumentException("Chọn rõ các cột được phép đồng bộ trong khối So khớp. Cột trùng tên không tự động được chia sẻ.");
+            throw new ValidationException("Chọn rõ các cột được phép đồng bộ trong khối So khớp. Cột trùng tên không tự động được chia sẻ.");
         Set<String> columns = new TreeSet<>(request.getSyncColumns());
         columns.remove(idColumn);
         if (columns.isEmpty() || data.stream().anyMatch(sheet -> !sheet.getHeaders().containsAll(columns)))
-            throw new IllegalArgumentException("Chọn ít nhất một cột dữ liệu có mặt trên tất cả trang tính.");
+            throw new ValidationException("Chọn ít nhất một cột dữ liệu có mặt trên tất cả trang tính.");
 
         Set<String> boundColumnsSet = new LinkedHashSet<>();
         boundColumnsSet.add(idColumn);
@@ -160,7 +166,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         Set<String> allIds = new LinkedHashSet<>();
         indexes.forEach(index -> allIds.addAll(index.keySet()));
         if (!allIds.containsAll(store.getSnapshotRecordIds(flow)))
-            throw new IllegalArgumentException("Có bản ghi đã bị xóa khỏi mọi trang tính. Khôi phục dòng hoặc tạo luồng mới để khởi tạo lại.");
+            throw new ValidationException("Có bản ghi đã bị xóa khỏi mọi trang tính. Khôi phục dòng hoặc tạo luồng mới để khởi tạo lại.");
         List<Integer> nextRows = new ArrayList<>(data.stream().map(sheet -> sheet.getRows().size()).toList());
         Map<String, Map<String, String>> checkpoints = new LinkedHashMap<>();
         List<String> clean = new ArrayList<>();
@@ -174,7 +180,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             for (int i = 0; i < endpoints.size(); i++) {
                 Integer position = indexes.get(i).get(id);
                 if (position == null) {
-                    if (base != null) throw new IllegalArgumentException("Bản ghi '" + id + "' đã mất khỏi một trang tính. Khôi phục dòng trước khi đồng bộ; hệ thống chưa tự lan truyền thao tác xóa.");
+                    if (base != null) throw new ValidationException("Bản ghi '" + id + "' đã mất khỏi một trang tính. Khôi phục dòng trước khi đồng bộ; hệ thống chưa tự lan truyền thao tác xóa.");
                     missing = true;
                     position = nextRows.get(i);
                     nextRows.set(i, position + 1);
@@ -203,10 +209,10 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
                     if ("SOURCE_WINS".equals(request.getConflictPolicy()) || "DESTINATION_WINS".equals(request.getConflictPolicy())) {
                         int preferred = "SOURCE_WINS".equals(request.getConflictPolicy()) ? 0 : endpoints.size() - 1;
                         if (!indexes.get(preferred).containsKey(id))
-                            throw new IllegalArgumentException("Bảng ưu tiên chưa có mã '" + id + "'. Không thể tự chọn giá trị cho dòng mới.");
+                            throw new ValidationException("Bảng ưu tiên chưa có mã '" + id + "'. Không thể tự chọn giá trị cho dòng mới.");
                         winner = values.get(preferred);
                     } else {
-                        if (missing) throw new IllegalArgumentException("Dòng mới '" + id + "' có nhiều giá trị khác nhau. Thống nhất dòng trên các bảng đang có trước khi tạo bản sao.");
+                        if (missing) throw new ValidationException("Dòng mới '" + id + "' có nhiều giá trị khác nhau. Thống nhất dòng trên các bảng đang có trước khi tạo bản sao.");
                         detected.add(syncConflictService.saveMultiSheetConflict(request, endpoints, id, column, baseValue, changed, values));
                         unresolved = true;
                         conflictedColumns.add(column);
@@ -269,9 +275,9 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         Map<String, Integer> index = SheetRowUtils.index(sheet, idColumn);
         Set<String> columns = new LinkedHashSet<>(request.getSyncColumns() == null || request.getSyncColumns().isEmpty()
                 ? sheet.getHeaders() : request.getSyncColumns());
-        if (!sheet.getHeaders().containsAll(columns)) throw new IllegalArgumentException("Cột đồng bộ không tồn tại trong Sheet.");
+        if (!sheet.getHeaders().containsAll(columns)) throw new ValidationException("Cột đồng bộ không tồn tại trong Sheet.");
         columns.remove(idColumn);
-        if (columns.isEmpty()) throw new IllegalArgumentException("Cần ít nhất một cột dữ liệu ngoài cột khóa.");
+        if (columns.isEmpty()) throw new ValidationException("Cần ít nhất một cột dữ liệu ngoài cột khóa.");
 
         Set<String> boundColumnsSet = new LinkedHashSet<>();
         boundColumnsSet.add(idColumn);
@@ -292,7 +298,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             return result;
         }
         for (Map<String, String> old : store.getVaultRecords(flow)) {
-            if (!index.containsKey(old.get(idColumn))) throw new IllegalArgumentException(
+            if (!index.containsKey(old.get(idColumn))) throw new ValidationException(
                     "Bản ghi " + old.get(idColumn) + " đã bị xóa khỏi Sheet. Khôi phục dòng hoặc tạo luồng mới để khởi tạo lại.");
         }
         Map<String, Map<String, String>> vaultWrites = new LinkedHashMap<>();
@@ -316,7 +322,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             Map<String, String> base = store.getSnapshot(flow, id);
             Map<String, String> rowB = store.getVaultRecord(flow, id);
             if (base == null) {
-                if (rowB != null) throw new IllegalArgumentException("Vault có dữ liệu nhưng thiếu snapshot cho bản ghi " + id);
+                if (rowB != null) throw new ValidationException("Vault có dữ liệu nhưng thiếu snapshot cho bản ghi " + id);
                 vaultWrites.put(id, new LinkedHashMap<>(rowA));
                 snapshotWrites.put(id, new LinkedHashMap<>(rowA));
                 clean.add(id);
@@ -332,7 +338,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
                 }
                 continue;
             }
-            if (rowB == null) throw new IllegalArgumentException("Thiếu bản ghi Vault: " + id);
+            if (rowB == null) throw new ValidationException("Thiếu bản ghi Vault: " + id);
             SyncDiffResult diff = threeWayDiffEngine.compareRow(id, base, rowA, rowB, columns);
             Map<String, String> merged = new LinkedHashMap<>(rowB);
             merged.putAll(diff.getUpdatesForB());
@@ -419,7 +425,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             }
         }
         if (request.getConflictActionIds() != null && !actionIds.containsAll(request.getConflictActionIds()))
-            throw new IllegalArgumentException("Đích cảnh báo xung đột không tồn tại.");
+            throw new ValidationException("Đích cảnh báo xung đột không tồn tại.");
     }
 
     private void normalizeLegacyNotifications(RunSyncRequest request) {
@@ -475,7 +481,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         sheet.getHeaders().forEach(column -> columns.put(column, ""));
         for (ColumnTransformConfig config : configs) {
             if (config != null && !columns.containsKey(config.getColumnName()))
-                throw new IllegalArgumentException("Trang tính '" + (sheet.getSpreadsheetTitle() == null ? sheet.getSpreadsheetId() : sheet.getSpreadsheetTitle())
+                throw new ValidationException("Trang tính '" + (sheet.getSpreadsheetTitle() == null ? sheet.getSpreadsheetId() : sheet.getSpreadsheetTitle())
                         + " / " + sheet.getSheetName() + "' thiếu cột chuẩn hóa: " + config.getColumnName());
         }
         dataTransformerService.transformRow(columns, configs);
@@ -518,19 +524,24 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             history.finish(executionId, result.getStatus(), result, null);
             return;
         }
+        String correlationId = ErrorContext.currentId();
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override public void afterCommit() {
                 history.finish(executionId, result.getStatus(), result, null);
             }
             @Override public void afterCompletion(int status) {
-                if (status != STATUS_COMMITTED) history.finish(executionId, "ERROR", null,
-                        "Giao dịch database không hoàn tất. Chạy lại đối soát dữ liệu.");
+                if (status != STATUS_COMMITTED) {
+                    try (ErrorContext context = ErrorContext.open(correlationId)) {
+                        history.fail(executionId, new ApplicationException(ErrorCode.INTERNAL_ERROR,
+                                "Giao dịch database không hoàn tất. Chạy lại đối soát dữ liệu."));
+                    }
+                }
             }
         });
     }
 
     private static void require(String value, String name) {
         if (value == null || value.isBlank() || value.equals("ya29.mock"))
-            throw new IllegalArgumentException(name + " không được để trống hoặc dùng dữ liệu giả.");
+            throw new ValidationException(name + " không được để trống hoặc dùng dữ liệu giả.");
     }
 }

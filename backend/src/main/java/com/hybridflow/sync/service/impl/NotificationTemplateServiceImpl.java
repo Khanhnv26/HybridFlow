@@ -1,5 +1,6 @@
 package com.hybridflow.sync.service.impl;
 
+import com.hybridflow.common.exception.ValidationException;
 import com.hybridflow.sync.entity.SyncConflict;
 import com.hybridflow.sync.model.RecordChangeEvent;
 import com.hybridflow.sync.service.NotificationTemplateService;
@@ -29,9 +30,9 @@ public class NotificationTemplateServiceImpl implements NotificationTemplateServ
         }
         Matcher matcher = VARIABLE_PATTERN.matcher(template);
         while (matcher.find()) {
-            String var = matcher.group(1).trim();
-            if (!availableColumns.contains(var)) {
-                throw new IllegalArgumentException("Biến template không tồn tại trong danh sách cột: " + var);
+            String variableName = matcher.group(1).trim();
+            if (!availableColumns.contains(variableName)) {
+                throw new ValidationException("Biến template không tồn tại trong danh sách cột: " + variableName);
             }
         }
     }
@@ -43,8 +44,8 @@ public class NotificationTemplateServiceImpl implements NotificationTemplateServ
             Matcher matcher = VARIABLE_PATTERN.matcher(template);
             Map<String, String> after = event.getAfter() != null ? event.getAfter() : Map.of();
             while (matcher.find()) {
-                String var = matcher.group(1).trim();
-                String value = after.getOrDefault(var, "");
+                String variableName = matcher.group(1).trim();
+                String value = after.getOrDefault(variableName, "");
                 matcher.appendReplacement(sb, Matcher.quoteReplacement(value));
             }
             matcher.appendTail(sb);

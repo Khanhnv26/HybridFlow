@@ -1,21 +1,29 @@
 package com.hybridflow.sync.service.impl;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hybridflow.common.dto.ErrorDetails;
+import com.hybridflow.common.exception.ErrorCode;
+import com.hybridflow.common.exception.ValidationException;
+import com.hybridflow.common.util.ErrorContext;
+import com.hybridflow.common.util.ErrorReporter;
 import com.hybridflow.connection.exception.GoogleReconnectRequiredException;
 import com.hybridflow.connection.service.GoogleCredentialService;
 import com.hybridflow.sync.dto.request.RunSyncRequest;
 import com.hybridflow.sync.dto.response.RunSyncResponse;
-import com.hybridflow.sync.model.WorkflowJob;
 import com.hybridflow.sync.model.ScheduledWorkflowRow;
+import com.hybridflow.sync.model.WorkflowJob;
 import com.hybridflow.sync.repository.WorkflowDefinitionRepository;
 import com.hybridflow.sync.repository.WorkflowJobRepository;
-import com.hybridflow.sync.service.*;
+import com.hybridflow.sync.service.SyncExecutionService;
+import com.hybridflow.sync.service.WorkflowJobService;
 import com.hybridflow.sync.support.WorkflowGraphParser;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+
 import java.time.Clock;
 import java.time.Instant;
 
@@ -50,17 +58,25 @@ public class WorkflowJobServiceImpl implements WorkflowJobService {
     public void runNext() {
         WorkflowJob job = new TransactionTemplate(transactions).execute(status -> jobs.claim(clock.instant(), leaseSeconds, maxAttempts).orElse(null));
         if (job == null) return;
+        try (ErrorContext context = ErrorContext.open(job.getId())) {
+            runClaimed(job);
+        }
+    }
+
+    private void runClaimed(WorkflowJob job) {
         try {
             new TransactionTemplate(transactions).executeWithoutResult(status -> execute(job));
         } catch (RuntimeException exception) {
+            ErrorDetails details = ErrorReporter.report(exception);
             new TransactionTemplate(transactions).executeWithoutResult(status -> {
                 if (!jobs.lockOwned(job)) return;
-                if (exception instanceof GoogleReconnectRequiredException) {
+                jobs.recordFailure(job, details);
+                if (details.getCode() == ErrorCode.CONNECTION_REQUIRED) {
                     jobs.finish(job, "NEEDS_CONNECTION", "Cần kết nối lại Google.", clock.instant());
-                } else if (job.getAttempts() >= maxAttempts) {
-                    jobs.finish(job, "DEAD", "Đồng bộ thất bại sau số lần thử tối đa. Xem lịch sử đồng bộ.", clock.instant());
+                } else if (!details.getCode().isRetryable() || job.getAttempts() >= maxAttempts) {
+                    jobs.finish(job, "DEAD", details.getMessage(), clock.instant());
                 } else {
-                    jobs.retry(job, clock.instant().plusSeconds(30L * (1L << (job.getAttempts() - 1))));
+                    jobs.retry(job, clock.instant().plusSeconds(Math.max(details.getRetryAfterSeconds(), 30L * (1L << (job.getAttempts() - 1)))), details.getMessage());
                 }
             });
         }
@@ -77,9 +93,9 @@ public class WorkflowJobServiceImpl implements WorkflowJobService {
         RunSyncRequest request;
         try {
             request = parser.buildSyncRequest(job.getWorkflowId(), mapper.readTree(job.getDefinition()), connection)
-                    .orElseThrow(() -> new IllegalArgumentException("Cấu hình luồng không hợp lệ."));
-        } catch (com.fasterxml.jackson.core.JsonProcessingException exception) {
-            throw new IllegalArgumentException("Cấu hình luồng không hợp lệ.");
+                    .orElseThrow(() -> new ValidationException("Cấu hình luồng không hợp lệ."));
+        } catch (JsonProcessingException exception) {
+            throw new ValidationException("Cấu hình luồng không hợp lệ.");
         }
         credentials.resolveAccessToken(connection);
         request.setScheduledExecution(true);

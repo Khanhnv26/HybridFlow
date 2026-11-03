@@ -1,13 +1,17 @@
 package com.hybridflow.sync.repository;
 
-import com.hybridflow.sync.model.WorkflowJob;
+import com.hybridflow.common.dto.ErrorDetails;
 import com.hybridflow.sync.model.ScheduledWorkflowRow;
+import com.hybridflow.sync.model.WorkflowJob;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.*;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
 
 @Repository @RequiredArgsConstructor
 public class WorkflowJobRepository {
@@ -23,7 +27,7 @@ public class WorkflowJobRepository {
 
     public void cancelObsolete(Instant now) {
         jdbc.update("""
-                UPDATE workflow_jobs j SET state='CANCELLED',error=NULL,finished_at=?
+                UPDATE workflow_jobs j SET state='CANCELLED',error=NULL,error_code=NULL,finished_at=?
                 WHERE j.id IN (SELECT pending.id FROM workflow_jobs pending
                     WHERE pending.state IN ('READY','RETRY','RUNNING') AND NOT EXISTS (
                     SELECT 1 FROM workflow_definitions d WHERE d.flow_id=pending.workflow_id
@@ -57,13 +61,22 @@ public class WorkflowJobRepository {
     }
 
     public void finish(WorkflowJob job, String state, String error, Instant now) {
-        jdbc.update("UPDATE workflow_jobs SET state=?,error=?,finished_at=?,lease_until=NULL WHERE id=? AND owner=? AND state='RUNNING'",
-                state, error, Timestamp.from(now), job.getId(), job.getOwner());
+        jdbc.update("UPDATE workflow_jobs SET state=?,error=?,error_code=CASE WHEN CAST(? AS TEXT) IS NULL THEN NULL ELSE error_code END,finished_at=?,lease_until=NULL WHERE id=? AND owner=? AND state='RUNNING'",
+                state, error, error, Timestamp.from(now), job.getId(), job.getOwner());
+    }
+
+    public void recordFailure(WorkflowJob job, ErrorDetails details) {
+        jdbc.update("UPDATE workflow_jobs SET error_code=?,correlation_id=? WHERE id=? AND owner=? AND state='RUNNING'",
+                details.getCode().name(), details.getCorrelationId(), job.getId(), job.getOwner());
     }
 
     public void retry(WorkflowJob job, Instant available) {
-        jdbc.update("UPDATE workflow_jobs SET state='RETRY',error='Đồng bộ thất bại; đang chờ thử lại.',available_at=?,lease_until=NULL WHERE id=? AND owner=? AND state='RUNNING'",
-                Timestamp.from(available), job.getId(), job.getOwner());
+        retry(job, available, "Đồng bộ thất bại; đang chờ thử lại.");
+    }
+
+    public void retry(WorkflowJob job, Instant available, String message) {
+        jdbc.update("UPDATE workflow_jobs SET state='RETRY',error=?,available_at=?,lease_until=NULL WHERE id=? AND owner=? AND state='RUNNING'",
+                message, Timestamp.from(available), job.getId(), job.getOwner());
     }
 
     public void expireExhausted(Instant now, int maxAttempts) {

@@ -1,5 +1,10 @@
 package com.hybridflow.sync.service.impl;
 
+import com.hybridflow.common.dto.ErrorDetails;
+import com.hybridflow.common.exception.ApplicationException;
+import com.hybridflow.common.exception.ErrorCode;
+import com.hybridflow.common.util.ErrorClassifier;
+import com.hybridflow.common.util.ErrorContext;
 import com.hybridflow.notification.dto.response.TelegramDeliveryResult;
 import com.hybridflow.sync.dto.request.ActionPlan;
 import com.hybridflow.sync.dto.request.RouterPlan;
@@ -104,7 +109,7 @@ public class NotificationOutboxServiceImpl implements NotificationOutboxService 
         return NotificationOutboxItem.builder().flowId(flowId).executionId(executionId)
                 .actionNodeId(action.getNodeId()).channel(action.getChannel() == null ? "TELEGRAM" : action.getChannel())
                 .destination(action.getChatId()).sourceType(sourceType).sourceKey(sourceKey)
-                .message(truncated).state("PENDING").availableAt(Instant.now()).build();
+                .message(truncated).correlationId(ErrorContext.currentId()).state("PENDING").availableAt(Instant.now()).build();
     }
 
     @Override
@@ -112,19 +117,40 @@ public class NotificationOutboxServiceImpl implements NotificationOutboxService 
         Optional<NotificationOutboxItem> claimed = repository.claim(Instant.now(), LEASE_SECONDS, MAX_ATTEMPTS);
         if (claimed.isEmpty()) return false;
         NotificationOutboxItem item = claimed.get();
+        try (ErrorContext context = ErrorContext.open(item.getCorrelationId() == null ? item.getId() : item.getCorrelationId())) {
+            return deliver(item);
+        }
+    }
+
+    private boolean deliver(NotificationOutboxItem item) {
         Optional<NotificationSender> sender = senders.stream()
                 .filter(candidate -> candidate.channel().equalsIgnoreCase(item.getChannel())).findFirst();
         if (sender.isEmpty()) {
-            repository.markFailed(item.getId(), item.getOwner(), "Kênh không được hỗ trợ: " + item.getChannel(), Instant.now(), true);
+            repository.recordFailure(item.getId(), item.getOwner(), new ErrorDetails(ErrorCode.CONFIGURATION_ERROR,
+                    ErrorCode.CONFIGURATION_ERROR.getMessage(), ErrorContext.currentId(), 0));
+            repository.markFailed(item.getId(), item.getOwner(), ErrorCode.CONFIGURATION_ERROR.getMessage(), Instant.now(), true);
             return true;
         }
         TelegramDeliveryResult result;
         try {
             result = sender.get().send(item.getDestination(), item.getMessage());
+            if (result == null) throw new ApplicationException(ErrorCode.INTERNAL_ERROR);
         } catch (RuntimeException error) {
-            result = TelegramDeliveryResult.builder().success(false).retryable(true).error("Không thể gửi thông báo.").build();
+            ErrorDetails details = ErrorClassifier.classify(error);
+            result = TelegramDeliveryResult.builder().success(false).retryable(details.getCode().isRetryable())
+                    .error(details.getMessage()).errorCode(details.getCode().name()).correlationId(details.getCorrelationId())
+                    .retryAfterSeconds(details.getRetryAfterSeconds()).build();
         }
         Instant now = Instant.now();
+        if (!result.isSuccess()) {
+            ErrorCode code = result.isRetryable() ? ErrorCode.UPSTREAM_UNAVAILABLE : ErrorCode.UPSTREAM_REJECTED;
+            if (result.getErrorCode() != null) {
+                try { code = ErrorCode.valueOf(result.getErrorCode()); }
+                catch (IllegalArgumentException ignored) { /* Legacy sender without a known code. */ }
+            }
+            repository.recordFailure(item.getId(), item.getOwner(), new ErrorDetails(code, result.getError(),
+                    ErrorContext.currentId(), result.getRetryAfterSeconds()));
+        }
         if (result.isSuccess()) {
             repository.markSent(item.getId(), item.getOwner(), now);
         } else if (result.getRetryAfterSeconds() > 0) {

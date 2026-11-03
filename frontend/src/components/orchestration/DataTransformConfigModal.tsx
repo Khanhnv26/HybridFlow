@@ -1,3 +1,4 @@
+import { errorMessage } from '../../services/errors';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Check, RefreshCw, Save, Search, Wand2, X } from 'lucide-react';
 import type { ColumnTransformConfig, OrchestrationNodeData, SheetDataResponse, TransformRule } from '../../types';
@@ -24,10 +25,6 @@ interface Props {
   disabled: boolean;
 }
 
-function errorMessage(error: unknown) {
-  const detail = error as { response?: { data?: { message?: string } }; message?: string };
-  return detail.response?.data?.message || detail.message || 'Không hoàn tất thao tác. Vui lòng thử lại.';
-}
 
 const ruleLabel = (rule: TransformRule) => transformRules.find(([type]) => type === rule)?.[1] || rule;
 

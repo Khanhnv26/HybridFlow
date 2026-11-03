@@ -1,3 +1,4 @@
+import { errorMessage } from '../../services/errors';
 import React, { useState } from 'react';
 import { X, RefreshCw, Edit2 } from 'lucide-react';
 import type { SheetDataResponse } from '../../types';
@@ -49,8 +50,7 @@ export const DataTableModal: React.FC<Props> = ({
     try {
       await onUpdateCell(cellRange(data.sheetName, colIndex, rowIndex), value);
     } catch (e) {
-      const err = e as { response?: { data?: { message?: string } }; message?: string };
-      setError(err.response?.data?.message || err.message || 'Không cập nhật được dữ liệu.');
+      setError(errorMessage(e, 'Không cập nhật được dữ liệu.'));
     } finally {
       setPending(false);
     }

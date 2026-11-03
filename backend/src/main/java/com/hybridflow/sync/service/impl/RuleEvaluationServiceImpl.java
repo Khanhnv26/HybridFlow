@@ -1,5 +1,6 @@
 package com.hybridflow.sync.service.impl;
 
+import com.hybridflow.common.exception.ValidationException;
 import com.hybridflow.sync.dto.request.ActionPlan;
 import com.hybridflow.sync.dto.request.RouterConditionItem;
 import com.hybridflow.sync.dto.request.RouterPlan;
@@ -37,29 +38,29 @@ public class RuleEvaluationServiceImpl implements RuleEvaluationService {
         Set<String> actionIds = new HashSet<>();
         for (ActionPlan action : actions) {
             if (action == null || action.getNodeId() == null || action.getNodeId().isBlank()
-                    || !actionIds.add(action.getNodeId())) throw new IllegalArgumentException("Mã khối thông báo không hợp lệ hoặc bị trùng.");
-            if (action.getChatId() == null || action.getChatId().isBlank()) throw new IllegalArgumentException("Điền Telegram Chat ID.");
-            if (action.getChannel() != null && !"TELEGRAM".equals(action.getChannel())) throw new IllegalArgumentException("Kênh thông báo không hợp lệ.");
+                    || !actionIds.add(action.getNodeId())) throw new ValidationException("Mã khối thông báo không hợp lệ hoặc bị trùng.");
+            if (action.getChatId() == null || action.getChatId().isBlank()) throw new ValidationException("Điền Telegram Chat ID.");
+            if (action.getChannel() != null && !"TELEGRAM".equals(action.getChannel())) throw new ValidationException("Kênh thông báo không hợp lệ.");
         }
         for (RouterPlan router : routers) {
             if (router.getActionNodeIds() == null || router.getActionNodeIds().isEmpty()
-                    || !actionIds.containsAll(router.getActionNodeIds())) throw new IllegalArgumentException("Rẽ nhánh cần đích thông báo hợp lệ.");
+                    || !actionIds.containsAll(router.getActionNodeIds())) throw new ValidationException("Rẽ nhánh cần đích thông báo hợp lệ.");
             String triggerOn = router.getTriggerOn() == null ? "CHANGED" : router.getTriggerOn();
             if (!ALLOWED_TRIGGERS.contains(triggerOn)) {
-                throw new IllegalArgumentException("Điều kiện kích hoạt KHI không hợp lệ: " + triggerOn);
+                throw new ValidationException("Điều kiện kích hoạt KHI không hợp lệ: " + triggerOn);
             }
             String matchMode = router.getMatchMode() == null ? "ALL" : router.getMatchMode();
             if (!ALLOWED_MATCH_MODES.contains(matchMode)) {
-                throw new IllegalArgumentException("Chế độ kết hợp điều kiện không hợp lệ: " + matchMode);
+                throw new ValidationException("Chế độ kết hợp điều kiện không hợp lệ: " + matchMode);
             }
             List<RouterConditionItem> conditions = router.getConditions();
             if (conditions == null || conditions.isEmpty()) {
-                throw new IllegalArgumentException("Khối Rẽ Nhánh Điều Kiện cần ít nhất một điều kiện NẾU.");
+                throw new ValidationException("Khối Rẽ Nhánh Điều Kiện cần ít nhất một điều kiện NẾU.");
             }
             for (RouterConditionItem item : conditions) {
                 RuleOperators.validate(item, columnTypes);
                 if (!availableColumns.contains(item.getColumnName())) {
-                    throw new IllegalArgumentException("Cột điều kiện không tồn tại trong luồng: " + item.getColumnName());
+                    throw new ValidationException("Cột điều kiện không tồn tại trong luồng: " + item.getColumnName());
                 }
             }
         }

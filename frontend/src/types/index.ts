@@ -132,6 +132,8 @@ export interface NotificationOutboxItem {
   attempts: number;
   availableAt: string;
   lastError?: string;
+  errorCode?: string;
+  correlationId?: string;
   createdAt: string;
   sentAt?: string;
 }
@@ -291,6 +293,8 @@ export interface RunSyncResponse {
 }
 
 export interface ExecutionHistoryDto {
+  error_code?: string;
+  correlation_id?: string;
   progress?: string | ExecutionPhase[] | null;
   id: string;
   status: string;

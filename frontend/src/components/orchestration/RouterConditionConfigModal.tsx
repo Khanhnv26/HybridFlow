@@ -1,3 +1,4 @@
+import { errorMessage } from '../../services/errors';
 import { useEffect, useState } from 'react';
 import { Plus, Trash2, Split, Save, X, RefreshCw } from 'lucide-react';
 import type { OrchestrationNodeData, RouterConditionItem, RouterMatchMode, RouterOperator, RouterTriggerOn } from '../../types';
@@ -90,8 +91,7 @@ export function RouterConditionConfigModal({
         routerConditions: conditions.map(item => ({ ...item, columnName: item.columnName.trim(), value: !requiresConditionValue(item.operator) ? '' : item.value ?? '' })) });
       onClose();
     } catch (error) {
-      const detail = error as { response?: { data?: { message?: string } }; message?: string };
-      setError(detail.response?.data?.message || detail.message || 'Chưa lưu được. Các điều kiện của bạn vẫn được giữ.');
+      setError(errorMessage(error, 'Chưa lưu được. Các điều kiện của bạn vẫn được giữ.'));
     } finally { setSaving(false); }
   };
 

@@ -1,5 +1,7 @@
 package com.hybridflow.sync.service.impl;
 
+import com.hybridflow.common.dto.ErrorDetails;
+import com.hybridflow.common.util.ErrorClassifier;
 import com.hybridflow.sync.repository.ExecutionHistoryRepository;
 import com.hybridflow.sync.service.ExecutionHistoryService;
 import com.hybridflow.sync.support.SyncJsonCodec;
@@ -24,6 +26,13 @@ public class ExecutionHistoryServiceImpl implements ExecutionHistoryService {
         String executionId = UUID.randomUUID().toString();
         repository.start(executionId, flowId);
         return executionId;
+    }
+
+    @Override
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void fail(String executionId, Throwable exception) {
+        ErrorDetails details = ErrorClassifier.classify(exception);
+        repository.fail(executionId, details);
     }
 
     @Override

@@ -1,9 +1,16 @@
 package com.hybridflow.sync.service.impl;
 
+import com.hybridflow.common.exception.ValidationException;
 import com.hybridflow.sync.dto.request.ColumnTransformConfig;
 import com.hybridflow.sync.service.DataTransformerService;
 import org.springframework.stereotype.Service;
-import java.util.*;
+
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import java.util.Set;
 import java.util.regex.Pattern;
 
 @Service
@@ -35,7 +42,7 @@ public class DataTransformerServiceImpl implements DataTransformerService {
                         case "LOWERCASE" -> value.toLowerCase(Locale.ROOT);
                         case "CAPITALIZE" -> capitalize(value);
                         case "PHONE_VN" -> phone(value);
-                        default -> throw new IllegalArgumentException("Quy tắc chuẩn hóa không hợp lệ: " + rule);
+                        default -> throw new ValidationException("Quy tắc chuẩn hóa không hợp lệ: " + rule);
                     };
                 }
             }
@@ -51,7 +58,7 @@ public class DataTransformerServiceImpl implements DataTransformerService {
             if (config == null || config.getColumnName() == null || !columns.contains(config.getColumnName())
                     || !seen.add(config.getColumnName()) || config.getRules() == null
                     || config.getRules().stream().anyMatch(rule -> rule == null || !RULES.contains(rule)))
-                throw new IllegalArgumentException("Cột hoặc quy tắc chuẩn hóa không hợp lệ.");
+                throw new ValidationException("Cột hoặc quy tắc chuẩn hóa không hợp lệ.");
         }
     }
 

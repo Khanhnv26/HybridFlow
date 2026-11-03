@@ -1,7 +1,5 @@
 package com.hybridflow.connector.google.service.impl;
 
-import com.hybridflow.connector.google.util.SheetValueTypes;
-
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
 import com.google.api.client.googleapis.json.GoogleJsonResponseException;
 import com.google.api.client.json.gson.GsonFactory;
@@ -13,17 +11,23 @@ import com.google.api.services.sheets.v4.model.ValueRange;
 import com.google.auth.http.HttpCredentialsAdapter;
 import com.google.auth.oauth2.AccessToken;
 import com.google.auth.oauth2.GoogleCredentials;
+import com.hybridflow.common.exception.ApplicationException;
+import com.hybridflow.common.exception.ErrorCode;
+import com.hybridflow.common.exception.ValidationException;
+import com.hybridflow.common.util.ExternalErrors;
+import com.hybridflow.connection.service.GoogleCredentialService;
 import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
 import com.hybridflow.connector.google.dto.request.UpdateCellRequest;
 import com.hybridflow.connector.google.dto.response.SheetDataResponse;
 import com.hybridflow.connector.google.dto.response.SpreadsheetMetadataResponse;
 import com.hybridflow.connector.google.dto.response.UpdateCellResponse;
 import com.hybridflow.connector.google.service.GoogleSheetsService;
-import com.hybridflow.connection.service.GoogleCredentialService;
-import com.hybridflow.connection.exception.GoogleReconnectRequiredException;
+import com.hybridflow.connector.google.util.SheetValueTypes;
+import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.net.SocketTimeoutException;
 import java.security.GeneralSecurityException;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -31,14 +35,14 @@ import java.util.List;
 import java.util.Map;
 
 @Service
-@lombok.RequiredArgsConstructor
+@RequiredArgsConstructor
 public class GoogleSheetsServiceImpl implements GoogleSheetsService {
     private final GoogleCredentialService credentials;
 
     protected Sheets createSheetsClient(String accessToken) {
         accessToken = credentials.resolveAccessToken(accessToken);
         if (accessToken == null || accessToken.isBlank() || "ya29.mock".equals(accessToken))
-            throw new IllegalArgumentException("Cần access token Google hợp lệ.");
+            throw new ValidationException("Cần access token Google hợp lệ.");
         try {
             GoogleCredentials credentials = GoogleCredentials.create(new AccessToken(accessToken, null));
             return new Sheets.Builder(
@@ -52,7 +56,7 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
                     .setApplicationName("HybridFlow")
                     .build();
         } catch (GeneralSecurityException | IOException e) {
-            throw new RuntimeException("Lỗi khởi tạo Google Sheets Client: " + e.getMessage(), e);
+            throw new ApplicationException(ErrorCode.CONFIGURATION_ERROR, "Không thể khởi tạo kết nối Google Sheets.", e);
         }
     }
 
@@ -70,19 +74,13 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
                             && (p.getSheetType() == null || "GRID".equals(p.getSheetType())))
                     .map(p -> new SpreadsheetMetadataResponse.SheetTab(p.getSheetId(), p.getTitle()))
                     .toList();
-            if (tabs.isEmpty()) throw new IllegalArgumentException("File không có trang tính dạng bảng có thể đồng bộ.");
+            if (tabs.isEmpty()) throw new ValidationException("File không có trang tính dạng bảng có thể đồng bộ.");
             return new SpreadsheetMetadataResponse(request.getSpreadsheetId(),
                     metadata.getProperties() == null ? "" : metadata.getProperties().getTitle(), tabs);
         } catch (GoogleJsonResponseException e) {
-            if (e.getStatusCode() == 401) throw new GoogleReconnectRequiredException();
-            throw new IllegalArgumentException(switch (e.getStatusCode()) {
-                case 401 -> "Phiên Google hết hạn. Kết nối lại Google để tải danh sách trang tính.";
-                case 403 -> "Tài khoản Google chưa có quyền đọc file này. Kiểm tra quyền chia sẻ hoặc kết nối tài khoản khác.";
-                case 404 -> "Không tìm thấy file Google Sheets hoặc tài khoản chưa có quyền truy cập.";
-                default -> "Google chưa tải được danh sách trang tính. Vui lòng thử lại.";
-            }, e);
+            throw googleFailure(e);
         } catch (IOException e) {
-            throw new IllegalStateException("Không thể tải danh sách trang tính từ Google. Vui lòng thử lại.", e);
+            throw new ApplicationException(e instanceof SocketTimeoutException ? ErrorCode.UPSTREAM_TIMEOUT : ErrorCode.UPSTREAM_UNAVAILABLE, "Chưa kết nối được Google Sheets. Vui lòng thử lại sau.", e);
         }
     }
 
@@ -102,7 +100,7 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
                     .toList();
 
             if (availableSheetNames.isEmpty()) {
-                throw new RuntimeException("Spreadsheet không có sheet nào!");
+                throw new ValidationException("File không có trang tính nào để đọc.");
             }
 
             //Xác định sheetName cần đọc:
@@ -119,7 +117,7 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
                         .orElse(null);
 
                 if (targetSheetName == null) {
-                    throw new IllegalArgumentException(
+                    throw new ValidationException(
                             "Không tìm thấy tab '" + inputName + "'. Các tab hiện có trong Google Sheet: " + availableSheetNames
                     );
                 }
@@ -186,16 +184,9 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
                     .build();
 
         } catch (GoogleJsonResponseException e) {
-            if (e.getStatusCode() == 401) throw new GoogleReconnectRequiredException();
-            throw new IllegalArgumentException(switch (e.getStatusCode()) {
-                case 401 -> "Phiên Google đã hết hạn. Kết nối Google lại để đọc dữ liệu.";
-                case 403 -> "Tài khoản Google chưa có quyền đọc file này. Kiểm tra quyền chia sẻ file.";
-                case 404 -> "Không tìm thấy file Google Sheet. Kiểm tra link hoặc quyền truy cập.";
-                case 429 -> "Google đang giới hạn lượt đọc. Chờ một lát rồi thử lại.";
-                default -> "Google chưa trả được dữ liệu. Vui lòng thử lại sau.";
-            }, e);
+            throw googleFailure(e);
         } catch (IOException e) {
-            throw new IllegalStateException("Không kết nối được Google để đọc dữ liệu. Kiểm tra mạng rồi thử lại.", e);
+            throw new ApplicationException(e instanceof SocketTimeoutException ? ErrorCode.UPSTREAM_TIMEOUT : ErrorCode.UPSTREAM_UNAVAILABLE, "Chưa kết nối được Google Sheets. Vui lòng thử lại sau.", e);
         }
     }
 
@@ -203,7 +194,7 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
     public UpdateCellResponse updateCell(UpdateCellRequest request) {
         requireText(request.getSpreadsheetId(), "Spreadsheet ID");
         requireText(request.getRange(), "Vị trí ô");
-        if (request.getValue() == null) throw new IllegalArgumentException("Giá trị ô không được null. Dùng chuỗi trống để xóa nội dung.");
+        if (request.getValue() == null) throw new ValidationException("Giá trị ô không được null. Dùng chuỗi trống để xóa nội dung.");
         Sheets sheets = createSheetsClient(request.getAccessToken());
 
         try {
@@ -221,10 +212,9 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
                     .build();
 
         } catch (GoogleJsonResponseException e) {
-            if (e.getStatusCode() == 401) throw new GoogleReconnectRequiredException();
-            throw new IllegalStateException("Không thể cập nhật ô trên Google Sheets.");
+            throw googleFailure(e);
         } catch (IOException e) {
-            throw new IllegalStateException("Không thể kết nối Google để cập nhật ô.");
+            throw new ApplicationException(e instanceof SocketTimeoutException ? ErrorCode.UPSTREAM_TIMEOUT : ErrorCode.UPSTREAM_UNAVAILABLE, "Chưa kết nối được Google Sheets. Vui lòng thử lại sau.", e);
         }
     }
 
@@ -242,14 +232,25 @@ public class GoogleSheetsServiceImpl implements GoogleSheetsService {
             createSheetsClient(accessToken).spreadsheets().values().batchUpdate(spreadsheetId,
                     new BatchUpdateValuesRequest().setValueInputOption("RAW").setData(ranges)).execute();
         } catch (GoogleJsonResponseException e) {
-            if (e.getStatusCode() == 401) throw new GoogleReconnectRequiredException();
-            throw new IllegalStateException("Không thể ghi dữ liệu đồng bộ vào Google Sheets.");
+            throw googleFailure(e);
         } catch (IOException e) {
-            throw new IllegalStateException("Không thể ghi dữ liệu đồng bộ vào Google Sheets.");
+            throw new ApplicationException(e instanceof SocketTimeoutException ? ErrorCode.UPSTREAM_TIMEOUT : ErrorCode.UPSTREAM_UNAVAILABLE, "Chưa kết nối được Google Sheets. Vui lòng thử lại sau.", e);
         }
     }
 
+    private ApplicationException googleFailure(GoogleJsonResponseException exception) {
+        int status = exception.getStatusCode();
+        if (status == 403 && exception.getDetails() != null && exception.getDetails().getErrors() != null
+                && exception.getDetails().getErrors().stream().anyMatch(error -> error != null && error.getReason() != null && List.of("rateLimitExceeded", "userRateLimitExceeded", "quotaExceeded").contains(error.getReason()))) status = 429;
+        int retryAfter = 0;
+        try {
+            if (exception.getHeaders() != null && exception.getHeaders().getRetryAfter() != null)
+                retryAfter = Math.min(86400, Math.max(0, Integer.parseInt(exception.getHeaders().getRetryAfter())));
+        } catch (NumberFormatException ignored) { /* Retry with local backoff if the provider uses an HTTP date. */ }
+        return ExternalErrors.google(status, retryAfter);
+    }
+
     private static void requireText(String value, String label) {
-        if (value == null || value.isBlank()) throw new IllegalArgumentException(label + " không được để trống.");
+        if (value == null || value.isBlank()) throw new ValidationException(label + " không được để trống.");
     }
 }

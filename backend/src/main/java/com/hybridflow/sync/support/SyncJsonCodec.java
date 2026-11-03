@@ -3,6 +3,8 @@ package com.hybridflow.sync.support;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hybridflow.common.exception.ApplicationException;
+import com.hybridflow.common.exception.ErrorCode;
 import com.hybridflow.sync.dto.request.SheetEndpointRequest;
 import com.hybridflow.sync.model.SheetWritePlan;
 import lombok.RequiredArgsConstructor;
@@ -21,7 +23,7 @@ public class SyncJsonCodec {
         try {
             return mapper.writeValueAsString(value);
         } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("Không thể mã hóa dữ liệu.", exception);
+            throw new ApplicationException(ErrorCode.INTERNAL_ERROR, "Không thể mã hóa dữ liệu.", exception);
         }
     }
 
@@ -29,7 +31,7 @@ public class SyncJsonCodec {
         try {
             return mapper.readValue(value, new TypeReference<Map<String, String>>() {});
         } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("Dữ liệu snapshot không hợp lệ.", exception);
+            throw new ApplicationException(ErrorCode.INTERNAL_ERROR, "Dữ liệu snapshot không hợp lệ.", exception);
         }
     }
 
@@ -37,7 +39,7 @@ public class SyncJsonCodec {
         try {
             return mapper.readValue(value, new TypeReference<List<String>>() {});
         } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("Cấu trúc cột lưu không hợp lệ.", exception);
+            throw new ApplicationException(ErrorCode.INTERNAL_ERROR, "Cấu trúc cột lưu không hợp lệ.", exception);
         }
     }
 
@@ -50,7 +52,7 @@ public class SyncJsonCodec {
             return mapper.readValue(value, new TypeReference<List<SheetEndpointRequest>>() {
             });
         } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("Danh sách Sheet lưu không hợp lệ.", exception);
+            throw new ApplicationException(ErrorCode.INTERNAL_ERROR, "Danh sách Sheet lưu không hợp lệ.", exception);
         }
     }
 
@@ -58,7 +60,7 @@ public class SyncJsonCodec {
         try {
             return mapper.readValue(value, new TypeReference<List<SheetWritePlan>>() {});
         } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("Nhật ký ghi Sheet không hợp lệ.", exception);
+            throw new ApplicationException(ErrorCode.INTERNAL_ERROR, "Nhật ký ghi Sheet không hợp lệ.", exception);
         }
     }
 
@@ -69,7 +71,7 @@ public class SyncJsonCodec {
         try {
             return mapper.readValue(value, new TypeReference<LinkedHashMap<String, String>>() {});
         } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("Danh sách giá trị xung đột không hợp lệ.", exception);
+            throw new ApplicationException(ErrorCode.INTERNAL_ERROR, "Danh sách giá trị xung đột không hợp lệ.", exception);
         }
     }
 }

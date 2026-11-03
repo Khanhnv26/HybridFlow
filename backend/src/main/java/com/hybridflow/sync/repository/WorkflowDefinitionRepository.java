@@ -5,9 +5,13 @@ import com.hybridflow.sync.model.ScheduledWorkflowRow;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+
 import java.sql.Timestamp;
 import java.time.Instant;
-import java.util.*;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Optional;
 
 @Repository @RequiredArgsConstructor
 public class WorkflowDefinitionRepository {
@@ -86,14 +90,14 @@ public class WorkflowDefinitionRepository {
     }
 
     public void resumeAfterManualRun(String workflowId) {
-        jdbc.update("UPDATE workflow_jobs SET state='CANCELLED',error=NULL WHERE workflow_id=? AND state IN ('NEEDS_BOOTSTRAP','DEAD')", workflowId);
+        jdbc.update("UPDATE workflow_jobs SET state='CANCELLED',error=NULL,error_code=NULL WHERE workflow_id=? AND state IN ('NEEDS_BOOTSTRAP','DEAD')", workflowId);
     }
 
     public Map<String, Object> scheduleStatus(String workflowId) {
         List<Map<String, Object>> rows = jdbc.queryForList("""
                 SELECT d.schedule_enabled AS enabled,d.next_run_at,d.last_run_at,d.schedule_timezone,
-                    j.state,j.error,j.attempts FROM workflow_definitions d
-                LEFT JOIN LATERAL (SELECT state,error,attempts FROM workflow_jobs WHERE workflow_id=d.flow_id
+                    j.state,j.error,j.error_code,j.correlation_id,j.attempts FROM workflow_definitions d
+                LEFT JOIN LATERAL (SELECT state,error,error_code,correlation_id,attempts FROM workflow_jobs WHERE workflow_id=d.flow_id
                     ORDER BY scheduled_at DESC LIMIT 1) j ON TRUE WHERE d.flow_id=?
                 """, workflowId);
         return rows.isEmpty() ? Map.of("enabled", false) : rows.getFirst();

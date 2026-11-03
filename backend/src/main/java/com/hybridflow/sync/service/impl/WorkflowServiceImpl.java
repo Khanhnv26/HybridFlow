@@ -4,6 +4,9 @@ import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.hybridflow.common.exception.ApplicationException;
+import com.hybridflow.common.exception.ErrorCode;
+import com.hybridflow.common.exception.ValidationException;
 import com.hybridflow.connection.exception.GoogleReconnectRequiredException;
 import com.hybridflow.connection.service.GoogleCredentialService;
 import com.hybridflow.sync.dto.request.RunSyncRequest;
@@ -74,7 +77,7 @@ public class WorkflowServiceImpl implements WorkflowService {
         try {
             return sanitize(mapper.readTree(definition.get()));
         } catch (JsonProcessingException exception) {
-            throw new IllegalStateException("Không thể đọc cấu hình luồng.", exception);
+            throw new ApplicationException(ErrorCode.INTERNAL_ERROR, "Không thể đọc cấu hình luồng.", exception);
         }
     }
 
@@ -83,13 +86,13 @@ public class WorkflowServiceImpl implements WorkflowService {
     public SaveWorkflowResponse saveDefinition(String workflowId, JsonNode definition) {
         validateId(workflowId);
         if (definition == null || !definition.path("nodes").isArray() || !definition.path("edges").isArray()) {
-            throw new IllegalArgumentException("Cấu hình luồng không hợp lệ.");
+            throw new ValidationException("Cấu hình luồng không hợp lệ.");
         }
         ParsedSchedule schedule = parser.extractSchedule(definition, clock.instant());
         String accessToken = definition.path("accessToken").asText(null);
         String connection = accessToken != null && accessToken.startsWith("gconn-") ? accessToken : null;
         if (schedule.isEnabled()) {
-            parser.buildSyncRequest(workflowId, definition, "validation").orElseThrow(() -> new IllegalArgumentException("Cấu hình luồng chưa hợp lệ."));
+            parser.buildSyncRequest(workflowId, definition, "validation").orElseThrow(() -> new ValidationException("Cấu hình luồng chưa hợp lệ."));
             String resolved = connection != null ? connection : repository.findConnection(workflowId).orElseThrow(GoogleReconnectRequiredException::new);
             credentials.resolveAccessToken(resolved);
         }
@@ -103,7 +106,7 @@ public class WorkflowServiceImpl implements WorkflowService {
         String connection = repository.findConnection(workflowId).orElseThrow(GoogleReconnectRequiredException::new);
         credentials.resolveAccessToken(connection);
         RunSyncRequest request = parser.buildSyncRequest(workflowId, definition, connection)
-                .orElseThrow(() -> new IllegalArgumentException("Cấu hình luồng chưa hợp lệ."));
+                .orElseThrow(() -> new ValidationException("Cấu hình luồng chưa hợp lệ."));
         request.setBootstrapConfirmed(bootstrapConfirmed);
         RunSyncResponse response = execution.executeSync(request);
         if (!response.isBootstrapRequired()) repository.resumeAfterManualRun(workflowId);
@@ -135,13 +138,13 @@ public class WorkflowServiceImpl implements WorkflowService {
     @Transactional
     public void retryNotification(String id) {
         if (id == null || id.isBlank()) {
-            throw new IllegalArgumentException("Mã thông báo không hợp lệ.");
+            throw new ValidationException("Mã thông báo không hợp lệ.");
         }
         outboxService.retry(id);
     }
 
     private JsonNode sanitize(JsonNode definition) {
-        if (!definition.isObject()) throw new IllegalArgumentException("Cấu hình luồng không hợp lệ.");
+        if (!definition.isObject()) throw new ValidationException("Cấu hình luồng không hợp lệ.");
         ObjectNode clean = ((ObjectNode) definition).deepCopy();
         clean.remove(List.of("accessToken", "refreshToken", "googleConnectionId"));
         return clean;
@@ -149,7 +152,7 @@ public class WorkflowServiceImpl implements WorkflowService {
 
     private void validateId(String id) {
         if (id == null || id.isBlank() || id.length() > 100) {
-            throw new IllegalArgumentException("Mã luồng không hợp lệ.");
+            throw new ValidationException("Mã luồng không hợp lệ.");
         }
     }
 }

@@ -1,5 +1,6 @@
 package com.hybridflow.sync.scheduler;
 
+import com.hybridflow.common.util.ErrorReporter;
 import com.hybridflow.sync.service.NotificationOutboxService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -19,8 +20,10 @@ public class NotificationOutboxRunner {
         if (!enabled) return;
         int maxPerCycle = 10;
         int processed = 0;
-        while (processed < maxPerCycle && outboxService.processNext()) {
-            processed++;
+        try {
+            while (processed < maxPerCycle && outboxService.processNext()) processed++;
+        } catch (RuntimeException exception) {
+            ErrorReporter.report(exception);
         }
     }
 }

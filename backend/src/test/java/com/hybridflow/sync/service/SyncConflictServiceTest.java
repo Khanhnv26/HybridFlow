@@ -1,28 +1,51 @@
 package com.hybridflow.sync.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hybridflow.common.exception.ApplicationException;
+import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
 import com.hybridflow.connector.google.dto.response.SheetDataResponse;
 import com.hybridflow.connector.google.service.GoogleSheetsService;
 import com.hybridflow.notification.service.TelegramNotificationService;
+import com.hybridflow.sync.dto.request.ColumnTransformConfig;
 import com.hybridflow.sync.dto.request.RunSyncRequest;
 import com.hybridflow.sync.dto.request.SheetEndpointRequest;
 import com.hybridflow.sync.entity.SyncConflict;
 import com.hybridflow.sync.model.SyncDiffResult;
 import com.hybridflow.sync.repository.SyncConflictRepository;
+import com.hybridflow.sync.service.impl.DataTransformerServiceImpl;
 import com.hybridflow.sync.service.impl.SyncConflictServiceImpl;
 import com.hybridflow.sync.support.SyncJsonCodec;
+import com.hybridflow.sync.util.SheetEndpointUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.Spy;
 import org.mockito.junit.jupiter.MockitoExtension;
 
-import java.util.*;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class SyncConflictServiceTest {
@@ -32,7 +55,7 @@ class SyncConflictServiceTest {
     @Mock SheetWriteService writes;
     @Mock TelegramNotificationService notifications;
     @Spy SyncJsonCodec codec = new SyncJsonCodec(new ObjectMapper());
-    @Spy com.hybridflow.sync.service.impl.DataTransformerServiceImpl transformer = new com.hybridflow.sync.service.impl.DataTransformerServiceImpl();
+    @Spy DataTransformerServiceImpl transformer = new DataTransformerServiceImpl();
     @InjectMocks SyncConflictServiceImpl service;
     private SyncConflict conflict() { return SyncConflict.builder().id(1L).flowId("flow").spreadsheetId("sheet")
             .sheetName("Data").idColumn("id").recordId("1").columnName("status")
@@ -49,7 +72,7 @@ class SyncConflictServiceTest {
     @Test void resolvingWritesSheetVaultAndCheckpointBeforeMarkingResolved() {
         givenConflict("SHIPPING");
         service.resolveConflict(1L, "CANCELLED", "test-token");
-        org.mockito.InOrder order = inOrder(sheets, store, repository);
+        InOrder order = inOrder(sheets, store, repository);
         order.verify(sheets).updateCells("test-token", "sheet", Map.of("'Data'!B2", "CANCELLED"));
         order.verify(store).saveVaultRecord("flow", "1", Map.of("id", "1", "status", "CANCELLED"));
         order.verify(store).saveSnapshot("flow", "1", Map.of("id", "1", "status", "CANCELLED"));
@@ -65,7 +88,7 @@ class SyncConflictServiceTest {
     }
     @Test void staleDecisionIsRejectedWithoutWriting() {
         givenConflict("DELIVERED");
-        assertThrows(IllegalArgumentException.class, () -> service.resolveConflict(1L, "SHIPPING", "test-token"));
+        assertThrows(ApplicationException.class, () -> service.resolveConflict(1L, "SHIPPING", "test-token"));
         verify(sheets, never()).updateCells(anyString(), anyString(), anyMap());
         verify(repository, never()).save(any());
     }
@@ -86,7 +109,7 @@ class SyncConflictServiceTest {
         SyncConflict resolved = conflict();
         resolved.setStatus("RESOLVED");
         when(repository.findById(1L)).thenReturn(Optional.of(resolved));
-        assertThrows(IllegalArgumentException.class, () -> service.resendTelegramAlert(1L, "123"));
+        assertThrows(ApplicationException.class, () -> service.resendTelegramAlert(1L, "123"));
         verifyNoInteractions(notifications);
     }
 
@@ -195,11 +218,11 @@ class SyncConflictServiceTest {
         when(repository.findFlowIdById(1L)).thenReturn(Optional.of("flow"));
         when(repository.findLockedById(1L)).thenReturn(Optional.of(conflict));
         when(sheets.readSheet(any())).thenAnswer(inv -> {
-            com.hybridflow.connector.google.dto.request.ReadSheetRequest request = inv.getArgument(0);
+            ReadSheetRequest request = inv.getArgument(0);
             return SheetDataResponse.builder().sheetName("Data").headers(List.of("id", "status"))
                     .rows(List.of(Map.of("id", "1", "status", request.getSpreadsheetId().equals("a") ? "SHIPPING" : "LATER_EDIT"))).build();
         });
-        assertThrows(IllegalArgumentException.class, () -> service.resolveConflict(1L, "CANCELLED", "test-token"));
+        assertThrows(ApplicationException.class, () -> service.resolveConflict(1L, "CANCELLED", "test-token"));
         verify(writes, never()).apply(anyString(), anyList());
         verify(store, never()).saveSnapshot(anyString(), anyString(), anyMap());
     }
@@ -211,19 +234,19 @@ class SyncConflictServiceTest {
     }
 
     @Test void normalizedMultiSheetConflictCanBeResolvedAgainstRawSheetValues() {
-        var rules = List.of(new com.hybridflow.sync.dto.request.ColumnTransformConfig("id", List.of("TRIM", "UPPERCASE"), null),
-                new com.hybridflow.sync.dto.request.ColumnTransformConfig("status", List.of("TRIM", "UPPERCASE"), null));
-        var endpoints = List.of(SheetEndpointRequest.builder().spreadsheetId("a").sheetName("Data").transforms(rules).build(),
+        List<ColumnTransformConfig> rules = List.of(new ColumnTransformConfig("id", List.of("TRIM", "UPPERCASE"), null),
+                new ColumnTransformConfig("status", List.of("TRIM", "UPPERCASE"), null));
+        List<SheetEndpointRequest> endpoints = List.of(SheetEndpointRequest.builder().spreadsheetId("a").sheetName("Data").transforms(rules).build(),
                 SheetEndpointRequest.builder().spreadsheetId("b").sheetName("Data").build());
-        var observed = new LinkedHashMap<String, String>();
-        observed.put(com.hybridflow.sync.util.SheetEndpointUtils.identity(endpoints.getFirst()), "SHIPPING");
-        observed.put(com.hybridflow.sync.util.SheetEndpointUtils.identity(endpoints.get(1)), "CANCELLED");
-        var conflict = conflict(); conflict.setRecordId("SP01"); conflict.setEndpointsJson(codec.encode(endpoints));
+        Map<String, String> observed = new LinkedHashMap<String, String>();
+        observed.put(SheetEndpointUtils.identity(endpoints.getFirst()), "SHIPPING");
+        observed.put(SheetEndpointUtils.identity(endpoints.get(1)), "CANCELLED");
+        SyncConflict conflict = conflict(); conflict.setRecordId("SP01"); conflict.setEndpointsJson(codec.encode(endpoints));
         conflict.setObservationsJson(codec.encode(observed));
         when(repository.findFlowIdById(1L)).thenReturn(Optional.of("flow"));
         when(repository.findLockedById(1L)).thenReturn(Optional.of(conflict));
         when(sheets.readSheet(any())).thenAnswer(inv -> {
-            var read = (com.hybridflow.connector.google.dto.request.ReadSheetRequest) inv.getArgument(0);
+            ReadSheetRequest read = (ReadSheetRequest) inv.getArgument(0);
             boolean first = read.getSpreadsheetId().equals("a");
             return SheetDataResponse.builder().sheetName("Data").headers(List.of("id", "status"))
                     .rows(List.of(Map.of("id", first ? " sp01 " : "SP01", "status", first ? " shipping " : "CANCELLED"))).build();

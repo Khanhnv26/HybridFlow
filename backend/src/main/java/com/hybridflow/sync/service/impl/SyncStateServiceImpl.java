@@ -1,5 +1,6 @@
 package com.hybridflow.sync.service.impl;
 
+import com.hybridflow.common.exception.ValidationException;
 import com.hybridflow.sync.dto.request.SheetEndpointRequest;
 import com.hybridflow.sync.model.SyncFlowBinding;
 import com.hybridflow.sync.repository.SyncFlowBindingRepository;
@@ -60,7 +61,7 @@ public class SyncStateServiceImpl implements SyncStateService {
                     || !Objects.equals(binding.getIdColumn(), idColumn)
                     || !Objects.equals(binding.getStorageName(), storageName)
                     || !Objects.equals(binding.getHeaders(), headers)) {
-                throw new IllegalArgumentException("Nguồn hoặc cấu trúc cột đã đổi. Tạo luồng mới và xác nhận khởi tạo lại.");
+                throw new ValidationException("Nguồn hoặc cấu trúc cột đã đổi. Tạo luồng mới và xác nhận khởi tạo lại.");
             }
             return;
         }
@@ -78,7 +79,7 @@ public class SyncStateServiceImpl implements SyncStateService {
                     || !Objects.equals(binding.getHeaders(), commonColumns)
                     || !Objects.equals(binding.getEndpoints() == null ? null : binding.getEndpoints().stream().map(SheetEndpointUtils::identity).toList(),
                             endpoints.stream().map(SheetEndpointUtils::identity).toList())) {
-                throw new IllegalArgumentException("Nguồn hoặc cấu trúc cột chung giữa các Sheet đã đổi. Tạo luồng mới và xác nhận khởi tạo lại.");
+                throw new ValidationException("Nguồn hoặc cấu trúc cột chung giữa các Sheet đã đổi. Tạo luồng mới và xác nhận khởi tạo lại.");
             }
             return;
         }

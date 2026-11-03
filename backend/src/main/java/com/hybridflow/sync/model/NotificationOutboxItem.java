@@ -29,6 +29,8 @@ public class NotificationOutboxItem {
     private Instant leaseUntil;
     private String owner;
     private String lastError;
+    private String errorCode;
+    private String correlationId;
     private Instant createdAt;
     private Instant sentAt;
 }

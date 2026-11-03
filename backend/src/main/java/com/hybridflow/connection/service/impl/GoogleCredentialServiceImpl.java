@@ -1,6 +1,8 @@
 package com.hybridflow.connection.service.impl;
 
 import com.google.api.client.googleapis.auth.oauth2.GoogleTokenResponse;
+import com.hybridflow.common.exception.ApplicationException;
+import com.hybridflow.common.exception.ErrorCode;
 import com.hybridflow.connection.exception.GoogleReconnectRequiredException;
 import com.hybridflow.connection.model.GoogleConnection;
 import com.hybridflow.connection.repository.GoogleConnectionRepository;
@@ -12,6 +14,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.support.TransactionTemplate;
+
 import java.time.Clock;
 import java.util.UUID;
 
@@ -53,7 +56,7 @@ public class GoogleCredentialServiceImpl implements GoogleCredentialService {
             }
             try {
                 GoogleTokenResponse token = oauth.refreshToken(cipher.decrypt(connection.getRefreshToken()));
-                if (token.getAccessToken() == null || token.getExpiresInSeconds() == null) throw new IllegalStateException("Google trả về token không hợp lệ.");
+                if (token.getAccessToken() == null || token.getExpiresInSeconds() == null) throw new ApplicationException(ErrorCode.UPSTREAM_FAILURE, "Google trả về token không hợp lệ.");
                 repository.save(new GoogleConnection(reference, cipher.encrypt(token.getAccessToken()),
                         token.getRefreshToken() == null ? connection.getRefreshToken() : cipher.encrypt(token.getRefreshToken()),
                         clock.instant().plusSeconds(token.getExpiresInSeconds()), "ACTIVE"));

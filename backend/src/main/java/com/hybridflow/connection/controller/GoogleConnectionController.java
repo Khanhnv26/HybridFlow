@@ -1,5 +1,6 @@
 package com.hybridflow.connection.controller;
 
+import com.hybridflow.connection.dto.GoogleOAuthCallbackResponse;
 import com.hybridflow.connection.dto.GoogleOAuthConfigResponse;
 import com.hybridflow.connection.service.GoogleConnectionService;
 import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
@@ -37,8 +38,10 @@ public class GoogleConnectionController {
     }
 
     @GetMapping(value = "/callback", produces = MediaType.TEXT_HTML_VALUE)
-    public ResponseEntity<String> handleGoogleOAuthCallback(@RequestParam("code") String code) {
-        return ResponseEntity.ok(connectionService.completeAuthorization(code));
+    public ResponseEntity<String> handleGoogleOAuthCallback(@RequestParam(value = "code", required = false) String code,
+                                                            @RequestParam(value = "error", required = false) String error) {
+        GoogleOAuthCallbackResponse result = connectionService.completeAuthorization(code, error);
+        return ResponseEntity.status(result.getStatus()).contentType(MediaType.TEXT_HTML).body(result.getHtml());
     }
 
     @PostMapping("/sheets/read")

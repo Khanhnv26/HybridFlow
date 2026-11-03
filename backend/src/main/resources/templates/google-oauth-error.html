@@ -1,0 +1,16 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head><meta charset="UTF-8"><title>Chưa kết nối Google</title></head>
+<body style="font-family:sans-serif;padding:2rem;">
+    <h2>Chưa kết nối được Google</h2>
+    <p id="message"></p>
+    <p id="reference"></p>
+    <p>Bạn có thể đóng cửa sổ này và thử kết nối lại trong HybridFlow.</p>
+    <script>
+        const failure = { type: 'GOOGLE_OAUTH_ERROR', code: {{ERROR_CODE}}, message: {{ERROR_MESSAGE}}, correlationId: {{CORRELATION_ID}} };
+        document.getElementById('message').textContent = failure.message;
+        document.getElementById('reference').textContent = 'Mã tra cứu: ' + failure.correlationId;
+        if (window.opener) window.opener.postMessage(failure, {{FRONTEND_ORIGIN}});
+    </script>
+</body>
+</html>

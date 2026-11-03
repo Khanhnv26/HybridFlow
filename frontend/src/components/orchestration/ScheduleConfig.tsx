@@ -1,3 +1,4 @@
+import { errorMessage } from '../../services/errors';
 import { useEffect, useState } from 'react';
 import { workflowService } from '../../services/api';
 import { Clock, Save, X, Check, Calendar, Timer, Globe, AlertTriangle } from 'lucide-react';
@@ -78,8 +79,7 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId }: 
       });
       onClose();
     } catch (e) {
-      const err = e as { message?: string };
-      setError(err.message || 'Lưu cấu hình thất bại.');
+      setError(errorMessage(e, 'Lưu cấu hình thất bại.'));
     } finally {
       setSaving(false);
     }

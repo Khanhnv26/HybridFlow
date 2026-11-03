@@ -1,3 +1,4 @@
+import { errorDetails, errorMessage as message } from './services/errors';
 import React, { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ReactFlow,
@@ -120,10 +121,6 @@ function draft(): { nodes: Node<OrchestrationNodeData>[]; edges: Edge[] } {
     /* A malformed local draft must not stop the editor from opening. */
   }
   return { nodes: initialNodes, edges: initialEdges };
-}
-function message(error: unknown) {
-  const err = error as { response?: { data?: { message?: string } }; message?: string };
-  return err.response?.data?.message || err.message || 'Không thể kết nối máy chủ.';
 }
 
 export default function App() {
@@ -273,6 +270,11 @@ export default function App() {
     const handle = (event: MessageEvent) => {
       if (event.origin !== oauthOrigin.current || event.source !== popup.current || !popup.current)
         return;
+      if (event.data?.type === 'GOOGLE_OAUTH_ERROR') {
+        showToast(message({ response: { data: event.data } }));
+        popup.current = null;
+        return;
+      }
       if (
         event.data?.type === 'GOOGLE_OAUTH_SUCCESS' &&
         typeof event.data.accessToken === 'string'
@@ -430,6 +432,7 @@ export default function App() {
         await refreshRunData(id);
         await refreshSources();
       } catch (error) {
+        if (errorDetails(error).code === 'CONNECTION_REQUIRED') setConnected(false);
         showToast(message(error));
         if (id) {
           await refreshRunData(id).catch(() => {});

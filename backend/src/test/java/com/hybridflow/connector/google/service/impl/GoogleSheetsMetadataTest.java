@@ -3,14 +3,20 @@ package com.hybridflow.connector.google.service.impl;
 import com.google.api.client.http.HttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.client.testing.http.MockHttpTransport;
-import com.google.api.client.testing.http.MockLowLevelHttpResponse;
 import com.google.api.client.testing.http.MockLowLevelHttpRequest;
+import com.google.api.client.testing.http.MockLowLevelHttpResponse;
 import com.google.api.services.sheets.v4.Sheets;
+import com.hybridflow.common.exception.ApplicationException;
+import com.hybridflow.connection.service.GoogleCredentialService;
 import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
+import com.hybridflow.connector.google.dto.response.SheetDataResponse;
 import com.hybridflow.connector.google.dto.response.SpreadsheetMetadataResponse;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 class GoogleSheetsMetadataTest {
     private GoogleSheetsServiceImpl service(int statusCode, String body) {
@@ -22,7 +28,7 @@ class GoogleSheetsMetadataTest {
         };
         Sheets client = new Sheets.Builder(transport, GsonFactory.getDefaultInstance(), null)
                 .setApplicationName("HybridFlow test").build();
-        return new GoogleSheetsServiceImpl(org.mockito.Mockito.mock(com.hybridflow.connection.service.GoogleCredentialService.class)) {
+        return new GoogleSheetsServiceImpl(Mockito.mock(GoogleCredentialService.class)) {
             @Override protected Sheets createSheetsClient(String accessToken) { return client; }
         };
     }
@@ -43,15 +49,15 @@ class GoogleSheetsMetadataTest {
         assertEquals("Products", response.getSheets().get(1).getTitle());
     }
     @Test void inaccessibleFileReturnsAnActionableErrorInsteadOfFakeTabs() {
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
+        ApplicationException error = assertThrows(ApplicationException.class, () ->
                 service(403, "{\"error\":{\"code\":403,\"message\":\"Forbidden\"}}").getMetadata(request()));
-        assertTrue(error.getMessage().contains("quyền đọc"));
+        assertTrue(error.getMessage().contains("quyền truy cập"));
     }
     @Test void emptySpreadsheetDoesNotProduceASampleTab() {
         assertThrows(IllegalArgumentException.class, () -> service(200, "{\"sheets\":[]}").getMetadata(request()));
     }
     @Test void dataReadIncludesActualFileTitleAndTabName() {
-        com.hybridflow.connector.google.dto.response.SheetDataResponse data = service(200, """
+        SheetDataResponse data = service(200, """
                 {"properties":{"title":"Kho Hà Nội"},"sheets":[{"properties":{"title":"Tồn kho"}}],
                 "values":[["id","quantity"],["SP01",12]]}
                 """).readSheet(request());
@@ -60,15 +66,15 @@ class GoogleSheetsMetadataTest {
         assertEquals(1, data.getTotalRows());
     }
     @Test void emptyDataStillIdentifiesItsFileAndTab() {
-        com.hybridflow.connector.google.dto.response.SheetDataResponse data = service(200, """
+        SheetDataResponse data = service(200, """
                 {"properties":{"title":"Empty workbook"},"sheets":[{"properties":{"title":"Data"}}]}
                 """).readSheet(request());
         assertEquals("Empty workbook", data.getSpreadsheetTitle());
         assertEquals(0, data.getTotalRows());
     }
     @Test void failedDataReadExplainsPermissionsWithoutDumpingProviderDetails() {
-        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () ->
+        ApplicationException error = assertThrows(ApplicationException.class, () ->
                 service(403, "{\"error\":{\"code\":403,\"message\":\"Forbidden\"}}").readSheet(request()));
-        assertTrue(error.getMessage().contains("quyền đọc"));
+        assertTrue(error.getMessage().contains("quyền truy cập"));
     }
 }

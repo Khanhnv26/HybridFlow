@@ -1,3 +1,4 @@
+import { errorMessage } from '../../services/errors';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink, Link, Play, RefreshCw, Save, X } from 'lucide-react';
 import { ExcelIcon } from '../icons/BrandIcons';
@@ -24,14 +25,6 @@ interface Props {
   onSave: (source: Partial<OrchestrationNodeData>) => Promise<void>;
 }
 
-function errorMessage(error: unknown) {
-  const detail = error as { response?: { data?: { message?: string } }; message?: string };
-  return (
-    detail.response?.data?.message ||
-    detail.message ||
-    'Không thể kết nối Google. Vui lòng thử lại.'
-  );
-}
 
 export function SheetSourceConfig({
   data,

@@ -5,6 +5,7 @@ import java.util.Map;
 
 public interface ExecutionHistoryService {
     String start(String flowId);
+    void fail(String executionId, Throwable exception);
     void finish(String executionId, String status, Object result, String error);
     void phase(String executionId, List<String> nodeIds, String stage, String label);
     List<Map<String, Object>> list(String flowId);

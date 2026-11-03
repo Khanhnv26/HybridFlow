@@ -1,6 +1,7 @@
 package com.hybridflow.sync.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hybridflow.common.exception.ApplicationException;
 import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
 import com.hybridflow.connector.google.dto.response.SheetDataResponse;
 import com.hybridflow.connector.google.service.GoogleSheetsService;
@@ -90,7 +91,7 @@ class SheetWriteServiceTest {
             if (value.equals("WINNER")) throw new IllegalStateException("timeout after remote commit");
             return null;
         }).when(sheets).updateCells(anyString(), eq("b"), anyMap());
-        assertThrows(IllegalStateException.class, () -> service.apply("token", plans()));
+        assertThrows(ApplicationException.class, () -> service.apply("token", plans()));
         assertEquals(Map.of("a", "A", "b", "B"), live);
         verify(journal).start(anyString(), anyString());
         verify(journal).recovered(anyString());
@@ -98,14 +99,14 @@ class SheetWriteServiceTest {
     }
     @Test void allSourcesAreValidatedBeforeAnyWrite() {
         live.put("b", "NEW_EDIT");
-        assertThrows(IllegalStateException.class, () -> service.apply("token", plans()));
+        assertThrows(ApplicationException.class, () -> service.apply("token", plans()));
         verify(sheets, never()).updateCells(anyString(), anyString(), anyMap());
         verifyNoInteractions(journal);
     }
 
     @Test void aSuccessfulHttpWriteWithoutTheExpectedDataFailsVerification() {
         doNothing().when(sheets).updateCells(anyString(), anyString(), anyMap());
-        assertThrows(IllegalStateException.class, () -> service.apply("token", plans()));
+        assertThrows(ApplicationException.class, () -> service.apply("token", plans()));
         verify(journal, never()).complete(anyString());
         assertEquals(Map.of("a", "A", "b", "B"), live);
     }
@@ -119,14 +120,14 @@ class SheetWriteServiceTest {
     @Test void recoveryPreservesLaterHumanEditsAndLeavesDurableBlock() {
         live.put("a", "WINNER"); live.put("b", "HUMAN_EDIT");
         when(journal.pending()).thenReturn(List.of(Map.of("id", "operation", "plans", codec.encode(plans()))));
-        assertThrows(IllegalStateException.class, () -> service.recover("token", List.of("a", "b")));
+        assertThrows(ApplicationException.class, () -> service.recover("token", List.of("a", "b")));
         verify(sheets, never()).updateCells(anyString(), anyString(), anyMap());
         verify(journal, never()).recovered(anyString());
         assertEquals("HUMAN_EDIT", live.get("b"));
     }
     @Test void overlappingFlowCannotIgnoreAnIncompleteOperation() {
         when(journal.pending()).thenReturn(List.of(Map.of("id", "operation", "plans", codec.encode(plans()))));
-        assertThrows(IllegalStateException.class, () -> service.recover("token", List.of("a", "c")));
+        assertThrows(ApplicationException.class, () -> service.recover("token", List.of("a", "c")));
         verify(sheets, never()).updateCells(anyString(), anyString(), anyMap());
     }
     @Test void databaseRollbackRestoresRemoteCells() {
@@ -145,7 +146,7 @@ class SheetWriteServiceTest {
                 .rows(List.of(Map.of("id", "", "status", ""), Map.of("id", "1", "status", "HUMAN_EDIT"))).build()).when(sheets).readSheet(any());
         SheetWritePlan planned = new SheetWritePlan("a", "Data", "id", List.of("id", "status"), List.of(
                 new SheetCellChange(0, "id", "1", "", "1"), new SheetCellChange(0, "status", "1", "", "NEW")));
-        assertThrows(IllegalStateException.class, () -> service.apply("token", List.of(planned)));
+        assertThrows(ApplicationException.class, () -> service.apply("token", List.of(planned)));
         verify(sheets, never()).updateCells(anyString(), anyString(), anyMap());
     }
 
@@ -155,7 +156,7 @@ class SheetWriteServiceTest {
         SheetWritePlan planned = new SheetWritePlan("a", "Data", "id", List.of("id", "status", "private"), List.of(
                 new SheetCellChange(0, "id", "1", "", "1"), new SheetCellChange(0, "status", "1", "", "NEW")));
         when(journal.pending()).thenReturn(List.of(Map.of("id", "operation", "plans", codec.encode(List.of(planned)))));
-        assertThrows(IllegalStateException.class, () -> service.recover("token", List.of("a")));
+        assertThrows(ApplicationException.class, () -> service.recover("token", List.of("a")));
         verify(sheets, never()).updateCells(anyString(), anyString(), anyMap());
     }
 
@@ -173,7 +174,7 @@ class SheetWriteServiceTest {
         SheetWritePlan plan = new SheetWritePlan("a", "Data", "id", List.of("id", "status"), List.of(
                 new SheetCellChange(0, "id", " sp01 ", " sp01 ", "SP01"),
                 new SheetCellChange(0, "status", " sp01 ", " new ", "NEW")));
-        assertThrows(IllegalStateException.class, () -> service.apply("token", List.of(plan)));
+        assertThrows(ApplicationException.class, () -> service.apply("token", List.of(plan)));
         assertEquals(Map.of("id", " sp01 ", "status", " new "), row);
         verify(journal).recovered(anyString());
     }

@@ -1,22 +1,26 @@
 package com.hybridflow.connection.service.impl;
 
+import com.google.api.client.auth.oauth2.TokenResponseException;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
 import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets;
-import com.google.api.client.googleapis.auth.oauth2.GoogleTokenResponse;
 import com.google.api.client.googleapis.auth.oauth2.GoogleRefreshTokenRequest;
-import com.google.api.client.auth.oauth2.TokenResponseException;
-import com.google.api.client.http.HttpTransport;
-import com.google.api.client.http.GenericUrl;
-import com.hybridflow.connection.exception.GoogleReconnectRequiredException;
+import com.google.api.client.googleapis.auth.oauth2.GoogleTokenResponse;
 import com.google.api.client.googleapis.javanet.GoogleNetHttpTransport;
+import com.google.api.client.http.GenericUrl;
+import com.google.api.client.http.HttpTransport;
 import com.google.api.client.json.gson.GsonFactory;
 import com.google.api.services.sheets.v4.SheetsScopes;
+import com.hybridflow.common.exception.ApplicationException;
+import com.hybridflow.common.exception.ErrorCode;
+import com.hybridflow.common.util.ExternalErrors;
+import com.hybridflow.connection.exception.GoogleReconnectRequiredException;
 import com.hybridflow.connection.service.GoogleOAuthService;
 import jakarta.annotation.PostConstruct;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.ClassPathResource;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.util.List;
 
@@ -53,14 +57,14 @@ public class GoogleOAuthServiceImpl implements GoogleOAuthService {
 
 
         } catch (Exception e) {
-            throw new RuntimeException("Không thể khởi tạo Google OAuth", e);
+            throw new ApplicationException(ErrorCode.CONFIGURATION_ERROR, "Không thể khởi tạo Google OAuth.", e);
         }
     }
 
     @Override
     public String buildAuthorizationUrl() {
         if (flow == null) {
-            throw new IllegalStateException("GoogleAuthorizationCodeFlow chưa được khởi tạo.");
+            throw new ApplicationException(ErrorCode.CONFIGURATION_ERROR);
         }
 
         return flow.newAuthorizationUrl()
@@ -75,8 +79,10 @@ public class GoogleOAuthServiceImpl implements GoogleOAuthService {
             return flow.newTokenRequest(code)
                     .setRedirectUri(redirectUri)
                     .execute();
-        } catch (Exception e) {
-            throw new RuntimeException("Đổi token Google thất bại", e);
+        } catch (TokenResponseException exception) {
+            throw ExternalErrors.google(exception.getStatusCode(), 0);
+        } catch (IOException exception) {
+            throw new ApplicationException(ErrorCode.UPSTREAM_UNAVAILABLE, "Chưa đổi được mã kết nối Google. Vui lòng thử kết nối lại.", exception);
         }
     }
 
@@ -89,9 +95,9 @@ public class GoogleOAuthServiceImpl implements GoogleOAuthService {
         } catch (TokenResponseException exception) {
             if (exception.getDetails() != null && "invalid_grant".equals(exception.getDetails().getError()))
                 throw new GoogleReconnectRequiredException();
-            throw new IllegalStateException("Google tạm thời không thể làm mới kết nối. Hệ thống sẽ thử lại.");
-        } catch (java.io.IOException exception) {
-            throw new IllegalStateException("Không thể kết nối máy chủ OAuth Google. Hệ thống sẽ thử lại.");
+            throw ExternalErrors.google(exception.getStatusCode(), 0);
+        } catch (IOException exception) {
+            throw new ApplicationException(ErrorCode.UPSTREAM_UNAVAILABLE);
         }
     }
 }

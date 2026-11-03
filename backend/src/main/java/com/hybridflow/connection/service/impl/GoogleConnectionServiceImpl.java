@@ -1,10 +1,16 @@
 package com.hybridflow.connection.service.impl;
 
 import com.google.api.client.googleapis.auth.oauth2.GoogleTokenResponse;
+import com.hybridflow.common.dto.ErrorDetails;
+import com.hybridflow.common.exception.ApplicationException;
+import com.hybridflow.common.exception.ErrorCode;
+import com.hybridflow.common.exception.ValidationException;
+import com.hybridflow.common.util.ErrorClassifier;
+import com.hybridflow.connection.dto.GoogleOAuthCallbackResponse;
 import com.hybridflow.connection.dto.GoogleOAuthConfigResponse;
 import com.hybridflow.connection.service.GoogleConnectionService;
-import com.hybridflow.connection.service.GoogleOAuthService;
 import com.hybridflow.connection.service.GoogleCredentialService;
+import com.hybridflow.connection.service.GoogleOAuthService;
 import com.hybridflow.connection.view.GoogleOAuthCallbackRenderer;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -34,6 +40,18 @@ public class GoogleConnectionServiceImpl implements GoogleConnectionService {
     @Override
     public String getAuthorizationUrl() {
         return oauth.buildAuthorizationUrl();
+    }
+
+    @Override
+    public GoogleOAuthCallbackResponse completeAuthorization(String code, String providerError) {
+        try {
+            if (providerError != null) throw new ApplicationException(ErrorCode.OAUTH_CANCELLED);
+            if (code == null || code.isBlank()) throw new ValidationException("Thiếu mã xác nhận kết nối Google. Vui lòng mở kết nối lại.");
+            return new GoogleOAuthCallbackResponse(200, completeAuthorization(code));
+        } catch (RuntimeException exception) {
+            ErrorDetails details = ErrorClassifier.classify(exception);
+            return new GoogleOAuthCallbackResponse(details.getCode().getStatus(), renderer.renderFailure(details, frontendOrigin));
+        }
     }
 
     @Override

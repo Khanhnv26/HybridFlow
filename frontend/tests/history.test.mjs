@@ -1,10 +1,16 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import ts from 'typescript';
-const source = await readFile(new URL('../src/services/history.ts', import.meta.url), 'utf8');
-const compiled = ts.transpileModule(source, { compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 } }).outputText;
-const { historyLog, logConflictState } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
+import { build } from 'esbuild';
+import { fileURLToPath } from 'node:url';
+const bundle = await build({ entryPoints: [fileURLToPath(new URL('../src/services/history.ts', import.meta.url))], bundle: true, write: false, platform: 'node', format: 'esm' });
+const { historyLog, logConflictState } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
+
+test('failed executions retain the saved support reference without changing legacy history', () => {
+  const failure = { id: 'run', status: 'ERROR', started_at: '2026-11-03T10:00:00Z', error: 'Chưa ghi được dữ liệu.' };
+  assert.equal(historyLog(failure).message, 'Chưa ghi được dữ liệu.');
+  assert.equal(historyLog({ ...failure, error_code: 'SYNC_VERIFY_FAILED', correlation_id: 'trace-1' }).message,
+    'Chưa ghi được dữ liệu. (Mã tra cứu: trace-1)');
+});
 
 test('historical conflict IDs are compared with live open IDs instead of trusting the old status', () => {
   const log = historyLog({ id: 'run', status: 'CONFLICT', started_at: '2026-11-02T10:00:00', result: JSON.stringify({

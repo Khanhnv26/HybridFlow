@@ -1,3 +1,4 @@
+import { errorMessage } from '../../services/errors';
 import { useEffect, useState } from 'react';
 import {
   CheckCircle2,
@@ -31,19 +32,6 @@ interface Props {
   onSave: (data: Partial<OrchestrationNodeData>) => Promise<void>;
 }
 
-function errorMessage(error: unknown) {
-  const detail = error as {
-    response?: { data?: { message?: string } };
-    message?: string;
-    code?: string;
-  };
-  if (detail.response?.data?.message) return detail.response.data.message;
-  if (detail.response)
-    return 'Chưa tải được thông tin Telegram. Thử lại hoặc liên hệ quản trị viên.';
-  if (detail.code === 'ERR_NETWORK' || detail.code === 'ECONNABORTED')
-    return 'Không thể kết nối máy chủ. Kiểm tra mạng rồi thử lại.';
-  return detail.message || 'Không thể kết nối Telegram. Vui lòng thử lại.';
-}
 
 export function TelegramConfig({
   data,
@@ -456,7 +444,7 @@ export function TelegramConfig({
             <h4>Thông báo của lượt chạy gần nhất</h4>
             {data.notificationItems.filter(item => item.state !== 'SKIPPED').map(item => <div key={item.id} className="border-t border-gray-700 py-2">
               <p>{item.state === 'SENT' ? 'Đã gửi' : item.state === 'SENDING' ? 'Đang gửi' : item.state === 'PENDING' ? 'Đang chờ' : 'Gửi lỗi'} · {item.message.slice(0, 100)}</p>
-              {item.lastError && <p className="text-amber-200">{item.lastError}</p>}
+              {item.lastError && <p className="text-amber-200">{errorMessage({ response: { data: { message: item.lastError, code: item.errorCode, correlationId: item.correlationId } } })}</p>}
               {onRetryNotification && ['FAILED', 'DEAD'].includes(item.state) && <button disabled={busy} className="text-sky-300" onClick={async () => {
                 setBusy(true); setError('');
                 try { await onRetryNotification(item.id); } catch (error) { setError(errorMessage(error)); } finally { setBusy(false); }

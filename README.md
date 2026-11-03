@@ -17,7 +17,7 @@ Backend đọc các biến môi trường:
 
 File `client_secret.json` của Google OAuth đặt trong `backend/src/main/resources/` và được Git bỏ qua. Các thiết lập riêng đã có được giữ trong `backend/application-local.properties` (cũng được Git bỏ qua). Khi chạy từ thư mục `backend` hoặc gốc repo, Spring tự đọc file local này; biến môi trường có thể ghi đè các giá trị được chuyển sang đó. Không commit token hay file local. Nếu token từng được đưa lên Git, cần thay token tại nhà cung cấp.
 
-Chạy backend từ `backend`: `mvn spring-boot:run`. Khởi động lại backend sau khi cập nhật mã để Flyway áp dụng các migration mới, hiện đến V11. Không sửa/xóa lịch sử migration trong database đang dùng.
+Chạy backend từ `backend`: `mvn spring-boot:run`. Khởi động lại backend sau khi cập nhật mã để Flyway áp dụng các migration mới, hiện đến V12. Không sửa/xóa lịch sử migration trong database đang dùng.
 
 Chạy frontend từ `frontend`: `npm install`, sau đó `npm run dev`. Vite chạy ở cổng 3000 và proxy `/api` sang backend 8080. Khi deploy, cấu hình reverse proxy `/api` hoặc đặt `VITE_API_BASE_URL` theo `frontend/.env.example` trước khi build. Nếu cổng 3000 bận, cấu hình `FRONTEND_ORIGIN` theo origin thực tế.
 
@@ -127,3 +127,7 @@ Trong khối **Điều phối & Đồng bộ**, mở phần **2. Giữ những c
 Cấu hình lưu ở `columnTypes`, ví dụ `{"price":"NUMBER","phone":"TEXT"}`. Ghi vẫn dùng RAW: chỉ ô thuộc cột NUMBER được gửi thành JSON number, các ô khác là chuỗi. Giá trị NUMBER dùng dấu chấm thập phân, không chứa dấu phân cách hàng nghìn; ô trống vẫn được xóa bình thường. Dữ liệu không hợp lệ hoặc vượt độ chính xác 15 chữ số bị từ chối trước khi ghi.
 
 Đổi kiểu cột tạo flowId mới để không dùng nhầm snapshot; chạy tay và xác nhận khởi tạo trước khi tiếp tục lịch. Khi đồng bộ, các ô còn lưu dạng văn bản trong cột NUMBER được sửa cả khi giá trị hiển thị không đổi. Sửa kiểu ô không tự phát sự kiện bản ghi. Sửa ô trực tiếp trong bảng xem dữ liệu và duyệt xung đột cũng áp dụng kiểu đã chọn. Nhật ký phục hồi giữ kiểu và giá trị gốc của ô để rollback đúng.
+
+## Xử lý lỗi thống nhất
+
+Xem [hợp đồng xử lý lỗi](ERROR_HANDLING.md) cho mã lỗi, HTTP status, correlation ID, OAuth callback và chính sách retry của worker/outbox. Migration V12 bổ sung metadata lỗi vào lịch sử/job/outbox; khởi động lại backend để Flyway áp dụng trước khi dùng phiên bản này. Frontend tiếp tục đọc được trường `message` và hiển thị mã tra cứu khi có.

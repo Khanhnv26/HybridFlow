@@ -1,5 +1,6 @@
 package com.hybridflow.sync.repository;
 
+import com.hybridflow.common.dto.ErrorDetails;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -21,8 +22,13 @@ public class ExecutionHistoryRepository {
                 status, resultJson, error, executionId);
     }
 
+    public void fail(String executionId, ErrorDetails details) {
+        jdbc.update("UPDATE sync_executions SET status='ERROR',error=?,error_code=?,correlation_id=?,finished_at=CURRENT_TIMESTAMP WHERE id=?",
+                details.getMessage(), details.getCode().name(), details.getCorrelationId(), executionId);
+    }
+
     public List<Map<String, Object>> findByFlowId(String flowId) {
-        return jdbc.queryForList("SELECT id,status,result::text AS result,error,started_at,finished_at,progress::text AS progress "
+        return jdbc.queryForList("SELECT id,status,result::text AS result,error,error_code,correlation_id,started_at,finished_at,progress::text AS progress "
                 + "FROM sync_executions WHERE flow_id=? ORDER BY started_at DESC LIMIT 50", flowId);
     }
 

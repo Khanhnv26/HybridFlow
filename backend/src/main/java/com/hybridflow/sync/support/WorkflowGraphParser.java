@@ -4,6 +4,9 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.hybridflow.common.exception.ApplicationException;
+import com.hybridflow.common.exception.ErrorCode;
+import com.hybridflow.common.exception.ValidationException;
 import com.hybridflow.sync.dto.request.ActionPlan;
 import com.hybridflow.sync.dto.request.ColumnTransformConfig;
 import com.hybridflow.sync.dto.request.RouterConditionItem;
@@ -52,7 +55,7 @@ public class WorkflowGraphParser {
 
         JsonNode diffNode = findFirstByType(nodes, "diffEngine");
         JsonNode scheduleNode = findFirstByType(nodes, "scheduleTrigger");
-        if (count(nodes, "scheduleTrigger") > 1) throw new IllegalArgumentException("Chỉ hỗ trợ một khối hẹn giờ trong mỗi luồng.");
+        if (count(nodes, "scheduleTrigger") > 1) throw new ValidationException("Chỉ hỗ trợ một khối hẹn giờ trong mỗi luồng.");
 
         if (diffNode == null || scheduleNode == null) {
             return ParsedSchedule.disable();
@@ -84,12 +87,12 @@ public class WorkflowGraphParser {
         int intervalMinutes = data.path("scheduleIntervalMinutes").asInt(5);
         String dailyTime = data.path("scheduleTime").asText("08:00");
         String timezone = data.path("scheduleTimezone").asText("Asia/Ho_Chi_Minh");
-        if (!Set.of("interval", "daily").contains(type)) throw new IllegalArgumentException("Kiểu lịch không hợp lệ.");
+        if (!Set.of("interval", "daily").contains(type)) throw new ValidationException("Kiểu lịch không hợp lệ.");
         if (intervalMinutes < 1 || intervalMinutes > 1440 || !data.path("scheduleIntervalMinutes").isMissingNode()
                 && !data.path("scheduleIntervalMinutes").isIntegralNumber())
-            throw new IllegalArgumentException("Chu kỳ phải là số nguyên từ 1 đến 1440 phút.");
+            throw new ValidationException("Chu kỳ phải là số nguyên từ 1 đến 1440 phút.");
         try { ZoneId.of(timezone); LocalTime.parse(dailyTime, TIME_FORMATTER); }
-        catch (Exception exception) { throw new IllegalArgumentException("Giờ chạy hoặc múi giờ không hợp lệ."); }
+        catch (Exception exception) { throw new ValidationException("Giờ chạy hoặc múi giờ không hợp lệ."); }
 
         Instant nextRunAt = enabled ? computeNextRun(type, intervalMinutes, dailyTime, timezone, now) : null;
 
@@ -118,15 +121,15 @@ public class WorkflowGraphParser {
         definition = normalizeTransforms(definition);
         JsonNode nodes = definition.path("nodes");
         JsonNode edges = definition.path("edges");
-        if (!nodes.isArray() || !edges.isArray()) throw new IllegalArgumentException("Cấu hình luồng không hợp lệ.");
+        if (!nodes.isArray() || !edges.isArray()) throw new ValidationException("Cấu hình luồng không hợp lệ.");
         Set<String> supported = Set.of("sheetsTrigger", "scheduleTrigger", "diffEngine", "storageAction", "telegramAction", "routerCondition");
         Set<String> ids = new LinkedHashSet<>();
         for (JsonNode node : nodes) {
             if (!supported.contains(node.path("type").asText()) || node.path("id").asText().isBlank()
-                    || !ids.add(node.path("id").asText())) throw new IllegalArgumentException("Luồng có khối không hợp lệ hoặc chưa hỗ trợ.");
+                    || !ids.add(node.path("id").asText())) throw new ValidationException("Luồng có khối không hợp lệ hoặc chưa hỗ trợ.");
         }
         if (count(nodes, "diffEngine") != 1 || count(nodes, "scheduleTrigger") > 1)
-            throw new IllegalArgumentException("Luồng cần một khối So khớp và tối đa một hẹn giờ.");
+            throw new ValidationException("Luồng cần một khối So khớp và tối đa một hẹn giờ.");
         JsonNode diffNode = findFirstByType(nodes, "diffEngine");
 
         if (diffNode == null) {
@@ -138,7 +141,7 @@ public class WorkflowGraphParser {
         String idColumn = diffData.path("uniqueKey").asText("").trim();
         String conflictPolicy = diffData.path("conflictPolicy").asText("");
         if (idColumn.isBlank() || !Set.of("ASK_TELEGRAM", "SOURCE_WINS", "DESTINATION_WINS").contains(conflictPolicy))
-            throw new IllegalArgumentException("Cột khóa hoặc chính sách xung đột không hợp lệ.");
+            throw new ValidationException("Cột khóa hoặc chính sách xung đột không hợp lệ.");
 
         Set<String> syncColumns = Arrays.stream(diffData.path("sharedColumns").asText("").split(","))
                 .map(String::trim)
@@ -154,13 +157,13 @@ public class WorkflowGraphParser {
             }
             String nodeId = node.path("id").asText("");
             if (!isSheetConnected(edges, nodeId, diffId)) {
-                throw new IllegalArgumentException("Hãy nối tất cả khối Sheet vào So khớp.");
+                throw new ValidationException("Hãy nối tất cả khối Sheet vào So khớp.");
             }
             JsonNode sheetData = node.path("data");
             String spreadsheetId = sheetData.path("spreadsheetId").asText("").trim();
             String sheetName = sheetData.path("sheetName").asText("").trim();
             if (spreadsheetId.isEmpty() || sheetName.isEmpty()) {
-                throw new IllegalArgumentException("Điền đủ file và tên trang tính.");
+                throw new ValidationException("Điền đủ file và tên trang tính.");
             }
             SheetEndpointRequest endpoint = SheetEndpointRequest.builder()
                     .nodeId(nodeId)
@@ -176,7 +179,7 @@ public class WorkflowGraphParser {
         }
 
         if (connectedSheets.isEmpty()) {
-            throw new IllegalArgumentException("Luồng cần nguồn Google Sheet.");
+            throw new ValidationException("Luồng cần nguồn Google Sheet.");
         }
 
         JsonNode storageNode = findFirstByType(nodes, "storageAction");
@@ -186,18 +189,18 @@ public class WorkflowGraphParser {
         }
         boolean multi = connectedSheets.size() >= 2;
         if (!diffData.path("sharedColumns").asText("").isBlank() && syncColumns.isEmpty())
-            throw new IllegalArgumentException("Chọn ít nhất một cột dữ liệu ngoài cột khóa.");
+            throw new ValidationException("Chọn ít nhất một cột dữ liệu ngoài cột khóa.");
         Set<String> endpoints = new LinkedHashSet<>();
         for (SheetEndpointRequest sheet : connectedSheets) {
             if (!endpoints.add(sheet.getSpreadsheetId() + "\n" + sheet.getSheetName()))
-                throw new IllegalArgumentException("Không được nối hai khối vào cùng file và trang tính.");
+                throw new ValidationException("Không được nối hai khối vào cùng file và trang tính.");
         }
         if (multi && (storageNode != null || syncColumns.isEmpty()))
-            throw new IllegalArgumentException("Luồng nhiều Sheet cần chọn cột chia sẻ và không có khối Kho.");
+            throw new ValidationException("Luồng nhiều Sheet cần chọn cột chia sẻ và không có khối Kho.");
         if (!multi && (count(nodes, "storageAction") != 1 || storageName.isBlank()
                 || !hasEdge(edges, connectedSheets.get(0).getNodeId(), "out", diffId, "in")
                 || !hasEdge(edges, diffId, "clean", storageNode.path("id").asText(), "in")))
-            throw new IllegalArgumentException("Nối Google Sheet → So khớp → Kho lưu trữ trước khi chạy.");
+            throw new ValidationException("Nối Google Sheet → So khớp → Kho lưu trữ trước khi chạy.");
         if (multi) storageName = "multi_sheet";
 
         List<JsonNode> routerNodes = new ArrayList<>();
@@ -218,45 +221,45 @@ public class WorkflowGraphParser {
             String sig = edge.path("source").asText("") + ":" + edge.path("sourceHandle").asText("")
                     + "->" + edge.path("target").asText("") + ":" + edge.path("targetHandle").asText("");
             if (!edgeSignatures.add(sig)) {
-                throw new IllegalArgumentException("Có dây nối trùng lặp trong luồng.");
+                throw new ValidationException("Có dây nối trùng lặp trong luồng.");
             }
         }
 
         Map<String, String> columnTypes = new TreeMap<>();
         if (diffData.has("columnTypes")) {
-            if (!diffData.path("columnTypes").isObject()) throw new IllegalArgumentException("Cấu hình kiểu cột không hợp lệ.");
+            if (!diffData.path("columnTypes").isObject()) throw new ValidationException("Cấu hình kiểu cột không hợp lệ.");
             diffData.path("columnTypes").fields().forEachRemaining(entry -> columnTypes.put(entry.getKey(), entry.getValue().asText()));
-            for (String type : columnTypes.values()) if (!Set.of("TEXT", "NUMBER").contains(type)) throw new IllegalArgumentException("Kiểu cột không hợp lệ.");
-            if ("NUMBER".equals(columnTypes.get(idColumn))) throw new IllegalArgumentException("Cột khóa phải giữ kiểu Văn bản.");
+            for (String type : columnTypes.values()) if (!Set.of("TEXT", "NUMBER").contains(type)) throw new ValidationException("Kiểu cột không hợp lệ.");
+            if ("NUMBER".equals(columnTypes.get(idColumn))) throw new ValidationException("Cột khóa phải giữ kiểu Văn bản.");
         }
 
         List<RouterPlan> routerPlans = new ArrayList<>();
         for (JsonNode rNode : routerNodes) {
             String rId = rNode.path("id").asText("");
             if (!hasEdge(edges, diffId, "clean", rId, "in")) {
-                throw new IllegalArgumentException("Khối Rẽ Nhánh Điều Kiện phải được nối từ cổng Hành động của khối So khớp.");
+                throw new ValidationException("Khối Rẽ Nhánh Điều Kiện phải được nối từ cổng Hành động của khối So khớp.");
             }
             for (JsonNode edge : edges) {
                 if (rId.equals(edge.path("target").asText("")) && (!diffId.equals(edge.path("source").asText()) || !"clean".equals(edge.path("sourceHandle").asText()) || !"in".equals(edge.path("targetHandle").asText()))) {
-                    throw new IllegalArgumentException("Đường vào khối Rẽ Nhánh Điều Kiện không hợp lệ.");
+                    throw new ValidationException("Đường vào khối Rẽ Nhánh Điều Kiện không hợp lệ.");
                 }
             }
             List<String> actionTargets = new ArrayList<>();
             for (JsonNode edge : edges) {
                 if (rId.equals(edge.path("source").asText(""))) {
                     if (!"out".equals(edge.path("sourceHandle").asText("")) || !"in".equals(edge.path("targetHandle").asText())) {
-                        throw new IllegalArgumentException("Đường ra khối Rẽ Nhánh Điều Kiện không hợp lệ.");
+                        throw new ValidationException("Đường ra khối Rẽ Nhánh Điều Kiện không hợp lệ.");
                     }
                     String targetId = edge.path("target").asText("");
                     boolean isTelegram = telegramNodes.stream().anyMatch(t -> t.path("id").asText("").equals(targetId));
                     if (!isTelegram) {
-                        throw new IllegalArgumentException("Khối Rẽ Nhánh Điều Kiện chỉ được nối tới khối thông báo.");
+                        throw new ValidationException("Khối Rẽ Nhánh Điều Kiện chỉ được nối tới khối thông báo.");
                     }
                     actionTargets.add(targetId);
                 }
             }
             if (actionTargets.isEmpty()) {
-                throw new IllegalArgumentException("Khối Rẽ Nhánh Điều Kiện cần nối tới ít nhất một khối thông báo.");
+                throw new ValidationException("Khối Rẽ Nhánh Điều Kiện cần nối tới ít nhất một khối thông báo.");
             }
 
             JsonNode rData = rNode.path("data");
@@ -274,10 +277,10 @@ public class WorkflowGraphParser {
                 }
             }
             if (conditions.isEmpty()) {
-                throw new IllegalArgumentException("Khối Rẽ Nhánh Điều Kiện cần ít nhất một điều kiện.");
+                throw new ValidationException("Khối Rẽ Nhánh Điều Kiện cần ít nhất một điều kiện.");
             }
             if (!Set.of("CHANGED", "CREATED", "UPDATED").contains(triggerOn) || !Set.of("ALL", "ANY").contains(matchMode))
-                throw new IllegalArgumentException("Cấu hình KHI/NẾU không hợp lệ.");
+                throw new ValidationException("Cấu hình KHI/NẾU không hợp lệ.");
             for (RouterConditionItem condition : conditions) {
                 RuleOperators.validate(condition, columnTypes);
             }
@@ -297,11 +300,11 @@ public class WorkflowGraphParser {
             boolean receivingConflict = hasEdge(edges, diffId, "conflict", tId, "in");
             boolean receivingRouter = routerPlans.stream().anyMatch(rp -> rp.getActionNodeIds().contains(tId));
             if (!receivingConflict && !receivingRouter) {
-                throw new IllegalArgumentException("Khối Telegram cần ít nhất một dây vào.");
+                throw new ValidationException("Khối Telegram cần ít nhất một dây vào.");
             }
             String tChatId = tNode.path("data").path("chatId").asText("").trim();
             if (tChatId.isBlank()) {
-                throw new IllegalArgumentException("Điền Telegram Chat ID.");
+                throw new ValidationException("Điền Telegram Chat ID.");
             }
             if (receivingConflict) {
                 conflictActionIds.add(tId);
@@ -314,7 +317,7 @@ public class WorkflowGraphParser {
                     boolean isFromDiff = diffId.equals(sId) && "conflict".equals(sPort) && "in".equals(tPort);
                     boolean isFromRouter = routerNodes.stream().anyMatch(rn -> rn.path("id").asText("").equals(sId)) && "out".equals(sPort) && "in".equals(tPort);
                     if (!isFromDiff && !isFromRouter) {
-                        throw new IllegalArgumentException("Có dây nối không được hỗ trợ trong luồng.");
+                        throw new ValidationException("Có dây nối không được hỗ trợ trong luồng.");
                     }
                 }
             }
@@ -353,11 +356,11 @@ public class WorkflowGraphParser {
                         : (storageNode != null && storageNode.path("id").asText().equals(to)) || isRouter)
                     || diffId.equals(from) && "conflict".equals(port) && isTelegram
                     || fromRouter && "out".equals(port) && isTelegram));
-            if (!allowed) throw new IllegalArgumentException("Có dây nối không được hỗ trợ trong luồng.");
+            if (!allowed) throw new ValidationException("Có dây nối không được hỗ trợ trong luồng.");
         }
         JsonNode timer = findFirstByType(nodes, "scheduleTrigger");
         if (timer != null && !hasEdge(edges, timer.path("id").asText(), "out", diffId, "trigger"))
-            throw new IllegalArgumentException("Nối khối hẹn giờ vào cổng kích hoạt.");
+            throw new ValidationException("Nối khối hẹn giờ vào cổng kích hoạt.");
 
         if (!columnTypes.isEmpty()) connectedSheets.forEach(endpoint -> endpoint.setColumnTypes(columnTypes));
         String resolvedFlowId = computeFlowId(connectedSheets, idColumn, storageName, syncColumns);
@@ -409,17 +412,17 @@ public class WorkflowGraphParser {
 
     private List<ColumnTransformConfig> readTransforms(JsonNode configs) {
         if (configs.isMissingNode() || configs.isNull()) return null;
-        if (!configs.isArray()) throw new IllegalArgumentException("Cấu hình chuẩn hóa không hợp lệ.");
+        if (!configs.isArray()) throw new ValidationException("Cấu hình chuẩn hóa không hợp lệ.");
         List<ColumnTransformConfig> result = new ArrayList<>();
         Set<String> seen = new LinkedHashSet<>();
         for (JsonNode config : configs) {
             String column = config.path("columnName").asText();
             if (column.isBlank() || !seen.add(column) || !config.path("rules").isArray())
-                throw new IllegalArgumentException("Cột chuẩn hóa không hợp lệ.");
+                throw new ValidationException("Cột chuẩn hóa không hợp lệ.");
             List<String> rules = new ArrayList<>();
             for (JsonNode rule : config.path("rules")) {
                 if (!Set.of("TRIM", "UPPERCASE", "LOWERCASE", "CAPITALIZE", "PHONE_VN", "DEFAULT_IF_EMPTY").contains(rule.asText()))
-                    throw new IllegalArgumentException("Quy tắc chuẩn hóa không hợp lệ.");
+                    throw new ValidationException("Quy tắc chuẩn hóa không hợp lệ.");
                 rules.add(rule.asText());
             }
             result.add(new ColumnTransformConfig(column, rules, config.path("defaultValue").asText("")));
@@ -433,7 +436,7 @@ public class WorkflowGraphParser {
         if (!nodes.isArray() || !edges.isArray()) return copy;
         Set<String> allIds = new LinkedHashSet<>();
         for (JsonNode node : nodes) if (node.path("id").asText().isBlank() || !allIds.add(node.path("id").asText()))
-            throw new IllegalArgumentException("Mã khối không hợp lệ hoặc bị trùng.");
+            throw new ValidationException("Mã khối không hợp lệ hoặc bị trùng.");
         Set<String> bound = new LinkedHashSet<>();
         Set<String> removed = new LinkedHashSet<>();
         List<ObjectNode> links = new ArrayList<>();
@@ -446,12 +449,12 @@ public class WorkflowGraphParser {
                 if (id.equals(edge.path("source").asText())) outgoing.add(edge);
             }
             if (incoming.isEmpty() || outgoing.size() != 1)
-                throw new IllegalArgumentException("Nối một hoặc nhiều Sheet → Chuẩn hóa → So khớp.");
+                throw new ValidationException("Nối một hoặc nhiều Sheet → Chuẩn hóa → So khớp.");
             String targetId = outgoing.getFirst().path("target").asText();
             JsonNode target = null;
             for (JsonNode node : nodes) if (targetId.equals(node.path("id").asText())) target = node;
             if (target == null || !"diffEngine".equals(target.path("type").asText()) || !hasEdge(edges, id, "out", targetId, "in"))
-                throw new IllegalArgumentException("Khối Chuẩn hóa cần nối ra đúng một khối So khớp.");
+                throw new ValidationException("Khối Chuẩn hóa cần nối ra đúng một khối So khớp.");
             JsonNode config = transform.path("data");
             readTransforms(config.path("transforms"));
             for (JsonNode input : incoming) {
@@ -461,7 +464,7 @@ public class WorkflowGraphParser {
                 if (source == null || !"sheetsTrigger".equals(source.path("type").asText()) || !bound.add(sourceId)
                         || !"out".equals(input.path("sourceHandle").asText()) || !"in".equals(input.path("targetHandle").asText())
                         || isSheetConnected(edges, sourceId, targetId))
-                    throw new IllegalArgumentException("Đường nối chuẩn hóa không hợp lệ; không nối trùng, song song hoặc nối chuỗi.");
+                    throw new ValidationException("Đường nối chuẩn hóa không hợp lệ; không nối trùng, song song hoặc nối chuỗi.");
                 ObjectNode data = (ObjectNode) source.path("data");
                 data.set("transforms", config.path("transforms").isMissingNode() ? new ObjectMapper().createArrayNode() : config.path("transforms"));
                 data.put("writeBackCleanData", config.path("writeBackBySource").path(sourceId).asBoolean(config.path("writeBackCleanData").asBoolean(false)));
@@ -509,7 +512,7 @@ public class WorkflowGraphParser {
         try {
             byte[] bytes = new ObjectMapper().writeValueAsBytes(identity);
             return "flow-" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
-        } catch (Exception exception) { throw new IllegalStateException("Không thể xác định mã luồng."); }
+        } catch (Exception exception) { throw new ApplicationException(ErrorCode.INTERNAL_ERROR, "Không thể xác định mã luồng."); }
     }
 
     private JsonNode findFirstByType(JsonNode nodes, String type) {

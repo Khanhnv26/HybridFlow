@@ -1,30 +1,57 @@
 package com.hybridflow.sync;
-import com.hybridflow.sync.dto.request.RunSyncRequest;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.api.client.googleapis.auth.oauth2.GoogleTokenResponse;
+import com.hybridflow.common.exception.ApplicationException;
+import com.hybridflow.common.exception.ErrorCode;
+import com.hybridflow.common.exception.ValidationException;
+import com.hybridflow.connection.exception.GoogleReconnectRequiredException;
 import com.hybridflow.connection.service.GoogleCredentialService;
 import com.hybridflow.connection.service.GoogleOAuthService;
-import com.hybridflow.connection.exception.GoogleReconnectRequiredException;
+import com.hybridflow.sync.dto.request.RunSyncRequest;
 import com.hybridflow.sync.dto.response.RunSyncResponse;
 import com.hybridflow.sync.model.WorkflowJob;
 import com.hybridflow.sync.repository.WorkflowJobRepository;
-import com.hybridflow.sync.service.*;
-import org.junit.jupiter.api.*;
+import com.hybridflow.sync.service.SyncExecutionService;
+import com.hybridflow.sync.service.WorkflowJobService;
+import com.hybridflow.sync.service.WorkflowService;
+import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
-import java.time.*;
-import java.util.*;
-import java.util.concurrent.*;
+
+import java.sql.Timestamp;
+import java.time.Clock;
+import java.time.Instant;
+import java.util.Set;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
-import static org.mockito.ArgumentMatchers.*;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 @EnabledIfEnvironmentVariable(named = "HYBRIDFLOW_TEST_DB_URL", matches = "jdbc:postgresql://(localhost|127[.]0[.]0[.]1):15432/hybridflow_test")
 @SpringBootTest(properties = {"spring.datasource.url=${HYBRIDFLOW_TEST_DB_URL}", "spring.datasource.username=hybridflow_test",
@@ -32,6 +59,28 @@ import static org.mockito.ArgumentMatchers.*;
         "spring.datasource.password=hybridflow_test", "spring.jpa.show-sql=false", "hybridflow.scheduler.enabled=false",
         "google.oauth.encryption-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=", "logging.level.com.hybridflow=WARN"})
 class WorkflowScheduleIntegrationTest {
+    @Test void permanentAndUnexpectedErrorsStopImmediatelyWithSafeDiagnostics() throws Exception {
+        save("editor", true); due("editor"); scheduler.enqueueDue();
+        when(execution.executeSync(any())).thenThrow(new NullPointerException("private-provider-detail"));
+        scheduler.runNext();
+        assertEquals("DEAD", state());
+        assertEquals("INTERNAL_ERROR", jdbc.queryForObject("SELECT error_code FROM workflow_jobs", String.class));
+        assertEquals(1, jdbc.queryForObject("SELECT attempts FROM workflow_jobs", Integer.class));
+        assertNotNull(jdbc.queryForObject("SELECT correlation_id FROM workflow_jobs", String.class));
+        assertFalse(jdbc.queryForObject("SELECT error FROM workflow_jobs", String.class).contains("private-provider-detail"));
+        now.set(now.get().plusSeconds(1000)); scheduler.enqueueDue(); scheduler.runNext();
+        verify(execution, times(1)).executeSync(any());
+    }
+
+    @Test void invalidConfigurationDoesNotConsumeRepeatedRetries() throws Exception {
+        save("editor", true); due("editor"); scheduler.enqueueDue();
+        when(execution.executeSync(any())).thenThrow(new ValidationException("Chọn lại cột khóa."));
+        scheduler.runNext();
+        assertEquals("DEAD", state());
+        assertEquals("INVALID_ARGUMENT", jdbc.queryForObject("SELECT error_code FROM workflow_jobs", String.class));
+        assertEquals(1, jdbc.queryForObject("SELECT attempts FROM workflow_jobs", Integer.class));
+    }
+
     @Autowired JdbcTemplate jdbc;
     @Autowired WorkflowService workflows;
     @Autowired WorkflowJobService scheduler;
@@ -67,13 +116,13 @@ class WorkflowScheduleIntegrationTest {
     }
 
     private void save(String id, boolean enabled) throws Exception { workflows.saveDefinition(id, mapper.readTree(graph(enabled))); }
-    private void due(String id) { jdbc.update("UPDATE workflow_definitions SET next_run_at=? WHERE flow_id=?", java.sql.Timestamp.from(now.get()), id); }
+    private void due(String id) { jdbc.update("UPDATE workflow_definitions SET next_run_at=? WHERE flow_id=?", Timestamp.from(now.get()), id); }
     private String state() { return jdbc.queryForObject("SELECT state FROM workflow_jobs LIMIT 1", String.class); }
     private WorkflowJob claim() { return new TransactionTemplate(transactions).execute(status -> jobs.claim(now.get(), 120, 3).orElse(null)); }
 
     @Test void savedRoutersAndTemplatesSurviveReloadAndProduceTheSameManualAndScheduledPlans() throws Exception {
-        com.fasterxml.jackson.databind.node.ObjectNode definition = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(graph(true));
-        com.fasterxml.jackson.databind.node.ArrayNode nodes = (com.fasterxml.jackson.databind.node.ArrayNode) definition.path("nodes");
+        ObjectNode definition = (ObjectNode) mapper.readTree(graph(true));
+        ArrayNode nodes = (ArrayNode) definition.path("nodes");
         nodes.add(mapper.readTree("""
                 {"id":"router","type":"routerCondition","data":{"routerTriggerOn":"UPDATED","routerMatchMode":"ANY",
                 "routerConditions":[{"columnName":"status","operator":"EQUALS","value":"READY"}]}}
@@ -81,7 +130,7 @@ class WorkflowScheduleIntegrationTest {
         nodes.add(mapper.readTree("""
                 {"id":"telegram","type":"telegramAction","data":{"chatId":"123","recordTemplate":"Order {id}","conflictTemplate":"Conflict {recordId}"}}
                 """));
-        com.fasterxml.jackson.databind.node.ArrayNode edges = (com.fasterxml.jackson.databind.node.ArrayNode) definition.path("edges");
+        ArrayNode edges = (ArrayNode) definition.path("edges");
         edges.add(mapper.readTree("""
                 {"source":"diff","sourceHandle":"clean","target":"router","targetHandle":"in"}
                 """));
@@ -96,7 +145,7 @@ class WorkflowScheduleIntegrationTest {
         assertEquals(edges, workflows.getDefinition("routed-editor").path("edges"));
         workflows.runDefinition("routed-editor", false);
         due("routed-editor"); scheduler.enqueueDue(); scheduler.runNext();
-        org.mockito.ArgumentCaptor<RunSyncRequest> requests = org.mockito.ArgumentCaptor.forClass(RunSyncRequest.class);
+        ArgumentCaptor<RunSyncRequest> requests = ArgumentCaptor.forClass(RunSyncRequest.class);
         verify(execution, times(2)).executeSync(requests.capture());
         RunSyncRequest manual = requests.getAllValues().get(0);
         RunSyncRequest scheduled = requests.getAllValues().get(1);
@@ -113,9 +162,9 @@ class WorkflowScheduleIntegrationTest {
         Instant due = now.get().plusSeconds(300);
         now.set(now.get().plusSeconds(240));
         save("editor", true);
-        assertEquals(due, jdbc.queryForObject("SELECT next_run_at FROM workflow_definitions", java.sql.Timestamp.class).toInstant());
+        assertEquals(due, jdbc.queryForObject("SELECT next_run_at FROM workflow_definitions", Timestamp.class).toInstant());
         workflows.saveDefinition("editor", mapper.readTree(graph(true).replace("\"scheduleIntervalMinutes\":5", "\"scheduleIntervalMinutes\":15")));
-        assertEquals(now.get().plusSeconds(900), jdbc.queryForObject("SELECT next_run_at FROM workflow_definitions", java.sql.Timestamp.class).toInstant());
+        assertEquals(now.get().plusSeconds(900), jdbc.queryForObject("SELECT next_run_at FROM workflow_definitions", Timestamp.class).toInstant());
     }
 
     @Test void concurrentProducersAndWorkersClaimOnlyOneOccurrence() throws Exception {
@@ -133,9 +182,9 @@ class WorkflowScheduleIntegrationTest {
 
     @Test void failedSyncRetriesWithoutReportingSuccessAndStopsAtMaximumAttempts() throws Exception {
         save("editor", true); due("editor"); scheduler.enqueueDue();
-        when(execution.executeSync(any())).thenThrow(new IllegalStateException("provider detail must stay private"));
+        when(execution.executeSync(any())).thenThrow(new ApplicationException(ErrorCode.UPSTREAM_UNAVAILABLE, "Dịch vụ tạm thời chưa sẵn sàng.", new IllegalStateException("provider detail must stay private")));
         scheduler.runNext(); assertEquals("RETRY", state());
-        assertNull(jdbc.queryForObject("SELECT last_run_at FROM workflow_definitions", java.sql.Timestamp.class));
+        assertNull(jdbc.queryForObject("SELECT last_run_at FROM workflow_definitions", Timestamp.class));
         assertFalse(jdbc.queryForObject("SELECT error FROM workflow_jobs", String.class).contains("provider detail"));
         now.set(now.get().plusSeconds(31)); scheduler.runNext();
         now.set(now.get().plusSeconds(61)); scheduler.runNext(); assertEquals("DEAD", state());
@@ -175,20 +224,20 @@ class WorkflowScheduleIntegrationTest {
     @Test void migrationFromV7ScrubsLegacyTokensAndConvertsVietnamScheduleToInstant() {
         String schema = "schedule_upgrade_test";
         String url = System.getenv("HYBRIDFLOW_TEST_DB_URL") + "?currentSchema=" + schema;
-        org.flywaydb.core.Flyway before = org.flywaydb.core.Flyway.configure().dataSource(url, "hybridflow_test", "hybridflow_test")
+        Flyway before = Flyway.configure().dataSource(url, "hybridflow_test", "hybridflow_test")
                 .schemas(schema).defaultSchema(schema).target("7").cleanDisabled(false).load();
         try {
             before.migrate();
-            JdbcTemplate old = new JdbcTemplate(new org.springframework.jdbc.datasource.DriverManagerDataSource(url, "hybridflow_test", "hybridflow_test"));
+            JdbcTemplate old = new JdbcTemplate(new DriverManagerDataSource(url, "hybridflow_test", "hybridflow_test"));
             old.update("""
                     INSERT INTO workflow_definitions(flow_id,definition,access_token,schedule_enabled,next_run_at)
                     VALUES ('legacy','{"nodes":[],"edges":[],"accessToken":"legacy-test-access","refreshToken":"legacy-test-refresh"}'::jsonb,
                         'legacy-test-access',TRUE,'2026-11-03 08:00:00')
                     """);
-            org.flywaydb.core.Flyway.configure().dataSource(url, "hybridflow_test", "hybridflow_test")
+            Flyway.configure().dataSource(url, "hybridflow_test", "hybridflow_test")
                     .schemas(schema).defaultSchema(schema).load().migrate();
             assertEquals(Boolean.FALSE, old.queryForObject("SELECT jsonb_exists(definition,'accessToken') OR jsonb_exists(definition,'refreshToken') FROM workflow_definitions", Boolean.class));
-            assertEquals(Instant.parse("2026-11-03T01:00:00Z"), old.queryForObject("SELECT next_run_at FROM workflow_definitions", java.sql.Timestamp.class).toInstant());
+            assertEquals(Instant.parse("2026-11-03T01:00:00Z"), old.queryForObject("SELECT next_run_at FROM workflow_definitions", Timestamp.class).toInstant());
             assertEquals(0, old.queryForObject("SELECT count(*) FROM information_schema.columns WHERE table_schema=? AND table_name='workflow_definitions' AND column_name='access_token'", Integer.class, schema));
         } finally { before.clean(); }
     }
@@ -244,7 +293,7 @@ class WorkflowScheduleIntegrationTest {
         save("editor", true);
         workflows.runDefinition("editor", true);
         due("editor"); scheduler.enqueueDue(); scheduler.runNext();
-        org.mockito.ArgumentCaptor<com.hybridflow.sync.dto.request.RunSyncRequest> requests = org.mockito.ArgumentCaptor.forClass(com.hybridflow.sync.dto.request.RunSyncRequest.class);
+        ArgumentCaptor<RunSyncRequest> requests = ArgumentCaptor.forClass(RunSyncRequest.class);
         verify(execution, times(2)).executeSync(requests.capture());
         assertEquals(requests.getAllValues().get(0).getFlowId(), requests.getAllValues().get(1).getFlowId());
         assertEquals(Set.of("status"), requests.getAllValues().get(1).getSyncColumns());

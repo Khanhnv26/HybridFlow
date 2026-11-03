@@ -1,3 +1,4 @@
+import { errorMessage } from '../../services/errors';
 import { useState } from 'react';
 import { Database, Eye, RefreshCw, Save, X } from 'lucide-react';
 import type { Node } from '@xyflow/react';
@@ -60,16 +61,14 @@ export function NaturalLanguageConfigModal(props: Props) {
     setSaving(true); setError('');
     try { await props.onSaveSource(node.id, { tableName: tableName.trim() }); onClose(); }
     catch (error) {
-      const detail = error as { response?: { data?: { message?: string } }; message?: string };
-      setError(detail.response?.data?.message || detail.message || 'Chưa lưu được cấu hình.');
+      setError(errorMessage(error, 'Chưa lưu được cấu hình.'));
     } finally { setSaving(false); }
   };
   const read = async () => {
     setReading(true); setError('');
     try { const result = await props.onTestStep(node.id); setRows(Array.isArray(result) ? result : []); }
     catch (error) {
-      const detail = error as { response?: { data?: { message?: string } }; message?: string };
-      setError(detail.response?.data?.message || detail.message || 'Không đọc được dữ liệu.');
+      setError(errorMessage(error, 'Không đọc được dữ liệu.'));
     } finally { setReading(false); }
   };
   return <div role="dialog" aria-modal="true" aria-label="Kho lưu trữ" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">

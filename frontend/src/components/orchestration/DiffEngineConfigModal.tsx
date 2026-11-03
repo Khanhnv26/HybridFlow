@@ -1,3 +1,4 @@
+import { errorMessage } from '../../services/errors';
 import { useEffect, useRef, useState } from 'react';
 import { ChevronDown, Eye, RefreshCw, Save, Sparkles, X } from 'lucide-react';
 import type { OrchestrationNodeData, SheetDataResponse } from '../../types';
@@ -79,8 +80,7 @@ export function DiffEngineConfigModal({ data, sources, availableColumns, disable
     const results = await Promise.all(sources.map(async item => {
       try { return [item.id, { data: await onReadSource(item.id, savedTypes, controller.signal) }] as const; }
       catch (error) {
-        const detail = error as { response?: { data?: { message?: string } }; message?: string };
-        return [item.id, { error: detail.response?.data?.message || detail.message || 'Không đọc được bảng tính. Hãy thử lại.' }] as const;
+        return [item.id, { error: errorMessage(error, 'Không đọc được bảng tính. Hãy thử lại.') }] as const;
       }
     }));
     if (!controller.signal.aborted && alive.current) { setPreviews(Object.fromEntries(results)); setReading(false); }
@@ -98,8 +98,7 @@ export function DiffEngineConfigModal({ data, sources, availableColumns, disable
       await onSave({ uniqueKey: key.trim(), sharedColumns: savedColumns, columnTypes: savedTypes, conflictPolicy: policy });
       if (alive.current) onClose();
     } catch (error) {
-      const detail = error as { response?: { data?: { message?: string } }; message?: string };
-      if (alive.current) setError(detail.response?.data?.message || detail.message || 'Chưa lưu được. Các lựa chọn của bạn vẫn được giữ.');
+      if (alive.current) setError(errorMessage(error, 'Chưa lưu được. Các lựa chọn của bạn vẫn được giữ.'));
     } finally { if (alive.current) setSaving(false); }
   };
 

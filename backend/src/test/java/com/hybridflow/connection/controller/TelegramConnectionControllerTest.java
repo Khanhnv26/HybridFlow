@@ -1,6 +1,7 @@
 package com.hybridflow.connection.controller;
 
 import com.hybridflow.common.exception.GlobalExceptionHandler;
+import com.hybridflow.common.exception.ValidationException;
 import com.hybridflow.notification.dto.response.TelegramBotInfoResponse;
 import com.hybridflow.notification.dto.response.TelegramRecipientResponse;
 import com.hybridflow.notification.dto.response.TelegramTestResponse;
@@ -14,9 +15,12 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
-import static org.mockito.Mockito.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
 class TelegramConnectionControllerTest {
@@ -40,7 +44,7 @@ class TelegramConnectionControllerTest {
         verify(setup).sendTest("123", "PRIVATE");
     }
     @Test void sendFailureIsAnErrorResponseRatherThanSuccessText() throws Exception {
-        when(setup.sendTest("123", "PRIVATE")).thenThrow(new IllegalArgumentException("Bot chưa được phép gửi tin."));
+        when(setup.sendTest("123", "PRIVATE")).thenThrow(new ValidationException("Bot chưa được phép gửi tin."));
         mvc.perform(post("/api/v1/connections/telegram/test").contentType(MediaType.APPLICATION_JSON)
                 .content("{\"chatId\":\"123\",\"recipientType\":\"PRIVATE\"}"))
                 .andExpect(status().isBadRequest()).andExpect(jsonPath("$.message").value("Bot chưa được phép gửi tin."))

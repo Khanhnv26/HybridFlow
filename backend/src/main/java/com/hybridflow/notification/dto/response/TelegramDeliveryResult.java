@@ -16,4 +16,6 @@ public class TelegramDeliveryResult {
     private boolean retryable;
     private int retryAfterSeconds;
     private String error;
+    private String errorCode;
+    private String correlationId;
 }
