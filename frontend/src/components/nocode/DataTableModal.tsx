@@ -57,8 +57,8 @@ export const DataTableModal: React.FC<Props> = ({
   };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
-      <div className="bg-[#161b22] border border-gray-700 rounded-2xl w-full max-w-6xl flex flex-col max-h-[85vh]">
-        <div className="p-4 border-b border-gray-700 flex items-center justify-between gap-4">
+      <div className="bg-[#161b22] border border-gray-700 rounded-2xl w-full hf-modal hf-modal--data flex flex-col ">
+        <div className="shrink-0 p-4 border-b border-gray-700 flex items-center justify-between gap-4">
           <div>
             <h3 className="font-semibold">Dữ liệu Google Sheet</h3>
             <p className="text-xs text-gray-400 mt-1">
@@ -115,7 +115,7 @@ export const DataTableModal: React.FC<Props> = ({
             {error}
           </p>
         )}
-        <div className="overflow-auto p-4">
+        <div className="hf-modal-body overflow-auto p-4">
           {isLoading ? (
             <p className="text-sm text-gray-400">Đang đọc dữ liệu từ Google Sheet...</p>
           ) : readError ? (
@@ -165,7 +165,7 @@ export const DataTableModal: React.FC<Props> = ({
             </table>
           )}
         </div>
-        <p className="p-4 text-xs text-gray-500 border-t border-gray-700">
+        <p className="shrink-0 p-4 text-xs text-gray-500 border-t border-gray-700">
           Các thay đổi ô chỉ được ghi vào file và trang tính đang chọn. Chạy luồng để đồng bộ các
           nguồn.
         </p>

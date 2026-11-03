@@ -190,8 +190,8 @@ export function SheetSourceConfig({
       aria-labelledby="sheet-source-title"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
     >
-      <div className="bg-[#171b24] border border-gray-700 rounded-2xl w-full max-w-5xl max-h-[85vh] flex flex-col overflow-hidden">
-        <div className="p-5 border-b border-gray-700 flex items-center justify-between gap-4">
+      <div className="bg-[#171b24] border border-gray-700 rounded-2xl w-full hf-modal hf-modal--complex  flex flex-col overflow-hidden">
+        <div className="hf-modal-header p-4 border-b border-gray-700 flex items-center justify-between gap-4">
           <div>
             <h3 id="sheet-source-title" className="font-semibold flex items-center gap-2.5">
               <ExcelIcon size={28} /> Google Trang Tính
@@ -207,8 +207,8 @@ export function SheetSourceConfig({
             <X size={20} />
           </button>
         </div>
-        <div className="grid md:grid-cols-2 overflow-y-auto min-h-0">
-          <div className="p-5 space-y-5 text-sm">
+        <div className="hf-modal-body">
+          <div className="p-4 space-y-4 text-sm">
             <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-700 px-3 py-2.5">
               <span className="text-xs text-gray-400">
                 Google: {connected ? 'Đã kết nối' : 'Chưa kết nối'}
@@ -325,7 +325,7 @@ export function SheetSourceConfig({
               {previewing ? 'Đang đọc dữ liệu...' : 'Xem trước dữ liệu'}
             </button>
           </div>
-          <div className="p-5 bg-[#13161f] text-xs space-y-4 min-w-0">
+          {preview && <div className="p-4 border-t border-gray-700 bg-[#13161f] text-sm space-y-4 min-w-0">
             <h4 className="font-medium text-gray-300">Xem trước trang tính</h4>
             {preview ? (
               <>
@@ -385,9 +385,9 @@ export function SheetSourceConfig({
                 Chọn trang tính rồi bấm “Xem trước dữ liệu” để kiểm tra nội dung trước khi lưu.
               </p>
             )}
-          </div>
+          </div>}
         </div>
-        <div className="p-4 border-t border-gray-700 flex flex-wrap justify-between items-center gap-4">
+        <div className="hf-modal-footer p-4 border-t border-gray-700 flex flex-wrap justify-between items-center gap-4">
           <p className="text-xs text-gray-500 max-w-md">
             Thay đổi chỉ áp dụng sau khi lưu. Nguồn mới sẽ cần xác nhận khởi tạo ở lần đồng bộ đầu
             tiên.

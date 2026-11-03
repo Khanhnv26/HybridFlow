@@ -187,3 +187,23 @@ body {
   border: 1px solid #30363d;
   border-radius: 8px;
 }
+
+/* Shared modal sizes: content determines height; only the body scrolls. */
+.hf-modal {
+  width: 100%;
+  max-height: min(85dvh, calc(100dvh - 2rem));
+  min-height: 0;
+  overflow: hidden;
+  font-size: 0.875rem;
+  line-height: 1.5;
+}
+.hf-modal.hf-modal--simple { max-width: 30rem; }
+.hf-modal.hf-modal--complex { max-width: 40rem; }
+.hf-modal.hf-modal--data { max-width: 60rem; }
+.hf-modal-header, .hf-modal-footer { flex-shrink: 0; }
+.hf-modal-body { min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.hf-modal-header { padding: 1rem; }
+.hf-modal-footer { padding: 0.75rem 1rem; }
+.hf-modal-header h2, .hf-modal-header h3 { font-size: 1rem; }
+
+.hf-modal :is(input, select, textarea) { min-width: 0; font-size: 0.875rem; }

@@ -51,9 +51,9 @@ test('draft choices update preview immediately and save in the displayed rule or
   await mount({ onSave: async value => { saved = value; } });
   await act(async () => checkbox('Gọn khoảng trắng').props.onChange({ target: { checked: true } }));
   await act(async () => checkbox('IN HOA').props.onChange({ target: { checked: true } }));
-  assert.match(text(renderer.root), /"SP01"/);
+  assert.match(text(renderer.root), /SP01/);
   await act(async () => renderer.root.findByProps({ 'aria-label': 'Đưa IN HOA lên trong sku' }).props.onClick());
-  await act(async () => checkbox('Ghi đè làm sạch').props.onChange({ target: { checked: true } }));
+  await act(async () => renderer.root.findByProps({ 'aria-label': 'Ghi dữ liệu đã làm sạch về Kho Hà Nội · Data' }).props.onChange({ target: { checked: true } }));
   await act(async () => button('Lưu cấu hình').props.onClick());
   assert.deepEqual(saved, { transforms: [{ columnName: 'sku', rules: ['UPPERCASE', 'TRIM'] }], writeBackCleanData: true });
 });
@@ -102,11 +102,11 @@ test('read errors show the backend message and can be retried', async () => {
 
 test('a refreshed source replaces old preview while keeping the selected rules', async () => {
   const props = await mount({ data: { transforms: [{ columnName: 'sku', rules: ['TRIM'] }] } });
-  assert.match(text(renderer.root), /"sp01"/);
+  assert.match(text(renderer.root), /sp01/);
   const refreshed = { ...sheet, rows: [{ sku: ' sp02 ' }] };
   await act(async () => renderer.update(React.createElement(DataTransformConfigModal, { ...props, source: refreshed })));
-  assert.match(text(renderer.root), /"sp02"/);
-  assert.doesNotMatch(text(renderer.root), /"sp01"/);
+  assert.match(text(renderer.root), /sp02/);
+  assert.doesNotMatch(text(renderer.root), /sp01/);
   assert.equal(checkbox('Gọn khoảng trắng').props.checked, true);
 });
 
@@ -117,12 +117,12 @@ test('shared rules preview each source separately and persist independent write-
   let saved;
   await mount({ sources, data: { transforms: [{ columnName: 'sku', rules: ['TRIM', 'UPPERCASE'] }] }, onSave: async value => { saved = value; } });
   assert.match(text(renderer.root), /3 Sheet/);
-  assert.match(text(renderer.root), /"SP01"/);
+  assert.match(text(renderer.root), /SP01/);
   const select = renderer.root.findByProps({ 'aria-label': 'Sheet xem trước' });
   await act(async () => select.props.onChange({ target: { value: 'c' } }));
-  assert.match(text(renderer.root), /"SP03"/);
-  assert.doesNotMatch(text(renderer.root), /"SP01"/);
-  for (const name of ['Kho a', 'Kho c']) await act(async () => renderer.root.findByProps({ 'aria-label': 'Ghi sạch về ' + name }).props.onChange({ target: { checked: true } }));
+  assert.match(text(renderer.root), /SP03/);
+  assert.doesNotMatch(text(renderer.root), /SP01/);
+  for (const name of ['Kho a', 'Kho c']) await act(async () => renderer.root.findByProps({ 'aria-label': 'Ghi dữ liệu đã làm sạch về ' + name }).props.onChange({ target: { checked: true } }));
   await act(async () => button('Lưu cấu hình').props.onClick());
   assert.deepEqual(saved.writeBackBySource, { a: true, b: false, c: true });
   assert.deepEqual(saved.transforms[0].rules, ['TRIM', 'UPPERCASE']);
@@ -134,7 +134,7 @@ test('every source is validated and the missing column identifies its Sheet', as
   assert.match(text(renderer.root), /Kho B → sku/);
   assert.equal(button('Lưu cấu hình').props.disabled, true);
   const column = renderer.root.findAllByType('fieldset').find(node => text(node).startsWith('sku'));
-  await act(async () => column.findAllByType('label').find(node => text(node) === 'Gọn khoảng trắng').findByType('input').props.onChange({ target: { checked: false } }));
+  await act(async () => column.findAllByType('label').find(node => text(node).startsWith('Gọn khoảng trắng')).findByType('input').props.onChange({ target: { checked: false } }));
   assert.equal(button('Lưu cấu hình').props.disabled, false);
 });
 test('one failed shared source blocks saving rules and retry reads all sources', async () => {
@@ -150,4 +150,40 @@ test('one failed shared source blocks saving rules and retry reads all sources',
   await act(async () => button('Đọc lại dữ liệu mẫu').props.onClick());
   assert.deepEqual(reads, ['a', 'b', 'a', 'b']);
   assert.equal(button('Lưu cấu hình').props.disabled, false);
+});
+
+
+test('preview follows the selected column without repeating other columns or JSON quotes', async () => {
+  const data = { ...sheet, headers: ['sku', 'status'], rows: [{ sku: ' sp01 ', status: 'shipping' }] };
+  await mount({ source: data, data: { transforms: [{ columnName: 'sku', rules: ['TRIM'] }, { columnName: 'status', rules: ['UPPERCASE'] }] } });
+  const table = () => text(renderer.root.findByType('table'));
+  assert.match(table(), /sp01/);
+  assert.doesNotMatch(table(), /shipping|SHIPPING|"sp01"/);
+  const status = renderer.root.findAllByType('button').find(node => node.props['aria-pressed'] === false && text(node).startsWith('status'));
+  await act(async () => status.props.onClick());
+  assert.match(table(), /shipping.*SHIPPING.*Có thay đổi/);
+  assert.doesNotMatch(table(), /sp01/);
+  assert.match(text(renderer.root), /Nâng cao: thứ tự áp dụng/);
+});
+
+test('saving existing settings preserves per-Sheet writeback and does not read or change source data', async () => {
+  let saved, reads = 0;
+  const data = { transforms: [{ columnName: 'sku', rules: ['TRIM'] }], writeBackCleanData: true, writeBackBySource: { b: false } };
+  const sources = ['a', 'b'].map(nodeId => ({ nodeId, name: 'Kho ' + nodeId, data: sheet, read: async () => { reads++; return sheet; } }));
+  await mount({ data, sources, onSave: async value => { saved = value; } });
+  assert.equal(renderer.root.findByProps({ 'aria-label': 'Ghi dữ liệu đã làm sạch về Kho a' }).props.checked, true);
+  assert.equal(renderer.root.findByProps({ 'aria-label': 'Ghi dữ liệu đã làm sạch về Kho b' }).props.checked, false);
+  assert.match(text(renderer.root), /Chỉ ghi khi chạy đồng bộ. Lưu cấu hình chưa ghi dữ liệu/);
+  await act(async () => button('Lưu cấu hình').props.onClick());
+  assert.deepEqual(saved, { ...data, writeBackBySource: { a: true, b: false } });
+  assert.equal(reads, 0);
+  assert.equal(sheet.rows[0].sku, ' sp01 ');
+});
+
+test('closing immediately aborts an in-flight readonly preview', async () => {
+  let signal, closed = 0;
+  await mount({ source: undefined, onRead: active => { signal = active; return new Promise(() => {}); }, onClose: () => closed++ });
+  await act(async () => button('Hủy').props.onClick());
+  assert.equal(signal.aborted, true);
+  assert.equal(closed, 1);
 });

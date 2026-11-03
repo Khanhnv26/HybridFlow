@@ -104,16 +104,16 @@ export function DiffEngineConfigModal({ data, sources, availableColumns, disable
   };
 
   return <div role="dialog" aria-modal="true" aria-labelledby="sync-settings-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 sm:p-6" onClick={event => { if (event.target === event.currentTarget) close(); }}>
-    <div className="flex max-h-[90vh] w-full max-w-3xl flex-col overflow-hidden rounded-2xl border border-gray-700 bg-[#141922] text-gray-100">
-      <header className="flex shrink-0 items-start justify-between gap-4 border-b border-gray-700 px-5 py-4 sm:px-6">
+    <div className="flex  w-full hf-modal hf-modal--complex flex-col overflow-hidden rounded-2xl border border-gray-700 bg-[#141922] text-gray-100">
+      <header className="hf-modal-header flex shrink-0 items-start justify-between gap-4 border-b border-gray-700 px-5 py-4 sm:px-4">
         <div className="flex gap-3"><Sparkles size={22} className="mt-1 text-purple-300" /><div>
-          <h2 id="sync-settings-title" className="text-lg font-semibold">Điều phối & Đồng bộ</h2>
+          <h2 id="sync-settings-title" className="text-base font-semibold">Điều phối & Đồng bộ</h2>
           <p className="mt-1 text-sm text-gray-400">Giữ dữ liệu bạn chọn giống nhau giữa các bảng tính.</p>
           <p className="mt-2 text-xs text-gray-400">{sources.length} bảng tính đã nối{sources.length === 1 ? ' với kho lưu trữ' : ''}</p>
         </div></div>
         <button type="button" aria-label="Đóng" disabled={saving} onClick={close} className="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-white"><X size={20} /></button>
       </header>
-      <div className="min-h-0 flex-1 space-y-6 overflow-y-auto px-5 py-5 sm:px-6">
+      <div className="hf-modal-body min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4 sm:px-4">
         {error && <p role="alert" className="rounded-lg border border-red-900 bg-red-950/30 p-3 text-sm text-red-200">{error}</p>}
         <section className="space-y-3">
           <h3 className="font-semibold">1. Nhận biết cùng một dòng bằng cột nào?</h3>
@@ -125,7 +125,7 @@ export function DiffEngineConfigModal({ data, sources, availableColumns, disable
           </label>
           <p className="text-xs text-gray-400">Mã dòng luôn giữ dạng văn bản, kể cả khi có số 0 ở đầu.</p>
         </section>
-        <section className="space-y-3 border-t border-gray-700 pt-5">
+        <section className="space-y-3 border-t border-gray-700 pt-4">
           <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">2. Giữ những cột nào giống nhau?</h3>
             <button type="button" disabled={locked} className="text-xs text-purple-300" onClick={() => { setColumns(selected.length === choices.length ? [] : choices); setAllByDefault(false); }}>{selected.length === choices.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}</button>
           </div>
@@ -155,7 +155,7 @@ export function DiffEngineConfigModal({ data, sources, availableColumns, disable
             </div>
           </details>
         </section>
-        <section className="space-y-3 border-t border-gray-700 pt-5">
+        <section className="space-y-3 border-t border-gray-700 pt-4">
           <h3 className="font-semibold">3. Khi cùng một dòng được sửa khác nhau?</h3>
           <select aria-label="Cách xử lý khi dữ liệu khác nhau" className={field} disabled={locked} value={policy} onChange={event => setPolicy(event.target.value)}>
             <option value="ASK_TELEGRAM">Để tôi chọn giá trị cần giữ</option>
@@ -164,7 +164,7 @@ export function DiffEngineConfigModal({ data, sources, availableColumns, disable
           </select>
           <p className="text-sm text-gray-400">{policy === 'ASK_TELEGRAM' ? 'Các cột còn lại vẫn đồng bộ. Những giá trị khác nhau được giữ lại để bạn chọn; Telegram sẽ báo nếu đã nối khối thông báo.' : 'Lựa chọn này áp dụng khi nhiều nơi cùng sửa một giá trị kể từ lần đồng bộ trước.'}</p>
         </section>
-        <section className="space-y-3 border-t border-gray-700 pt-5">
+        <section className="space-y-3 border-t border-gray-700 pt-4">
           <button type="button" disabled={reading || !sources.length} onClick={() => void readPreview()} className="flex items-center gap-2 rounded-lg border border-gray-600 px-3 py-2 text-sm hover:bg-gray-800 disabled:opacity-50">{reading ? <RefreshCw size={16} className="animate-spin" /> : <Eye size={16} />}{reading ? 'Đang đọc bảng tính…' : 'Xem dữ liệu mẫu'}</button>
           <p className="text-xs text-gray-400">Đọc mẫu để kiểm tra cột và giá trị. Dữ liệu chỉ được đồng bộ khi bạn chạy luồng.</p>
           {previewOpen && source && <div className="space-y-3 rounded-xl border border-gray-700 bg-[#10151d] p-3">
@@ -175,7 +175,7 @@ export function DiffEngineConfigModal({ data, sources, availableColumns, disable
         </section>
         {changedScope && <p role="status" className="rounded-lg border border-amber-800/60 bg-amber-950/20 p-3 text-sm text-amber-200">Bạn đã đổi cột nhận biết, cột đồng bộ hoặc kiểu dữ liệu. Lần chạy tiếp theo sẽ yêu cầu xác nhận dữ liệu ban đầu; lịch chạy tiếp tục sau bước xác nhận này.</p>}
       </div>
-      <footer className="flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-gray-700 px-5 py-4 sm:px-6"><p className="text-xs text-gray-400">Chỉ áp dụng thay đổi sau khi lưu.</p><div className="ml-auto flex gap-2">
+      <footer className="hf-modal-footer flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-gray-700 px-5 py-4 sm:px-4"><p className="text-xs text-gray-400">Chỉ áp dụng thay đổi sau khi lưu.</p><div className="ml-auto flex gap-2">
         <button type="button" disabled={saving} onClick={close} className="rounded-lg border border-gray-700 px-4 py-2 text-sm hover:bg-gray-800">Hủy</button>
         <button type="button" disabled={locked || reading} onClick={() => void save()} className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium hover:bg-purple-500 disabled:opacity-50">{saving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu cấu hình'}</button>
       </div></footer>

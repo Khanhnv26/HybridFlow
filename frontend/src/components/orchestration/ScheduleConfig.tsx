@@ -95,9 +95,9 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId }: 
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm select-none">
-      <div className="bg-[#171b24] border border-[#2d3748] rounded-2xl w-full max-w-lg shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-[#171b24] border border-[#2d3748] rounded-2xl w-full hf-modal hf-modal--simple shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Header */}
-        <div className="p-4 border-b border-[#2d3748] flex items-center justify-between bg-[#131720]">
+        <div className="hf-modal-header p-4 border-b border-[#2d3748] flex items-center justify-between bg-[#131720]">
           <div className="flex items-center gap-2.5">
             <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
               <Clock size={20} />
@@ -118,7 +118,7 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId }: 
         </div>
 
         {/* Body */}
-        <div className="p-5 space-y-4 text-xs overflow-y-auto max-h-[80vh] node-scrollbar">
+        <div className="hf-modal-body p-4 space-y-4 text-sm node-scrollbar">
           <fieldset disabled={disabled || saving} className="min-w-0 space-y-4">
             {/* Status alerts / warnings */}
             {(statusError || status?.error) && (
@@ -324,7 +324,7 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId }: 
         </div>
 
         {/* Footer */}
-        <div className="p-3.5 border-b-0 border-t border-[#2d3748] bg-[#131720] flex items-center justify-end gap-2">
+        <div className="hf-modal-footer p-3.5 border-b-0 border-t border-[#2d3748] bg-[#131720] flex items-center justify-end gap-2">
           <button
             type="button"
             onClick={onClose}

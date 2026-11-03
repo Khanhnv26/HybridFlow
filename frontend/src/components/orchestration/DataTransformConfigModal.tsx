@@ -147,7 +147,22 @@ export function DataTransformConfigModal({
     }
   };
 
-  const close = () => { if (!saving && !connecting) onClose(); };
+  const close = () => { if (!saving && !connecting) { request.current?.abort(); onClose(); } };
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const escape = (event: KeyboardEvent) => {
+      if (event.key === 'Escape' && !saving && !connecting) { request.current?.abort(); onClose(); }
+    };
+    window.addEventListener('keydown', escape);
+    return () => window.removeEventListener('keydown', escape);
+  }, [saving, connecting, onClose]);
+  const examples: Record<TransformRule, string> = {
+    TRIM: '“  Hà   Nội  ” → “Hà Nội”', UPPERCASE: '“đã giao” → “ĐÃ GIAO”',
+    LOWERCASE: '“ĐÃ GIAO” → “đã giao”', CAPITALIZE: '“hÀ nỘi” → “Hà Nội”',
+    PHONE_VN: '“0912 345 678” → “+84912345678”', DEFAULT_IF_EMPTY: 'Ô trống → giá trị bạn chọn',
+  };
+  const displayValue = (value: string | null | undefined) => value == null || value === '' ? 'Ô trống' : value;
+
 
   return (
     <div
@@ -158,19 +173,19 @@ export function DataTransformConfigModal({
         role="dialog"
         aria-modal="true"
         aria-labelledby="transform-title"
-        className="flex h-[88vh] max-h-[850px] w-full max-w-5xl flex-col overflow-hidden rounded-2xl border border-[#2d3748] bg-[#141922] text-gray-100 shadow-2xl"
+        className="flex  w-full hf-modal hf-modal--complex flex-col overflow-hidden rounded-2xl border border-[#2d3748] bg-[#141922] text-gray-100 shadow-2xl"
         onClick={event => event.stopPropagation()}
       >
         {/* Modal Header */}
-        <header className="flex shrink-0 items-center justify-between border-b border-[#2d3748] p-4">
+        <header className="hf-modal-header flex shrink-0 items-center justify-between border-b border-[#2d3748] p-4">
           <div className="flex min-w-0 items-center gap-3">
             <span className="rounded-xl border border-purple-800/60 bg-purple-950/50 p-2.5 text-purple-300">
               <Wand2 size={20} />
             </span>
             <div className="min-w-0">
-              <h2 id="transform-title" className="font-semibold">Chuẩn Hóa Dữ Liệu</h2>
-              <p className="mt-1 truncate text-xs text-gray-400">
-                {inputs.length > 1 ? `${inputs.length} Sheet · Một bộ quy tắc dùng chung` : sourceName || inputs[0]?.name || 'Sheet → Chuẩn hóa → So khớp'}
+              <h2 id="transform-title" className="text-base font-semibold">Chuẩn hóa dữ liệu</h2>
+              <p className="mt-1 truncate text-sm text-gray-400">
+                Làm sạch dữ liệu trước khi so sánh và đồng bộ.
               </p>
             </div>
           </div>
@@ -185,16 +200,16 @@ export function DataTransformConfigModal({
         </header>
 
         {/* 2-Column Split: Master-Detail matching SheetSourceConfig */}
-        <div className="grid min-h-0 flex-1 overflow-hidden md:grid-cols-2">
+        <div className="hf-modal-body">
           
           {/* Left Panel: Configuration */}
-          <div className="space-y-4 overflow-y-auto p-5 text-sm min-w-0 h-full">
+          <div className="min-w-0 space-y-4 p-4 text-sm">
             {hasSource && !connected && (
-              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-700 bg-amber-950/30 p-3 text-xs text-amber-200">
+              <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-gray-700 bg-amber-950/30 p-3 text-sm text-amber-200">
                 <span>Kết nối Google để kiểm tra cột và xem trước dữ liệu thật.</span>
                 <button
                   disabled={busy}
-                  className="rounded bg-amber-700 px-3 py-1.5 text-xs font-medium text-white hover:bg-amber-600 disabled:opacity-40"
+                  className="rounded bg-amber-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-40"
                   onClick={async () => {
                     setConnecting(true); setError('');
                     try { await onConnectGoogle(); } catch (reason) { setError(errorMessage(reason)); }
@@ -207,13 +222,13 @@ export function DataTransformConfigModal({
             )}
 
             {error && (
-              <p role="alert" className="rounded-lg border border-red-800/50 bg-red-950/30 p-3 text-xs text-red-300">
+              <p role="alert" className="rounded-lg border border-red-800/50 bg-red-950/30 p-3 text-sm text-red-300">
                 {error}
               </p>
             )}
 
             {missing.length > 0 && (
-              <div role="alert" className="rounded-lg border border-amber-800/50 bg-amber-950/30 p-3 text-xs text-amber-300">
+              <div role="alert" className="rounded-lg border border-amber-800/50 bg-amber-950/30 p-3 text-sm text-amber-300">
                 <p className="font-medium">Cột không còn trong Sheet. Bỏ quy tắc hoặc bổ sung cột trước khi lưu:</p>
                 <ul className="mt-1 list-inside list-disc">
                   {missing.map(item => (
@@ -223,136 +238,37 @@ export function DataTransformConfigModal({
               </div>
             )}
 
-            {/* Block 1: Nguồn dữ liệu */}
-            <div className="space-y-2 rounded-xl border border-gray-700 bg-[#0b0e14] p-3">
-              <div className="flex items-center justify-between gap-2 border-b border-gray-800 pb-2">
-                <h3 className="text-xs font-semibold text-gray-300">
-                  Nguồn dữ liệu <span className="font-normal text-gray-500">· {inputs.length} Sheet</span>
-                </h3>
-                <button
-                  disabled={busy || !hasSource || !connected}
-                  onClick={() => void read()}
-                  className="flex items-center gap-1.5 text-xs text-gray-400 hover:text-gray-200 disabled:opacity-40"
-                >
-                  <RefreshCw size={12} className={reading ? 'animate-spin' : ''} />
-                  {reading ? 'Đang đọc Sheet…' : 'Đọc lại dữ liệu mẫu'}
-                </button>
-              </div>
-
-              {!hasSource && (
-                <p className="p-2 text-xs text-amber-200">
-                  Nối một hoặc nhiều Google Sheet vào cổng bên trái để dùng chung quy tắc chuẩn hóa.
-                </p>
-              )}
-
-              {inputs.length > 0 && (
-                <div className="max-h-52 space-y-1.5 overflow-y-auto pr-1">
-                  {inputs.map(input => {
-                    const isSelected = selectedId === input.nodeId;
-                    return (
-                      <div
-                        key={input.nodeId}
-                        onClick={() => setSelectedId(input.nodeId)}
-                        className={`flex items-center justify-between gap-3 rounded-lg border p-2 transition cursor-pointer ${
-                          isSelected
-                            ? 'border-purple-800/80 bg-purple-950/40 text-purple-200'
-                            : 'border-gray-800 bg-[#141922] text-gray-400 hover:border-gray-700 hover:text-gray-300'
-                        }`}
-                      >
-                        <div className="min-w-0 flex-1 pr-2">
-                          <button
-                            type="button"
-                            onClick={(e) => { e.stopPropagation(); setSelectedId(input.nodeId); }}
-                            title={input.name}
-                            className={`block w-full truncate text-left text-xs ${isSelected ? 'font-medium text-purple-200' : 'text-gray-400'}`}
-                          >
-                            {input.name}
-                          </button>
-                          <span className={`block text-[10px] truncate ${readErrors[input.nodeId] ? 'text-red-300' : 'text-gray-500'}`}>
-                            {reading ? 'Đang đọc…' : readErrors[input.nodeId] ? 'Đọc thất bại' : previews[input.nodeId] ? `${previews[input.nodeId].totalRows} dòng` : 'Chưa đọc'}
-                          </span>
-                        </div>
-
-                        {inputs.length > 1 && (
-                          <label
-                            className="flex shrink-0 items-center gap-1.5 text-xs text-gray-400 cursor-pointer select-none"
-                            onClick={e => e.stopPropagation()}
-                          >
-                            <input
-                              type="checkbox"
-                              aria-label={`Ghi sạch về ${input.name}`}
-                              disabled={busy}
-                              checked={writeBackBySource[input.nodeId] ?? writeBack}
-                              onChange={event => setWriteBackBySource(current => ({ ...current, [input.nodeId]: event.target.checked }))}
-                              className="accent-purple-500"
-                            />
-                            Ghi sạch
-                          </label>
-                        )}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
-
-              {Object.entries(readErrors).map(([id, detail]) => (
-                <p key={id} role="alert" className="border-t border-red-900/50 pt-2 text-xs text-red-300">
-                  {inputs.find(input => input.nodeId === id)?.name}: {detail}
-                </p>
-              ))}
-
-              {inputs.length <= 1 && (
-                <label className="flex items-start gap-2.5 border-t border-gray-800 pt-2.5 cursor-pointer">
-                  <input
-                    type="checkbox"
-                    className="mt-0.5 accent-purple-500"
-                    disabled={busy}
-                    checked={inputs[0] ? writeBackBySource[inputs[0].nodeId] ?? writeBack : writeBack}
-                    onChange={event => {
-                      setWriteBack(event.target.checked);
-                      if (inputs[0]) setWriteBackBySource(current => ({ ...current, [inputs[0].nodeId]: event.target.checked }));
-                    }}
-                  />
-                  <div className="text-xs">
-                    <span className="block font-medium text-gray-200">Ghi đè làm sạch lại Sheet gốc</span>
-                    <span className="mt-0.5 block text-gray-400">
-                      Áp dụng khi chạy đồng bộ. Tắt để chỉ làm sạch trong bộ nhớ trước khi so khớp.
-                    </span>
-                  </div>
-                </label>
-              )}
-            </div>
-
-            {/* Block 2: Cột dữ liệu (Pill Selector) */}
-            <div className="space-y-2 min-w-0">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-semibold text-gray-300">
-                  Cột dữ liệu ({columns.length})
+            {/* Chọn cột */}
+            <div className="min-w-0 space-y-4 rounded-xl border border-gray-700 bg-[#0b0e14] p-4">
+              <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-2">
+                <span className="text-sm font-semibold text-gray-300">
+                  1. Chọn cột cần làm sạch ({columns.length})
                 </span>
-                <span className="text-xs text-purple-300 font-mono">
+                <span className="text-xs text-gray-400">
                   {active.length} cột có quy tắc
                 </span>
               </div>
 
+              <p className="text-sm leading-relaxed text-gray-400">Quy tắc áp dụng chung cho {inputs.length} Sheet. Chọn từng cột để chỉnh cách làm sạch.</p>
               {!columns.length ? (
-                <p className="rounded-xl border border-dashed border-gray-700 p-4 text-center text-xs text-gray-500">
+                <p className="rounded-xl border border-dashed border-gray-700 p-4 text-center text-sm text-gray-500">
                   {reading ? 'Đang lấy danh sách cột…' : 'Đọc Sheet để lấy danh sách cột.'}
                 </p>
               ) : (
                 <>
                   {columns.length > 5 && (
                     <div className="relative">
-                      <Search size={13} className="absolute left-2.5 top-2.5 text-gray-500 pointer-events-none" />
+                      <Search size={18} className="absolute left-2.5 top-2.5 text-gray-500 pointer-events-none" />
                       <input
                         type="text"
                         value={colSearchQuery}
                         onChange={(e) => setColSearchQuery(e.target.value)}
                         placeholder="Tìm tên cột..."
-                        className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-[#0b0e14] border border-gray-700 text-xs text-gray-200 placeholder-gray-500 outline-none focus:border-purple-500"
+                        className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-[#0b0e14] border border-gray-700 text-sm text-gray-200 placeholder-gray-500 outline-none focus:border-purple-500"
                       />
                     </div>
                   )}
-                  <div className="max-h-28 overflow-y-auto pr-1 flex flex-wrap gap-1.5">
+                  <div className="grid max-h-64 grid-cols-2 gap-3 overflow-y-auto p-1 sm:grid-cols-3">
                     {filteredColumns.map(column => {
                       const config = configs.find(item => item.columnName === column);
                       const count = config?.rules?.length || 0;
@@ -362,23 +278,24 @@ export function DataTransformConfigModal({
                           key={column}
                           type="button"
                           title={column}
+                          aria-pressed={isSelected}
                           onClick={() => setSelectedColumn(column)}
-                          className={`flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-mono transition max-w-[150px] ${
+                          className={`flex min-h-[60px] min-w-0 flex-col items-start justify-center gap-1.5 rounded-lg border px-3 py-2 text-left text-sm transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-400 ${
                             isSelected
-                              ? 'border-purple-500 bg-purple-600 font-medium text-white shadow-sm'
+                              ? 'border-purple-400 bg-purple-950/60 text-white shadow-sm'
                               : count > 0
                               ? 'border-purple-800 bg-purple-950/40 text-purple-200 hover:border-purple-600'
                               : 'border-gray-700 bg-[#0b0e14] text-gray-400 hover:border-gray-600 hover:text-gray-200'
                           }`}
                         >
-                          <span className="truncate">{column}</span>
-                          {count > 0 && (
+                          <span className="w-full truncate font-mono font-medium">{column}</span>
+                          {(
                             <span
-                              className={`rounded-full px-1.5 text-[11px] font-sans shrink-0 ${
-                                isSelected ? 'bg-purple-800 text-white' : 'bg-purple-900/60 text-purple-300'
+                              className={`text-xs leading-none ${
+                                isSelected ? 'text-purple-200' : 'text-purple-300'
                               }`}
                             >
-                              {count}
+                              {count > 0 ? `${count} quy tắc` : 'Chưa có quy tắc'}
                             </span>
                           )}
                         </button>
@@ -401,20 +318,21 @@ export function DataTransformConfigModal({
                 >
                   <legend className="sr-only">{column}</legend>
                   <div className="flex items-center justify-between border-b border-gray-800 pb-2">
-                    <span className="text-xs font-semibold text-purple-300">
-                      Quy tắc cho cột: <span className="font-mono text-gray-100">{column}</span>
+                    <span className="text-sm font-semibold text-purple-300">
+                      2. Chọn cách làm sạch cho cột: <span className="font-mono text-gray-100">{column}</span>
                     </span>
-                    <span className="text-xs text-gray-500">
+                    <span className="text-sm text-gray-500">
                       {config.rules.length} quy tắc
                     </span>
                   </div>
 
-                  <div className="grid grid-cols-2 gap-2">
+                  <p className="text-gray-400">Chọn một hoặc nhiều quy tắc. Các kiểu viết hoa và viết thường sẽ thay thế nhau.</p>
+                  <div className="grid gap-3 sm:grid-cols-2">
                     {transformRules.map(([rule, label]) => (
-                      <label key={rule} className="flex items-center gap-2 text-xs text-gray-300 cursor-pointer">
+                      <label key={rule} className="flex items-start gap-3 rounded-lg border border-gray-700 p-3 text-sm text-gray-300 cursor-pointer">
                         <input
                           type="checkbox"
-                          className="accent-purple-500"
+                          className="mt-1 h-4 w-4 shrink-0 accent-purple-500"
                           checked={config.rules.includes(rule)}
                           onChange={event => {
                             let nextRules = event.target.checked
@@ -429,21 +347,22 @@ export function DataTransformConfigModal({
                             update(column, { rules: nextRules });
                           }}
                         />
-                        {label}
+                        <span><span className="block font-medium">{label}</span><span className="mt-1 block text-sm text-gray-400">{examples[rule]}</span></span>
                       </label>
                     ))}
                   </div>
 
                   {config.rules.length > 0 && (
-                    <div className="border-t border-gray-800 pt-2 space-y-1">
-                      <span className="block text-[11px] text-gray-400">Thứ tự thực thi (từ trên xuống):</span>
+                    <details className="rounded-lg border border-gray-700 p-3 space-y-2">
+                      <summary className="cursor-pointer text-gray-300">Nâng cao: thứ tự áp dụng quy tắc</summary>
+                      <p className="text-gray-400">Áp dụng từ trên xuống. Đổi thứ tự có thể làm kết quả khác đi.</p>
                       <ol className="space-y-1">
                         {config.rules.map((rule, index) => (
                           <li
                             key={`${rule}:${index}`}
-                            className="flex items-center justify-between gap-2 rounded border border-gray-800 bg-[#141922] p-1.5 text-xs"
+                            className="flex items-center justify-between gap-2 rounded border border-gray-800 bg-[#141922] p-1.5 text-sm"
                           >
-                            <span className="font-mono text-gray-300 text-xs">
+                            <span className="font-mono text-gray-300 text-sm">
                               {index + 1}. {ruleLabel(rule)}
                             </span>
                             <span className="flex gap-1">
@@ -452,9 +371,9 @@ export function DataTransformConfigModal({
                                 aria-label={`Đưa ${ruleLabel(rule)} lên trong ${column}`}
                                 disabled={busy || index === 0}
                                 onClick={() => moveRule(config, index, -1)}
-                                className="rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-white disabled:opacity-25"
+                                className="rounded p-2 text-gray-400 hover:bg-gray-800 hover:text-white disabled:opacity-25"
                               >
-                                <ArrowUp size={13} />
+                                <ArrowUp size={18} />
                               </button>
                               <button
                                 type="button"
@@ -463,21 +382,22 @@ export function DataTransformConfigModal({
                                 onClick={() => moveRule(config, index, 1)}
                                 className="rounded p-1 text-gray-400 hover:bg-gray-800 hover:text-white disabled:opacity-25"
                               >
-                                <ArrowDown size={13} />
+                                <ArrowDown size={18} />
                               </button>
                             </span>
                           </li>
                         ))}
                       </ol>
-                    </div>
+                    </details>
                   )}
 
+                  {config.rules.includes('PHONE_VN') && <p className="text-gray-400">Số điện thoại không nhận diện được sẽ giữ nguyên.</p>}
                   {config.rules.includes('DEFAULT_IF_EMPTY') && (
-                    <label className="block space-y-1 border-t border-gray-800 pt-2 text-xs text-gray-400">
+                    <label className="block space-y-1 border-t border-gray-800 pt-2 text-sm text-gray-400">
                       <span>Giá trị mặc định (khi ô trống)</span>
                       <input
                         aria-label={`Giá trị mặc định cho ${column}`}
-                        className="w-full rounded border border-gray-700 bg-[#141922] p-2 text-xs text-gray-100 outline-none focus:border-purple-500"
+                        className="w-full rounded border border-gray-700 bg-[#141922] p-2 text-sm text-gray-100 outline-none focus:border-purple-500"
                         value={config.defaultValue || ''}
                         onChange={event => update(column, { defaultValue: event.target.value })}
                         placeholder="Ví dụ: N/A"
@@ -490,19 +410,20 @@ export function DataTransformConfigModal({
           </div>
 
           {/* Right Panel: Spreadsheet Preview matching SheetSourceConfig */}
-          <div className="flex min-w-0 flex-col justify-between space-y-4 bg-[#13161f] p-5 text-xs overflow-y-auto h-full">
-            <div className="space-y-3 min-w-0">
+          <div className="min-w-0 space-y-4 border-t border-gray-700 p-4 text-sm">
+            <details className="space-y-3 min-w-0">
+              <summary className="cursor-pointer font-semibold text-gray-200">3. Xem kết quả mẫu</summary>
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <h4 className="font-medium text-gray-300">Xem trước kết quả</h4>
-                  <p className="mt-0.5 text-xs text-gray-500">Tối đa 3 dòng mỗi Sheet. Xem trước không ghi dữ liệu.</p>
+                  <h4 className="sr-only">Kết quả mẫu</h4>
+                  <p className="mt-0.5 text-sm text-gray-500">Tối đa 3 dòng của cột {activeCol || 'đang chọn'}. Xem trước không ghi dữ liệu.</p>
                 </div>
-                {inputs.length > 1 && (
+                {inputs.length > 0 && (
                   <select
                     aria-label="Sheet xem trước"
                     value={selectedId}
                     onChange={event => setSelectedId(event.target.value)}
-                    className="rounded-lg border border-gray-700 bg-[#0b0e14] px-2.5 py-1.5 text-xs text-gray-200 outline-none focus:border-purple-500 max-w-[200px] truncate"
+                    className="rounded-lg border border-gray-700 bg-[#0b0e14] px-2.5 py-1.5 text-sm text-gray-200 outline-none focus:border-purple-500 max-w-full"
                   >
                     {inputs.map(input => (
                       <option key={input.nodeId} value={input.nodeId}>{input.name}</option>
@@ -511,30 +432,37 @@ export function DataTransformConfigModal({
                 )}
               </div>
 
-              {!preview || !preview.rows.length || !active.length ? (
-                <div className="rounded-xl border border-gray-800 bg-[#0b0e14] p-6 text-center text-xs text-gray-500">
+                <button
+                  disabled={busy || !hasSource || !connected}
+                  onClick={() => void read()}
+                  className="flex items-center gap-1.5 text-sm text-gray-400 hover:text-gray-200 disabled:opacity-40"
+                >
+                  <RefreshCw size={12} className={reading ? 'animate-spin' : ''} />
+                  {reading ? 'Đang đọc Sheet…' : 'Đọc lại dữ liệu mẫu'}
+                </button>
+              {!preview || !preview.rows.length || !activeCol ? (
+                <div className="rounded-xl border border-gray-800 bg-[#0b0e14] p-6 text-center text-sm text-gray-500">
                   {reading
                     ? 'Đang đọc dữ liệu mẫu…'
                     : !preview
                     ? 'Đọc Sheet để xem trước.'
                     : !preview.rows.length
                     ? 'Sheet chưa có dòng dữ liệu.'
-                    : 'Chọn quy tắc để xem kết quả.'}
+                    : 'Chọn cột để xem kết quả.'}
                 </div>
               ) : (
-                <div className="max-h-[52vh] overflow-auto rounded-lg border border-gray-800 bg-[#0b0e14]">
+                <div className="overflow-x-auto rounded-lg border border-gray-800 bg-[#0b0e14]">
                   <table className="w-full table-fixed text-left">
                     <thead className="sticky top-0 z-10 border-b border-gray-700 bg-[#161c26] text-gray-400">
                       <tr>
-                        <th className="p-2.5 text-center text-gray-500 w-12 font-medium">#</th>
-                        <th className="p-2.5 font-medium w-[26%]">Cột</th>
+                        <th className="p-2.5 text-center text-gray-500 w-14 font-medium">Dòng</th>
                         <th className="p-2.5 font-medium w-[34%]">Trước</th>
                         <th className="p-2.5 font-medium w-[34%]">Sau</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-800 font-mono">
                       {preview.rows.slice(0, 3).flatMap((row, index) =>
-                        active.map(config => {
+                        [configs.find(config => config.columnName === activeCol) || { columnName: activeCol, rules: [] }].map(config => {
                           const before = row[config.columnName] ?? null;
                           const after = transformValue(before, config);
                           const changed = before !== after;
@@ -544,19 +472,14 @@ export function DataTransformConfigModal({
                               key={`${index}:${config.columnName}`}
                               className={`hover:bg-[#141922] transition ${isSelected ? 'bg-purple-950/20' : ''}`}
                             >
-                              <td className="p-2.5 text-center text-gray-500 font-sans text-xs">{index + 2}</td>
-                              <td className="p-2.5 truncate" title={config.columnName}>
-                                <span className={`block truncate ${isSelected ? 'font-medium text-purple-300' : 'text-gray-400'}`}>
-                                  {config.columnName}
-                                </span>
+                              <td className="p-2.5 text-center text-gray-500 font-sans text-sm">{index + 2}</td>
+                              <td className="p-3 text-gray-400 whitespace-pre-wrap break-words" title={String(before)}>
+                                <span>{displayValue(before)}</span>
                               </td>
-                              <td className="p-2.5 text-gray-400 truncate" title={String(before)}>
-                                <span className="block truncate">{JSON.stringify(before)}</span>
-                              </td>
-                              <td className={`p-2.5 truncate ${changed ? 'font-medium text-emerald-300' : 'text-gray-400'}`} title={String(after)}>
-                                <div className="flex items-center justify-between gap-1.5 min-w-0">
-                                  <span className="truncate">{JSON.stringify(after)}</span>
-                                  {changed && <Check size={12} className="text-emerald-300 shrink-0" aria-label="Đã thay đổi" />}
+                              <td className={`p-3 whitespace-pre-wrap break-words ${changed ? 'font-medium text-emerald-300' : 'text-gray-400'}`} title={String(after)}>
+                                <div className="space-y-1">
+                                  <span className="block">{displayValue(after)}</span>
+                                  <span className="flex items-center gap-1 text-xs">{changed && <Check size={14} />}{changed ? 'Có thay đổi' : 'Giữ nguyên'}</span>
                                 </div>
                               </td>
                             </tr>
@@ -567,10 +490,25 @@ export function DataTransformConfigModal({
                   </table>
                 </div>
               )}
-            </div>
+            </details>
+
+            <section className="space-y-3 rounded-xl border border-gray-700 bg-[#0b0e14] p-4">
+              <h3 className="font-semibold text-gray-200">Ghi dữ liệu đã làm sạch về Sheet gốc?</h3>
+              <p className="text-gray-400">Chỉ ghi khi chạy đồng bộ. Lưu cấu hình chưa ghi dữ liệu. Nếu tắt, dữ liệu vẫn được làm sạch để so sánh và chuyển sang bước tiếp theo.</p>
+              {inputs.map(input => <label key={input.nodeId} className="flex cursor-pointer items-start gap-3 rounded-lg border border-gray-700 p-3">
+                <input type="checkbox" aria-label={`Ghi dữ liệu đã làm sạch về ${input.name}`} disabled={busy}
+                  className="mt-1 h-4 w-4 shrink-0 accent-purple-500" checked={writeBackBySource[input.nodeId] ?? writeBack}
+                  onChange={event => {
+                    setWriteBackBySource(current => ({ ...current, [input.nodeId]: event.target.checked }));
+                    if (inputs.length === 1) setWriteBack(event.target.checked);
+                  }} />
+                <span><span className="block font-medium text-gray-200">{input.name}</span><span className="mt-1 block text-gray-400">Ghi dữ liệu đã làm sạch về Sheet này</span></span>
+              </label>)}
+              {Object.entries(readErrors).map(([id, detail]) => <p key={id} role="alert" className="text-red-300">{inputs.find(input => input.nodeId === id)?.name}: {detail}</p>)}
+            </section>
 
             {unverified && !reading && (
-              <p role="status" className="text-xs text-amber-300">
+              <p role="status" className="text-sm text-amber-300">
                 Đọc đủ các Sheet để kiểm tra cột trước khi lưu quy tắc.
               </p>
             )}
@@ -578,23 +516,24 @@ export function DataTransformConfigModal({
 
         </div>
 
+        <p className="shrink-0 border-t border-gray-700 px-5 py-2 text-xs text-gray-400">Đổi quy tắc hoặc cách ghi về Sheet có thể yêu cầu xác nhận khởi tạo lại luồng ở lần chạy tiếp theo.</p>
         {/* Modal Footer */}
-        <footer className="flex shrink-0 items-center justify-between border-t border-[#2d3748] bg-[#11151c] px-5 py-3">
-          <p className="hidden text-xs text-gray-500 sm:block">
-            Áp dụng cho chạy thủ công và chạy theo lịch.
+        <footer className="hf-modal-footer flex shrink-0 items-center justify-between border-t border-[#2d3748] bg-[#11151c] px-5 py-3">
+          <p className="hidden text-sm text-gray-500 sm:block">
+            Lưu cấu hình chưa ghi dữ liệu.
           </p>
           <div className="ml-auto flex gap-3">
             <button
               disabled={saving || connecting}
               onClick={close}
-              className="px-3 py-2 text-xs text-gray-400 hover:text-white disabled:opacity-40"
+              className="px-3 py-2 text-sm text-gray-400 hover:text-white disabled:opacity-40"
             >
               Hủy
             </button>
             <button
               disabled={busy || !hasSource || !!missing.length || !!unverified}
               onClick={() => void save()}
-              className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-xs font-medium text-white hover:bg-purple-500 disabled:opacity-40"
+              className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium text-white hover:bg-purple-500 disabled:opacity-40"
             >
               {saving ? <RefreshCw size={14} className="animate-spin" /> : <Save size={14} />}
               {saving ? 'Đang lưu…' : 'Lưu cấu hình'}

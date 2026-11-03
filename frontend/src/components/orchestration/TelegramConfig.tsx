@@ -226,8 +226,8 @@ export function TelegramConfig({
       aria-labelledby="telegram-title"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
     >
-      <div className="bg-[#171b24] border border-gray-700 rounded-2xl w-full max-w-3xl max-h-[85vh] flex flex-col overflow-hidden">
-        <div className="p-5 border-b border-gray-700 flex items-start justify-between gap-4">
+      <div className="bg-[#171b24] border border-gray-700 rounded-2xl w-full hf-modal hf-modal--complex  flex flex-col overflow-hidden">
+        <div className="hf-modal-header p-4 border-b border-gray-700 flex items-start justify-between gap-4">
           <div>
             <h3 id="telegram-title" className="font-semibold flex items-center gap-2">
               <TelegramIcon size={28} />
@@ -246,7 +246,7 @@ export function TelegramConfig({
             <X size={20} />
           </button>
         </div>
-        <div className="p-5 space-y-5 overflow-y-auto text-sm">
+        <div className="hf-modal-body p-4 space-y-4 text-sm">
           {loading ? (
             <p role="status" className="text-gray-400 text-xs flex items-center gap-2">
               <RefreshCw size={14} className="animate-spin" />
@@ -386,10 +386,8 @@ export function TelegramConfig({
           </section>
 
           {/* Section 4: Mẫu tin nhắn (Template) */}
-          <section className="space-y-3 border-t border-gray-700 pt-4">
-            <h4 className="font-medium text-xs uppercase tracking-wider text-sky-300">
-              4. Mẫu nội dung thông báo (Template)
-            </h4>
+          <details className="space-y-3 border-t border-gray-700 pt-4">
+            <summary className="cursor-pointer text-sm font-medium text-gray-200">Tùy chỉnh mẫu nội dung thông báo</summary>
             <p className="text-xs text-gray-400">
               Tùy chỉnh nội dung tin nhắn gửi về Telegram. Dùng biến dạng <code className="text-sky-300">{`{tên_cột}`}</code> hoặc bấm nút bên dưới để chèn nhanh.
             </p>
@@ -449,11 +447,11 @@ export function TelegramConfig({
                 </div>
               )}
             </div>
-          </section>
+          </details>
 
           {invalidVariables.length > 0 && <p role="alert" className="text-xs text-red-300">Biến template không hợp lệ: {[...new Set(invalidVariables)].join(', ')}</p>}
-          {previewRow && recordTemplate && <section className="text-xs space-y-2"><h4>Xem trước bản ghi đã đọc</h4><pre className="whitespace-pre-wrap">{renderTemplatePreview(recordTemplate, previewRow)}</pre></section>}
-          {previewConflict && conflictTemplate && <section className="text-xs space-y-2"><h4>Xem trước xung đột</h4><pre className="whitespace-pre-wrap">{renderTemplatePreview(conflictTemplate, previewConflict)}</pre></section>}
+          {previewRow && recordTemplate && <details className="text-sm space-y-2"><summary className="cursor-pointer">Xem trước bản ghi đã đọc</summary><pre className="whitespace-pre-wrap">{renderTemplatePreview(recordTemplate, previewRow)}</pre></details>}
+          {previewConflict && conflictTemplate && <details className="text-sm space-y-2"><summary className="cursor-pointer">Xem trước xung đột</summary><pre className="whitespace-pre-wrap">{renderTemplatePreview(conflictTemplate, previewConflict)}</pre></details>}
           {!!data.notificationItems?.length && <section className="space-y-2 text-xs">
             <h4>Thông báo của lượt chạy gần nhất</h4>
             {data.notificationItems.filter(item => item.state !== 'SKIPPED').map(item => <div key={item.id} className="border-t border-gray-700 py-2">
@@ -520,7 +518,7 @@ export function TelegramConfig({
             </p>
           )}
         </div>
-        <div className="p-4 border-t border-gray-700 flex flex-wrap items-center justify-between gap-4">
+        <div className="hf-modal-footer p-4 border-t border-gray-700 flex flex-wrap items-center justify-between gap-4">
           <p className="text-xs text-gray-500 max-w-sm">
             Gửi thử không thay đổi cấu hình. Chỉ áp dụng nơi nhận mới sau khi lưu.
           </p>

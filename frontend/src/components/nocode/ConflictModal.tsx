@@ -112,14 +112,14 @@ export const ConflictModal: React.FC<Props> = ({
     value === '' ? '(trống)' : (value ?? '(chưa có)');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 sm:p-5">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 sm:p-4">
       <section
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
-        className="flex max-h-[90dvh] w-full max-w-4xl flex-col overflow-hidden rounded-2xl border border-gray-700 bg-[#161b22] shadow-2xl"
+        className="flex  w-full hf-modal hf-modal--data flex-col overflow-hidden rounded-2xl border border-gray-700 bg-[#161b22] shadow-2xl"
       >
-        <header className="shrink-0 border-b border-gray-700 px-4 py-4 sm:px-6">
+        <header className="hf-modal-header shrink-0 border-b border-gray-700 px-4 py-4 sm:px-4">
           <div className="flex items-start justify-between gap-4">
             <div>
               <h3 id={titleId} className="flex items-center gap-2 font-semibold">
@@ -154,7 +154,7 @@ export const ConflictModal: React.FC<Props> = ({
           )}
         </header>
 
-        <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-6">
+        <div className="hf-modal-body min-h-0 flex-1 overflow-y-auto overscroll-contain px-4 py-4 sm:px-4">
           {!conflict ? (
             <p className="text-sm text-gray-400">Không có xung đột đang mở trong luồng này.</p>
           ) : (
@@ -194,7 +194,7 @@ export const ConflictModal: React.FC<Props> = ({
                         htmlFor={inputId}
                         className="col-start-1 row-start-2 min-w-0 cursor-pointer sm:col-start-auto sm:row-start-auto"
                       >
-                        <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-words text-lg font-semibold tabular-nums text-gray-100">
+                        <pre className="max-h-24 overflow-auto whitespace-pre-wrap break-words text-base font-semibold tabular-nums text-gray-100">
                           {displayValue(choice.value)}
                         </pre>
                         <span
@@ -242,7 +242,7 @@ export const ConflictModal: React.FC<Props> = ({
           )}
         </div>
 
-        <footer className="shrink-0 space-y-3 border-t border-gray-700 bg-[#131820] px-4 py-4 sm:px-6">
+        <footer className="hf-modal-footer shrink-0 space-y-3 border-t border-gray-700 bg-[#131820] px-4 py-4 sm:px-4">
           {error && (
             <p
               role="alert"
