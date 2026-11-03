@@ -29,4 +29,8 @@ public class ExecutionHistoryRepository {
     public void appendProgress(String executionId, String event) {
         jdbc.update("UPDATE sync_executions SET progress=progress || jsonb_build_array(?::jsonb) WHERE id=? AND status='RUNNING'", event, executionId);
     }
+
+    public void deleteByFlowId(String flowId) {
+        jdbc.update("DELETE FROM sync_executions WHERE flow_id=? AND status!='RUNNING'", flowId);
+    }
 }

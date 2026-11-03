@@ -46,6 +46,11 @@ function transformPaths(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
 }
 
 export function workflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
+  const ids = new Set<string>();
+  for (const node of nodes) {
+    if (!node.id || ids.has(node.id)) throw new Error('Mã khối không hợp lệ hoặc bị trùng.');
+    ids.add(node.id);
+  }
   const normalized = transformPaths(nodes, edges);
   const config = baseWorkflowConfig(normalized.nodes, normalized.edges);
   if (config.sheets) return { ...config, sheets: config.sheets.map(sheet => ({ ...sheet, ...normalized.settings.get(sheet.nodeId) })) };

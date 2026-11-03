@@ -46,6 +46,13 @@ public class WorkflowServiceImpl implements WorkflowService {
     }
 
     @Override
+    @Transactional
+    public void clearHistory(String flowId) {
+        validateId(flowId);
+        history.clear(flowId);
+    }
+
+    @Override
     @Transactional(readOnly = true)
     public List<Map<String, String>> getVault(String flowId) {
         validateId(flowId);

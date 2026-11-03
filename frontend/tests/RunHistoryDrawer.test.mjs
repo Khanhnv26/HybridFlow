@@ -63,3 +63,20 @@ test('a bootstrap history entry does not offer conflict resolution', async () =>
   assert.equal(buttons('Xử lý ngay').length, 0);
   assert.equal(buttons('Xem xung đột').length, 0);
 });
+test('clear logs button invokes callback and disables when empty or running', async () => {
+  let cleared = 0;
+  await act(async () => {
+    renderer = create(React.createElement(RunHistoryDrawer, { ...props([]), onClearLogs: () => { cleared++; } }));
+  });
+  await expand();
+  const clearBtn = () => buttons('Xóa nhật ký')[0];
+  assert.equal(clearBtn().props.disabled, false);
+  await act(async () => clearBtn().props.onClick());
+  assert.equal(cleared, 1);
+
+  await act(async () => renderer.update(React.createElement(RunHistoryDrawer, { ...props([]), logs: [] })));
+  assert.equal(clearBtn().props.disabled, true);
+
+  await act(async () => renderer.update(React.createElement(RunHistoryDrawer, { ...props([]), isRunning: true })));
+  assert.equal(clearBtn().props.disabled, true);
+});

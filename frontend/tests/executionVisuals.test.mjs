@@ -66,3 +66,19 @@ test('awaiting bootstrap and legacy histories do not mark unexecuted steps succe
   assert.equal(pending.nodeStates.diff.state, 'running');
   assert.equal(pending.edgeStates.input.state, 'idle');
 });
+
+
+test('transform edges follow backend TRANSFORM and WRITE phases in the actual direction', () => {
+  const graphNodes = [{ id: 'sheet', type: 'sheetsTrigger' }, { id: 'transform', type: 'dataTransform' }, { id: 'diff', type: 'diffEngine' }];
+  const graphEdges = [{ id: 'raw', source: 'sheet', target: 'transform' }, { id: 'clean', source: 'transform', target: 'diff' }];
+  const phases = [phase('READ', 'sheet'), phase('TRANSFORM', 'transform')];
+  const transform = executionVisuals(graphNodes, graphEdges, run('RUNNING', phases));
+  assert.equal(transform.nodeStates.transform.state, 'running');
+  assert.equal(transform.edgeStates.clean.state, 'running');
+  assert.equal(transform.edgeStates.clean.reverse, false);
+  const write = executionVisuals(graphNodes, graphEdges, run('RUNNING', [...phases, phase('COMPARE', 'diff'), phase('WRITE', 'sheet')]));
+  for (const id of ['raw', 'clean']) {
+    assert.equal(write.edgeStates[id].state, 'running');
+    assert.equal(write.edgeStates[id].reverse, true);
+  }
+});

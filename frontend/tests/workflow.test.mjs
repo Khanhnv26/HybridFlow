@@ -311,3 +311,9 @@ test('Sheet to Vault also supports transformation and rule changes reset identit
   assert.equal(config.transforms[0].columnName, 'sku');
   assert.notEqual(await flowIdFor(config), await flowIdFor({ ...config, transforms: [] }));
 });
+
+test('ambiguous node identities are rejected before resolving transform paths', () => {
+  const g = withTransform();
+  g.nodes.push({ id: 'transform', type: 'dataTransform', data: {} });
+  assert.throws(() => workflowConfig(g.nodes, g.edges), /bị trùng/);
+});

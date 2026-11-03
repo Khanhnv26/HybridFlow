@@ -48,8 +48,8 @@ const bundle = await build({
       export const useEdgesState = useNodesState;
       const refreshNode = () => {};
       export function useUpdateNodeInternals() { return refreshNode; }
-      export function ReactFlow({ nodes, edges, nodeTypes, children }) { return React.createElement('div', { 'data-execution-edges': JSON.stringify(edges) },
-        nodes.map(node => React.createElement(nodeTypes[node.type], { key: node.id, id: node.id, data: node.data })), children); }
+      export function ReactFlow({ nodes, edges, nodeTypes, children, onNodeClick }) { return React.createElement('div', { 'data-execution-edges': JSON.stringify(edges) },
+        nodes.map(node => React.createElement('div', { key: node.id, 'data-workflow-node': node.id, onClick: () => onNodeClick?.({}, node) }, React.createElement(nodeTypes[node.type], { id: node.id, data: node.data }))), children); }
       export const Background = () => null, Controls = () => null, MiniMap = () => null, Handle = () => null;
       export const Panel = ({ children }) => React.createElement('div', null, children);
       export const Position = { Left: 'left', Right: 'right' }, BackgroundVariant = { Dots: 'dots' };
@@ -94,7 +94,7 @@ function text(node) {
 }
 async function mount(options = {}) {
   const storage = new Map([
-    ['google_access_token', 'test-token'],
+    ['google_access_token', options.token || 'test-token'],
     ['hybridflow-workflow-id', 'test-editor'],
     [
       'hybridflow-workflow-v2',
@@ -147,7 +147,7 @@ test('scheduled completions update history and source data without reloading the
   history = [{ id: 'scheduled-run', status: 'SUCCESS', started_at: '2026-11-03T03:00:00Z',
     progress: JSON.stringify([{ nodes: ['a'], stage: 'READ', label: 'Đang đọc' }, { nodes: ['diff'], stage: 'COMPARE', label: 'Đang so khớp' }, { nodes: ['vault'], stage: 'WRITE', label: 'Đang ghi' }]),
     result: JSON.stringify({ cleanRecordIds: ['1'], conflicts: [], totalRowsProcessed: 1, notificationsSent: 0, notificationsFailed: 0 }) }];
-  await act(async () => context.mock.timers.tick(5000));
+  await act(async () => context.mock.timers.tick(1000));
   assert.match(text(renderer.root), /Lịch sử \(1\)/);
   assert.match(text(renderer.root), /Đồng bộ 1 bản ghi/);
   assert.deepEqual(reads, [['file-a', 'Tab A']]);
@@ -253,4 +253,97 @@ test('a failed read shows the actual error on that source and in the viewer inst
   assert.match(text(renderer.root), /Đọc thất bại/);
   assert.match(text(renderer.root), /Tài khoản chưa có quyền đọc file này/);
   assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Sửa status dòng 2' }).length, 0);
+});
+test('clearing history deletes backend history and keeps logs empty across polling', async (context) => {
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  let history = [{
+    id: 'run-1',
+    status: 'SUCCESS',
+    started_at: '2026-11-03T03:00:00Z',
+    result: JSON.stringify({ cleanRecordIds: ['1'], conflicts: [], totalRowsProcessed: 1, notificationsSent: 0, notificationsFailed: 0 }),
+  }];
+  const clearedFlows = [];
+  await mount({
+    draft: {
+      nodes: [
+        source('a', 'file-a', 'Tab A'),
+        { id: 'diff', type: 'diffEngine', position: { x: 0, y: 0 }, data: { uniqueKey: 'id', conflictPolicy: 'SOURCE_WINS' } },
+        { id: 'vault', type: 'storageAction', position: { x: 0, y: 0 }, data: { tableName: 'vault' } },
+      ],
+      edges: [
+        { source: 'a', sourceHandle: 'out', target: 'diff', targetHandle: 'in' },
+        { source: 'diff', sourceHandle: 'clean', target: 'vault', targetHandle: 'in' },
+      ],
+    },
+    syncService: {
+      getOpenConflicts: async () => [],
+      getHistory: async () => history,
+      clearHistory: async (flowId) => {
+        clearedFlows.push(flowId);
+        history = [];
+      },
+    },
+  });
+  for (let attempt = 0; attempt < 5; attempt++) await act(async () => new Promise(setImmediate));
+  assert.match(text(renderer.root), /Lịch sử \(1\)/);
+
+  const historyToggle = renderer.root.findAllByType('button').find((button) => text(button).includes('Lịch sử (1)'));
+  await act(async () => historyToggle.props.onClick());
+  const clearButton = renderer.root.findAllByType('button').find((button) => text(button).includes('Xóa nhật ký'));
+  await act(async () => clearButton.props.onClick());
+
+  assert.equal(clearedFlows.length, 1);
+  assert.match(text(renderer.root), /Lịch sử \(0\)/);
+  assert.match(text(renderer.root), /Đã xóa nhật ký điều phối/);
+
+  await act(async () => context.mock.timers.tick(2000));
+  assert.match(text(renderer.root), /Lịch sử \(0\)/);
+});
+
+
+test('transform configuration is persisted to the workflow backend and failure keeps the previous draft intact', async () => {
+  api.googleService = { readSheet: async () => ({ spreadsheetId: 'file-a', sheetName: 'Tab A', headers: ['id', 'status'], rows: [{ id: ' sp01 ', status: 'new' }], totalRows: 1 }) };
+  await mount({
+    token: 'gconn-test',
+    draft: {
+      nodes: [source('a', 'file-a', 'Tab A'),
+        { id: 'transform', type: 'dataTransform', position: { x: 0, y: 0 }, data: { label: 'Chuẩn Hóa Dữ Liệu', type: 'dataTransform', category: 'logic', transforms: [{ columnName: 'id', rules: ['TRIM'] }] } },
+        { id: 'diff', type: 'diffEngine', position: { x: 0, y: 0 }, data: { uniqueKey: 'id', sharedColumns: 'status', conflictPolicy: 'SOURCE_WINS' } },
+        { id: 'vault', type: 'storageAction', position: { x: 0, y: 0 }, data: { tableName: 'vault' } }],
+      edges: [
+        { source: 'a', sourceHandle: 'out', target: 'transform', targetHandle: 'in' },
+        { source: 'transform', sourceHandle: 'out', target: 'diff', targetHandle: 'in' },
+        { source: 'diff', sourceHandle: 'clean', target: 'vault', targetHandle: 'in' },
+      ],
+    },
+    syncService: { getOpenConflicts: async () => [], getHistory: async () => [] },
+  });
+  let saved;
+  let fail = true;
+  api.workflowService.save = async (id, definition) => {
+    if (fail) throw { response: { data: { message: 'Chưa lưu được quy tắc' } } };
+    saved = { id, definition };
+  };
+  await act(async () => renderer.root.findByProps({ 'data-workflow-node': 'transform' }).props.onClick());
+  const field = renderer.root.findAllByType('fieldset').find(node => text(node).startsWith('id'));
+  const upper = field.findAllByType('label').find(node => text(node) === 'IN HOA').findByType('input');
+  await act(async () => upper.props.onChange({ target: { checked: true } }));
+  assert.equal(renderer.root.findAllByType('fieldset').find(node => text(node).startsWith('id')).findAllByType('label').find(node => text(node) === 'IN HOA').findByType('input').props.checked, true);
+  const saveButton = () => renderer.root.findByProps({ role: 'dialog' }).findAllByType('button').find(node => text(node) === 'Lưu cấu hình');
+  await act(async () => saveButton().props.onClick());
+  for (let attempt = 0; attempt < 5; attempt++) await act(async () => new Promise(setImmediate));
+  assert.match(text(renderer.root), /Chưa lưu được quy tắc/);
+  let draft = JSON.parse(localStorage.getItem('hybridflow-workflow-v2'));
+  assert.deepEqual(draft.nodes.find(node => node.id === 'transform').data.transforms[0].rules, ['TRIM']);
+  assert.equal(renderer.root.findAllByType('fieldset').find(node => text(node).startsWith('id')).findAllByType('label').find(node => text(node) === 'IN HOA').findByType('input').props.checked, true, 'Server failure must keep the selected rule');
+  fail = false;
+  await act(async () => saveButton().props.onClick());
+  for (let attempt = 0; attempt < 5; attempt++) await act(async () => new Promise(setImmediate));
+  assert.equal(saved.id, 'test-editor');
+  assert.deepEqual(saved.definition.nodes.find(node => node.id === 'transform').data.transforms[0].rules, ['TRIM', 'UPPERCASE']);
+  assert.match(saved.definition.flowId, /^flow-/);
+  assert.equal(saved.definition.accessToken, 'gconn-test');
+  draft = JSON.parse(localStorage.getItem('hybridflow-workflow-v2'));
+  assert.deepEqual(draft.nodes.find(node => node.id === 'transform').data.transforms[0].rules, ['TRIM', 'UPPERCASE']);
+  assert.equal(renderer.root.findAllByProps({ role: 'dialog' }).length, 0);
 });

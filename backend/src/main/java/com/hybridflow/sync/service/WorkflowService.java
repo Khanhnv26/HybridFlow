@@ -8,6 +8,7 @@ import java.util.Map;
 
 public interface WorkflowService {
     List<Map<String, Object>> getHistory(String flowId);
+    void clearHistory(String flowId);
     List<Map<String, String>> getVault(String flowId);
     JsonNode getDefinition(String workflowId);
     SaveWorkflowResponse saveDefinition(String workflowId, JsonNode definition);

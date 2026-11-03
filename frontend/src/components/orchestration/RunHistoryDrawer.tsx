@@ -111,7 +111,8 @@ export const RunHistoryDrawer: React.FC<RunHistoryDrawerProps> = ({
 
             <button
               onClick={onClearLogs}
-              className="text-gray-500 hover:text-red-400 text-[11px] flex items-center gap-1 transition"
+              disabled={isRunning || logs.length === 0}
+              className="text-gray-500 hover:text-red-400 text-[11px] flex items-center gap-1 transition disabled:opacity-40 disabled:pointer-events-none"
             >
               <Trash2 size={12} />
               <span>Xóa nhật ký</span>

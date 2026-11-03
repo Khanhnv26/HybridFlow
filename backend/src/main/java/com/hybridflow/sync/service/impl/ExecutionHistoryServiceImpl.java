@@ -43,4 +43,10 @@ public class ExecutionHistoryServiceImpl implements ExecutionHistoryService {
     public void phase(String executionId, List<String> nodeIds, String stage, String label) {
         repository.appendProgress(executionId, codec.encode(Map.of("nodes", nodeIds, "stage", stage, "label", label)));
     }
+
+    @Override
+    @Transactional
+    public void clear(String flowId) {
+        repository.deleteByFlowId(flowId);
+    }
 }

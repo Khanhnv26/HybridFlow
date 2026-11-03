@@ -321,6 +321,26 @@ export default function App() {
     }
     return false;
   }, []);
+  const clearLogs = useCallback(async () => {
+    const id = currentFlow.current;
+    if (!id) {
+      setLogs([]);
+      setLatestExecution(null);
+      return;
+    }
+    try {
+      await syncService.clearHistory(id);
+      if (currentFlow.current !== id) return;
+      ++refreshRevision.current;
+      observedRunData.current = { flowId: id, fingerprint: JSON.stringify([conflicts, []]) };
+      setLogs([]);
+      setLatestExecution(null);
+      setBootstrapRequired(false);
+      showToast('Đã xóa nhật ký điều phối.');
+    } catch (error) {
+      if (currentFlow.current === id) showToast(`Không thể xóa nhật ký: ${message(error)}`);
+    }
+  }, [conflicts, showToast]);
   const token = useCallback(() => {
     const value = localStorage.getItem('google_access_token');
     if (!value) throw new Error('Kết nối Google trước khi thao tác dữ liệu.');
@@ -567,8 +587,11 @@ export default function App() {
   );
   const edgeTypes = useMemo(() => ({ execution: ExecutionEdge }), []);
   const activeNode = nodes.find((n) => n.id === activeNodeId) || null;
-  const transformSource = activeNode?.type === 'dataTransform'
-    ? nodes.find(node => node.type === 'sheetsTrigger' && edges.some(edge => edge.source === node.id && edge.target === activeNode.id && edge.sourceHandle === 'out' && edge.targetHandle === 'in'))
+  const transformInputs = activeNode?.type === 'dataTransform'
+    ? edges.filter(edge => edge.target === activeNode.id)
+    : [];
+  const transformSource = transformInputs.length === 1 && transformInputs[0].sourceHandle === 'out' && transformInputs[0].targetHandle === 'in'
+    ? nodes.find(node => node.type === 'sheetsTrigger' && node.id === transformInputs[0].source)
     : undefined;
   const connectGoogle = async () => {
     const opened = window.open('about:blank', 'hybridflow-google', 'width=600,height=700');
@@ -589,18 +612,21 @@ export default function App() {
     sourceData: Partial<OrchestrationNodeData>,
     successMessage = 'Đã lưu nguồn dữ liệu.',
   ) => {
-    if (running.current)
-      throw new Error('Chờ phiên đồng bộ hiện tại hoàn tất trước khi đổi nguồn.');
+    if (running.current || backendRunning.current)
+      throw new Error('Chờ phiên đồng bộ hiện tại hoàn tất trước khi đổi cấu hình.');
     running.current = true;
     setAutoActive(false);
     try {
       const updatedNodes = nodes.map((node) =>
         node.id === nodeId ? { ...node, data: { ...node.data, ...sourceData } } : node,
       );
+      let updatedFlowId: string | undefined;
+      try { updatedFlowId = await flowIdFor(workflowConfig(updatedNodes, edges)); }
+      catch { /* Incomplete graphs may still be saved as drafts when no schedule is active. */ }
       await workflowService.save(workflowId, {
         nodes: updatedNodes,
         edges,
-        flowId: flowId || undefined,
+        flowId: updatedFlowId,
         accessToken: localStorage.getItem('google_access_token') || undefined,
       });
       setNodes(updatedNodes);
@@ -691,6 +717,7 @@ export default function App() {
                     scheduleType: 'interval',
                     scheduleEnabled: true,
                     scheduleTime: '08:00',
+                    ...(item.type === 'dataTransform' ? { transforms: [], writeBackCleanData: false } : {}),
                   },
                 },
               ]);
@@ -747,7 +774,7 @@ export default function App() {
             logs={logs}
             activeConflictIds={conflicts.map((conflict) => conflict.id)}
             isRunning={isRunning}
-            onClearLogs={() => setLogs([])}
+            onClearLogs={() => void clearLogs()}
             onOpenConflictModal={() => setIsConflictModalOpen(true)}
           />
         </div>
@@ -761,13 +788,17 @@ export default function App() {
         </div>
       )}
       {activeNode?.type === 'dataTransform' && <DataTransformConfigModal
-        key={activeNode.id}
+        key={JSON.stringify([activeNode.id, transformSource ? sourceDescriptor(transformSource) : null])}
         data={activeNode.data}
+        sourceName={transformSource ? `${transformSource.data.spreadsheetTitle || transformSource.data.label} · ${transformSource.data.sheetName || 'Chưa chọn tab'}` : undefined}
+        connected={connected}
+        connectionVersion={connectionVersion}
+        onConnectGoogle={connectGoogle}
         source={transformSource ? stateFor(sourceDescriptor(transformSource)).data || undefined : undefined}
-        onRead={transformSource ? () => readSheetSource(sourceDescriptor(transformSource)) : undefined}
+        onRead={transformSource ? signal => readSheetSource(sourceDescriptor(transformSource), signal) : undefined}
         onClose={() => setActiveNodeId(null)}
         disabled={isRunning}
-        onSave={settings => setNodes(items => items.map(node => node.id === activeNode.id ? { ...node, data: { ...node.data, ...settings } } : node))}
+        onSave={settings => saveSource(activeNode.id, settings, 'Đã lưu cấu hình chuẩn hóa vào hệ thống.')}
       />}
       <NaturalLanguageConfigModal
         workflowId={workflowId}

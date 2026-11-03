@@ -74,4 +74,13 @@ class WorkflowServiceTest {
         when(repository.findDefinition("workflow")).thenReturn(Optional.of(definition.toString()));
         assertFalse(service.getDefinition("workflow").has("accessToken"));
     }
+
+    @Test
+    void clearHistoryValidatesFlowIdAndDelegatesToExecutionHistoryService() {
+        assertThrows(IllegalArgumentException.class, () -> service.clearHistory(""));
+        verifyNoInteractions(history);
+
+        service.clearHistory("flow-1");
+        verify(history).clear("flow-1");
+    }
 }

@@ -112,6 +112,9 @@ export const syncService = {
   getHistory: async (flowId: string, signal?: AbortSignal): Promise<ExecutionHistoryDto[]> =>
     (await apiClient.get<ExecutionHistoryDto[]>(`/workflows/${encodeURIComponent(flowId)}/history`, { signal }))
       .data,
+  clearHistory: async (flowId: string): Promise<void> => {
+    await apiClient.delete(`/workflows/${encodeURIComponent(flowId)}/history`);
+  },
   getVault: async (flowId: string): Promise<Record<string, string>[]> =>
     (
       await apiClient.get<Record<string, string>[]>(

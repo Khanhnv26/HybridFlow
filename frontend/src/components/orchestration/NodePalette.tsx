@@ -12,6 +12,10 @@ interface PaletteItem {
   color: string;
 }
 
+const executableTypes = new Set<OrchestrationNodeType>([
+  'sheetsTrigger', 'scheduleTrigger', 'diffEngine', 'dataTransform', 'storageAction', 'telegramAction',
+]);
+
 const PALETTE_ITEMS: PaletteItem[] = [
   // Nhóm 1: Nguồn dữ liệu
   {
@@ -109,12 +113,14 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ onAddNode, disabled })
       </div>
       <div className="space-y-1.5">
         {items.map((item) => (
-          <div
+          <button
+            type="button"
+            disabled={disabled || !executableTypes.has(item.type)}
             key={item.type}
-            onClick={() => { if (!disabled && ['sheetsTrigger', 'scheduleTrigger', 'diffEngine', 'storageAction', 'telegramAction'].includes(item.type)) onAddNode(item); }}
-            className="p-2.5 rounded-xl bg-[#171b22] border border-[#2d3748] hover:border-gray-500 hover:bg-[#202632] cursor-pointer transition flex items-center justify-between group shadow-sm"
-            aria-disabled={disabled || !['sheetsTrigger', 'scheduleTrigger', 'diffEngine', 'storageAction', 'telegramAction'].includes(item.type)}
-            title={['sheetsTrigger', 'scheduleTrigger', 'diffEngine', 'storageAction', 'telegramAction'].includes(item.type) ? 'Bấm để thêm' : 'Chưa hỗ trợ thực thi'}
+            onClick={() => { if (!disabled && executableTypes.has(item.type)) onAddNode(item); }}
+            className="w-full text-left disabled:opacity-40 disabled:cursor-not-allowed p-2.5 rounded-xl bg-[#171b22] border border-[#2d3748] hover:border-gray-500 hover:bg-[#202632] cursor-pointer transition flex items-center justify-between group shadow-sm"
+            aria-disabled={disabled || !executableTypes.has(item.type)}
+            title={executableTypes.has(item.type) ? 'Bấm để thêm' : 'Chưa hỗ trợ thực thi'}
           >
             <div className="flex items-center gap-2.5">
               <div
@@ -135,12 +141,12 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ onAddNode, disabled })
                   {item.label}
                 </div>
                 <div className="text-[10px] text-gray-400 truncate max-w-[140px] leading-tight mt-0.5">
-                  {['sheetsTrigger', 'scheduleTrigger', 'diffEngine', 'storageAction', 'telegramAction'].includes(item.type) ? item.subtitle : 'Chưa hỗ trợ thực thi'}
+                  {executableTypes.has(item.type) ? item.subtitle : 'Chưa hỗ trợ thực thi'}
                 </div>
               </div>
             </div>
             <Plus size={14} className="text-gray-500 group-hover:text-white transition shrink-0" />
-          </div>
+          </button>
         ))}
       </div>
     </div>

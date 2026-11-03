@@ -45,16 +45,20 @@ export function executionVisuals(nodes: Node[], edges: Edge[], run: ExecutionHis
     const sheetEdge = from?.type === 'sheetsTrigger' && ['diffEngine', 'dataTransform'].includes(to?.type || '')
       || from?.type === 'dataTransform' && to?.type === 'diffEngine'
       || from?.type === 'diffEngine' && to?.type === 'sheetsTrigger';
+    const upstreamSheet = from?.type === 'dataTransform'
+      ? edges.find(link => link.target === from.id && nodes.some(node => node.id === link.source && node.type === 'sheetsTrigger'))?.source
+      : undefined;
+    const writingSheet = current?.stage === 'WRITE' && (active(edge.source) || active(edge.target) || !!upstreamSheet && active(upstreamSheet));
     const moving = running && !pending && current && (
       ['READ', 'TRANSFORM'].includes(current.stage) && sheetEdge && (active(edge.source) || active(edge.target)) ||
-      current.stage === 'WRITE' && (sheetEdge && (active(edge.source) || active(edge.target)) || to?.type === 'storageAction' && active(edge.target)) ||
+      current.stage === 'WRITE' && (sheetEdge && writingSheet || to?.type === 'storageAction' && active(edge.target)) ||
       current.stage === 'TRIGGER' && from?.type === 'scheduleTrigger' && active(edge.source) ||
       current.stage === 'NOTIFY' && to?.type === 'telegramAction' && active(edge.target));
     const participated = [edge.source, edge.target].every((id) => ['running', 'success', 'warning', 'error'].includes(nodeStates[id]?.state));
     edgeStates[edge.id] = {
       state: moving ? 'running' : !participated ? 'idle' : [edge.source, edge.target].some((id) => nodeStates[id]?.state === 'error') ? 'error'
         : edge.sourceHandle === 'conflict' && nodeStates[edge.source]?.state === 'warning' ? 'warning' : 'success',
-      reverse: !!sheetEdge && (current?.stage === 'READ' ? from?.type === 'diffEngine' : to?.type === 'diffEngine'),
+      reverse: !!sheetEdge && (current?.stage === 'READ' ? from?.type === 'diffEngine' : current?.stage === 'WRITE' && from?.type !== 'diffEngine'),
     };
   }
   const label = pending ? 'Đang gửi yêu cầu chạy' : running ? current?.label || 'Đang đồng bộ' : run?.status === 'ERROR' ? 'Đồng bộ thất bại'
