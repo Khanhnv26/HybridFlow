@@ -13,7 +13,15 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import java.util.*;
+
+import java.util.HashMap;
+import java.util.HashSet;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.Objects;
+import java.util.Set;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -65,6 +73,7 @@ public class SheetWriteServiceImpl implements SheetWriteService {
                 validate(plan, read(token, plan), false);
                 send(token, plan.getSpreadsheetId(), cells(plan), types(plan, false));
             }
+            for (SheetWritePlan plan : plans) verifyApplied(token, plan);
             journal.complete(operationId);
         } catch (RuntimeException failure) {
             if (!synchronizedTransaction) {
@@ -72,6 +81,24 @@ public class SheetWriteServiceImpl implements SheetWriteService {
                 catch (RuntimeException recoveryFailure) { failure.addSuppressed(recoveryFailure); }
             }
             throw new IllegalStateException("Lần ghi chưa hoàn tất. Hệ thống sẽ đối soát lần ghi dở dang trước khi cho chạy tiếp.", failure);
+        }
+    }
+
+    private void verifyApplied(String token, SheetWritePlan plan) {
+        SheetDataResponse live = read(token, plan);
+        if (!Objects.equals(plan.getHeaders(), live.getHeaders()) || !Objects.equals(plan.getSheetName(), live.getSheetName())) stale();
+        SheetRowUtils.index(live, plan.getIdColumn());
+        Map<Integer, String> expectedIds = new HashMap<>();
+        for (SheetCellChange cell : plan.getChanges()) {
+            if (cell.getColumn().equals(plan.getIdColumn())) expectedIds.put(cell.getRowIndex(), cell.getAfter());
+        }
+        for (SheetCellChange cell : plan.getChanges()) {
+            String expectedId = expectedIds.getOrDefault(cell.getRowIndex(), cell.getRecordId());
+            if (!Objects.equals(expectedId, value(live, cell.getRowIndex(), plan.getIdColumn()))
+                    || !Objects.equals(cell.getAfter(), value(live, cell.getRowIndex(), cell.getColumn()))
+                    || SheetRowUtils.requiresTypeWrite(live, cell.getRowIndex(), cell.getColumn(), cell.getAfter(), plan.getColumnTypes())) {
+                throw new IllegalStateException("Không xác minh được dữ liệu sau ghi. Chưa cập nhật checkpoint hoặc gửi thông báo.");
+            }
         }
     }
 

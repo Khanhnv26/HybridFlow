@@ -8,6 +8,7 @@ import com.hybridflow.sync.entity.SyncConflict;
 import com.hybridflow.sync.model.NotificationOutboxItem;
 import com.hybridflow.sync.model.RecordChangeEvent;
 import com.hybridflow.sync.repository.NotificationOutboxRepository;
+import com.hybridflow.sync.scheduler.NotificationOutboxRunner;
 import com.hybridflow.sync.service.impl.NotificationOutboxServiceImpl;
 import com.hybridflow.sync.service.impl.NotificationTemplateServiceImpl;
 import com.hybridflow.sync.service.impl.RuleEvaluationServiceImpl;
@@ -23,9 +24,21 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.stream.IntStream;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 class NotificationOutboxServiceTest {
     private final NotificationOutboxRepository repository = mock(NotificationOutboxRepository.class);
@@ -56,6 +69,23 @@ class NotificationOutboxServiceTest {
             items.add(item); return true;
         });
         return items;
+    }
+
+    @Test void revisionsDeduplicateAcrossExecutionsButAllowLaterChangesAndOtherFlows() {
+        List<NotificationOutboxItem> items = captureEnqueues();
+        RecordChangeEvent change = events(1).getFirst();
+        change.setRevision(2L);
+        assertEquals(1, service.enqueue("flow", "run-1", List.of(router("r")), List.of(action()),
+                List.of(change), Set.of("id", "status"), List.of(), List.of()));
+        assertEquals(0, service.enqueue("flow", "run-2", List.of(router("r")), List.of(action()),
+                List.of(change), Set.of("id", "status"), List.of(), List.of()));
+        // The same value after an intervening update is a new revision, not a duplicate.
+        change.setRevision(4L);
+        assertEquals(1, service.enqueue("flow", "run-3", List.of(router("r")), List.of(action()),
+                List.of(change), Set.of("id", "status"), List.of(), List.of()));
+        assertEquals(1, service.enqueue("other-flow", "run-4", List.of(router("r")), List.of(action()),
+                List.of(change), Set.of("id", "status"), List.of(), List.of()));
+        assertEquals(3, items.size());
     }
 
     @Test void deduplicatesBeforeApplyingTheLimitAndRendersPerDestination() {
@@ -144,7 +174,7 @@ class NotificationOutboxServiceTest {
         when(sender.channel()).thenReturn("TELEGRAM");
         when(sender.send("bad", "first")).thenReturn(TelegramDeliveryResult.builder().retryable(false).error("403").build());
         when(sender.send("good", "second")).thenReturn(TelegramDeliveryResult.builder().success(true).build());
-        new com.hybridflow.sync.scheduler.NotificationOutboxRunner(service).processOutbox();
+        new NotificationOutboxRunner(service).processOutbox();
         verify(repository).markFailed(eq("blocked"), eq("o1"), eq("403"), any(), eq(true));
         verify(repository).markSent(eq("healthy"), eq("o2"), any());
     }

@@ -9,6 +9,7 @@ public interface SyncStateService {
     void lock(String flowId);
     Map<String, String> getSnapshot(String flowId, String recordId);
     Map<String, String> getVaultRecord(String flowId, String recordId);
+    Long getSnapshotRevision(String flowId, String recordId);
     void saveSnapshot(String flowId, String recordId, Map<String, String> data);
     void saveVaultRecord(String flowId, String recordId, Map<String, String> data);
     void bind(String flowId, String spreadsheetId, String sheetName, String idColumn, List<String> headers, String storageName);

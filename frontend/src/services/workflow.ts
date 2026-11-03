@@ -1,3 +1,4 @@
+import { isValidRuleNumber } from './notificationPreview';
 import type {
   ActionPlanPayload,
   ColumnTransformConfig,
@@ -130,8 +131,13 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
     const mode = rNode.data.routerMatchMode || rNode.data.matchMode || 'ALL';
     if (!['CHANGED', 'CREATED', 'UPDATED'].includes(trigger) || !['ALL', 'ANY'].includes(mode)) throw new Error('Cấu hình KHI/NẾU không hợp lệ.');
     for (const condition of conditions) {
-      if (!condition.columnName?.trim() || !['CHANGED_TO', 'EQUALS', 'NOT_EQUALS', 'CONTAINS', 'IS_NOT_EMPTY'].includes(condition.operator)
-          || condition.operator !== 'IS_NOT_EMPTY' && condition.value == null) throw new Error('Điều kiện rẽ nhánh thiếu cột, sai toán tử hoặc thiếu value.');
+      if (!condition.columnName?.trim() || !['CHANGED_TO', 'EQUALS', 'NOT_EQUALS', 'CONTAINS', 'IS_NOT_EMPTY', 'IS_EMPTY', 'COLUMN_CHANGED', 'GREATER_THAN', 'LESS_THAN', 'GREATER_OR_EQUAL', 'LESS_OR_EQUAL'].includes(condition.operator)
+          || !['IS_NOT_EMPTY', 'IS_EMPTY', 'COLUMN_CHANGED'].includes(condition.operator) && condition.value == null) throw new Error('Điều kiện rẽ nhánh thiếu cột, sai toán tử hoặc thiếu value.');
+      if (['GREATER_THAN', 'LESS_THAN', 'GREATER_OR_EQUAL', 'LESS_OR_EQUAL'].includes(condition.operator)) {
+        if (columnTypes[condition.columnName] !== 'NUMBER') throw new Error('Chọn kiểu Số cho cột ' + condition.columnName + ' trước khi so sánh số.');
+        if (!isValidRuleNumber(condition.value))
+          throw new Error('Giá trị so sánh số không hợp lệ.');
+      }
     }
     routerPlans.push({
       nodeId: rNode.id,

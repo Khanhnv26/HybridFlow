@@ -2,10 +2,10 @@ package com.hybridflow.sync.service.impl;
 
 import com.hybridflow.sync.dto.request.SheetEndpointRequest;
 import com.hybridflow.sync.model.SyncFlowBinding;
-import com.hybridflow.sync.util.SheetEndpointUtils;
 import com.hybridflow.sync.repository.SyncFlowBindingRepository;
 import com.hybridflow.sync.repository.SyncStateRepository;
 import com.hybridflow.sync.service.SyncStateService;
+import com.hybridflow.sync.util.SheetEndpointUtils;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -33,6 +33,11 @@ public class SyncStateServiceImpl implements SyncStateService {
     @Override
     public Map<String, String> getVaultRecord(String flowId, String recordId) {
         return repository.findVaultRecord(flowId, recordId);
+    }
+
+    @Override
+    public Long getSnapshotRevision(String flowId, String recordId) {
+        return repository.findSnapshotRevision(flowId, recordId);
     }
 
     @Override

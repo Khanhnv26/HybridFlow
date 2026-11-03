@@ -360,12 +360,12 @@ export const RouterConditionNode: React.FC<any> = ({ id, data, selected }) => {
       </div>
       <div className="relative flex h-7 items-center justify-between rounded-b-xl border-t border-[#293241] bg-[#151b25] px-2.5 text-[10px] font-medium">
         <span className="text-purple-300">Đầu vào ➔</span>
-        <span className="text-emerald-300">Thỏa mãn ➔</span>
+        <span className="text-emerald-300">Thỏa điều kiện ➔</span>
         <Handle
           type="source"
           position={Position.Right}
           id="out"
-          title="Nối tới các khối Hành động (ví dụ Báo động Telegram)."
+          title="Nối tới Telegram để gửi thông báo khi thỏa điều kiện."
           aria-label="Chuyển tiếp bản ghi thỏa mãn điều kiện"
           className={`${handleClass} !border-purple-400`}
         />

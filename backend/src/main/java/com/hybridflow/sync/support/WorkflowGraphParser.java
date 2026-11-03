@@ -1,20 +1,5 @@
 package com.hybridflow.sync.support;
 
-import java.time.LocalTime;
-import java.time.Instant;
-import java.time.ZoneId;
-import java.time.ZonedDateTime;
-import java.security.MessageDigest;
-import java.util.HexFormat;
-import java.time.format.DateTimeFormatter;
-import java.util.ArrayList;
-import java.util.Arrays;
-import java.util.LinkedHashSet;
-import java.util.List;
-import java.util.Optional;
-import java.util.Set;
-import java.util.stream.Collectors;
-
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
@@ -26,12 +11,33 @@ import com.hybridflow.sync.dto.request.RouterPlan;
 import com.hybridflow.sync.dto.request.RunSyncRequest;
 import com.hybridflow.sync.dto.request.SheetEndpointRequest;
 import com.hybridflow.sync.model.ParsedSchedule;
+import com.hybridflow.sync.util.RuleOperators;
 import org.springframework.stereotype.Component;
+
+import java.security.MessageDigest;
+import java.time.Instant;
+import java.time.LocalTime;
+import java.time.ZoneId;
+import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.ResolverStyle;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.Set;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 @Component
 public class WorkflowGraphParser {
 
-    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm").withResolverStyle(java.time.format.ResolverStyle.STRICT);
+    private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm").withResolverStyle(ResolverStyle.STRICT);
 
     public ParsedSchedule extractSchedule(JsonNode definition, Instant now) {
         if (definition == null) {
@@ -102,10 +108,10 @@ public class WorkflowGraphParser {
             return Optional.empty();
         }
 
-        java.util.Map<String, List<String>> transformNodes = new java.util.LinkedHashMap<>();
+        Map<String, List<String>> transformNodes = new LinkedHashMap<>();
         for (JsonNode node : definition.path("nodes")) if ("dataTransform".equals(node.path("type").asText())) {
             String transformId = node.path("id").asText();
-            transformNodes.put("transforms", java.util.stream.Stream.concat(transformNodes.getOrDefault("transforms", List.of()).stream(), java.util.stream.Stream.of(transformId)).toList());
+            transformNodes.put("transforms", Stream.concat(transformNodes.getOrDefault("transforms", List.of()).stream(), Stream.of(transformId)).toList());
             for (JsonNode edge : definition.path("edges")) if (transformId.equals(edge.path("target").asText()))
                 transformNodes.put("transform:" + edge.path("source").asText(), List.of(transformId, edge.path("source").asText()));
         }
@@ -216,6 +222,14 @@ public class WorkflowGraphParser {
             }
         }
 
+        Map<String, String> columnTypes = new TreeMap<>();
+        if (diffData.has("columnTypes")) {
+            if (!diffData.path("columnTypes").isObject()) throw new IllegalArgumentException("Cấu hình kiểu cột không hợp lệ.");
+            diffData.path("columnTypes").fields().forEachRemaining(entry -> columnTypes.put(entry.getKey(), entry.getValue().asText()));
+            for (String type : columnTypes.values()) if (!Set.of("TEXT", "NUMBER").contains(type)) throw new IllegalArgumentException("Kiểu cột không hợp lệ.");
+            if ("NUMBER".equals(columnTypes.get(idColumn))) throw new IllegalArgumentException("Cột khóa phải giữ kiểu Văn bản.");
+        }
+
         List<RouterPlan> routerPlans = new ArrayList<>();
         for (JsonNode rNode : routerNodes) {
             String rId = rNode.path("id").asText("");
@@ -265,9 +279,7 @@ public class WorkflowGraphParser {
             if (!Set.of("CHANGED", "CREATED", "UPDATED").contains(triggerOn) || !Set.of("ALL", "ANY").contains(matchMode))
                 throw new IllegalArgumentException("Cấu hình KHI/NẾU không hợp lệ.");
             for (RouterConditionItem condition : conditions) {
-                if (condition.getColumnName().isBlank() || !Set.of("CHANGED_TO", "EQUALS", "NOT_EQUALS", "CONTAINS", "IS_NOT_EMPTY").contains(condition.getOperator())
-                        || (!"IS_NOT_EMPTY".equals(condition.getOperator()) && condition.getValue() == null))
-                    throw new IllegalArgumentException("Điều kiện rẽ nhánh thiếu cột, sai toán tử hoặc thiếu value.");
+                RuleOperators.validate(condition, columnTypes);
             }
             routerPlans.add(RouterPlan.builder()
                     .nodeId(rId)
@@ -347,16 +359,9 @@ public class WorkflowGraphParser {
         if (timer != null && !hasEdge(edges, timer.path("id").asText(), "out", diffId, "trigger"))
             throw new IllegalArgumentException("Nối khối hẹn giờ vào cổng kích hoạt.");
 
-        java.util.Map<String, String> columnTypes = new java.util.TreeMap<>();
-        if (diffData.has("columnTypes")) {
-            if (!diffData.path("columnTypes").isObject()) throw new IllegalArgumentException("Cấu hình kiểu cột không hợp lệ.");
-            diffData.path("columnTypes").fields().forEachRemaining(entry -> columnTypes.put(entry.getKey(), entry.getValue().asText()));
-            for (String type : columnTypes.values()) if (!Set.of("TEXT", "NUMBER").contains(type)) throw new IllegalArgumentException("Kiểu cột không hợp lệ.");
-            if ("NUMBER".equals(columnTypes.get(idColumn))) throw new IllegalArgumentException("Cột khóa phải giữ kiểu Văn bản.");
-        }
         if (!columnTypes.isEmpty()) connectedSheets.forEach(endpoint -> endpoint.setColumnTypes(columnTypes));
         String resolvedFlowId = computeFlowId(connectedSheets, idColumn, storageName, syncColumns);
-        java.util.Map<String, List<String>> executionNodes = new java.util.LinkedHashMap<>(transformNodes);
+        Map<String, List<String>> executionNodes = new LinkedHashMap<>(transformNodes);
         executionNodes.put("sheets", connectedSheets.stream().map(SheetEndpointRequest::getNodeId).toList());
         executionNodes.put("diff", List.of(diffId));
         if (storageNode != null) executionNodes.put("storage", List.of(storageNode.path("id").asText()));
@@ -498,11 +503,11 @@ public class WorkflowGraphParser {
                         .map(c -> List.of(c.getColumnName(), c.getRules(), c.getDefaultValue() == null ? "" : c.getDefaultValue())).toList(),
                     s.isWriteBackCleanData())).toList());
         }
-        java.util.Map<String, String> columnTypes = sheets.get(0).getColumnTypes();
-        if (columnTypes != null && !columnTypes.isEmpty()) identity.add(List.of("columnTypes", new java.util.TreeMap<>(columnTypes).entrySet().stream()
+        Map<String, String> columnTypes = sheets.get(0).getColumnTypes();
+        if (columnTypes != null && !columnTypes.isEmpty()) identity.add(List.of("columnTypes", new TreeMap<>(columnTypes).entrySet().stream()
                 .map(entry -> List.of(entry.getKey(), entry.getValue())).toList()));
         try {
-            byte[] bytes = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsBytes(identity);
+            byte[] bytes = new ObjectMapper().writeValueAsBytes(identity);
             return "flow-" + HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
         } catch (Exception exception) { throw new IllegalStateException("Không thể xác định mã luồng."); }
     }

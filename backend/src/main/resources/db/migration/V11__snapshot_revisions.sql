@@ -1,0 +1,2 @@
+ALTER TABLE sync_snapshots ADD COLUMN revision BIGINT NOT NULL DEFAULT 1;
+ALTER TABLE notification_outbox ALTER COLUMN source_key TYPE VARCHAR(512);

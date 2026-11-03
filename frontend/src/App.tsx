@@ -923,6 +923,7 @@ export default function App() {
           key={`router-config:${activeNode.id}`}
           data={activeNode.data}
           availableColumns={diffAvailableColumns}
+          columnTypes={nodes.find(node => node.type === 'diffEngine')?.data.columnTypes}
           previewRows={previewRows}
           previewSources={comparisonSources.map(source => ({
             id: source.id, name: source.name + ' · ' + source.sheetName, rows: source.data?.rows || [],

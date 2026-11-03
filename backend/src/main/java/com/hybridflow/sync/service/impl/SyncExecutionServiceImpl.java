@@ -35,6 +35,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashSet;
@@ -45,6 +46,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.TreeSet;
+import java.util.UUID;
 
 @Service
 @RequiredArgsConstructor
@@ -369,16 +371,14 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             }
         }
         phase(request, executionId, "sheets", "WRITE", "Đang đối soát và ghi trang tính");
-        if ((request.getTransforms() != null && !request.getTransforms().isEmpty()) || (request.getColumnTypes() != null && !request.getColumnTypes().isEmpty())) {
-            List<SheetCellChange> changes = new ArrayList<>();
-            for (int row = 0; row < rawRows.size(); row++) for (String column : sheet.getHeaders()) {
-                String range = SheetRowUtils.range(sheet, row, column);
-                if (sheetWrites.containsKey(range) && (!Objects.equals(rawRows.get(row).getOrDefault(column, ""), sheetWrites.get(range))
-                        || SheetRowUtils.requiresTypeWrite(sheet, row, column, sheetWrites.get(range), request.getColumnTypes())))
-                    changes.add(new SheetCellChange(row, column, rawRows.get(row).get(idColumn), rawRows.get(row).getOrDefault(column, ""), sheetWrites.get(range)));
-            }
-            writes.apply(request.getAccessToken(), List.of(new SheetWritePlan(request.getSpreadsheetId(), sheet.getSheetName(), idColumn, sheet.getHeaders(), changes, request.getColumnTypes())));
-        } else googleSheetsService.updateCells(request.getAccessToken(), request.getSpreadsheetId(), sheetWrites);
+        List<SheetCellChange> changes = new ArrayList<>();
+        for (int row = 0; row < rawRows.size(); row++) for (String column : sheet.getHeaders()) {
+            String range = SheetRowUtils.range(sheet, row, column);
+            if (sheetWrites.containsKey(range) && (!Objects.equals(rawRows.get(row).getOrDefault(column, ""), sheetWrites.get(range))
+                    || SheetRowUtils.requiresTypeWrite(sheet, row, column, sheetWrites.get(range), request.getColumnTypes())))
+                changes.add(new SheetCellChange(row, column, rawRows.get(row).get(idColumn), rawRows.get(row).getOrDefault(column, ""), sheetWrites.get(range)));
+        }
+        writes.apply(request.getAccessToken(), List.of(new SheetWritePlan(request.getSpreadsheetId(), sheet.getSheetName(), idColumn, sheet.getHeaders(), changes, request.getColumnTypes())));
         phase(request, executionId, "storage", "WRITE", "Đang lưu Vault và checkpoint");
         vaultWrites.forEach((id, row) -> store.saveVaultRecord(flow, id, row));
         snapshotWrites.forEach((id, row) -> store.saveSnapshot(flow, id, row));
@@ -409,7 +409,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
     }
 
     private void validateNotifications(RunSyncRequest request, Set<String> columns) {
-        ruleEvaluationService.validate(request.getRouters(), request.getActions(), columns);
+        ruleEvaluationService.validate(request.getRouters(), request.getActions(), columns, request.getColumnTypes());
         Set<String> actionIds = new HashSet<>();
         if (request.getActions() != null) {
             for (ActionPlan action : request.getActions()) {
@@ -425,7 +425,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
     private void normalizeLegacyNotifications(RunSyncRequest request) {
         if (!request.isNotifyConflicts() || (request.getConflictActionIds() != null && !request.getConflictActionIds().isEmpty())) return;
         require(request.getChatId(), "Telegram Chat ID");
-        String actionId = "legacy-" + java.util.UUID.nameUUIDFromBytes(request.getFlowId().getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        String actionId = "legacy-" + UUID.nameUUIDFromBytes(request.getFlowId().getBytes(StandardCharsets.UTF_8));
         List<ActionPlan> actions = request.getActions() == null ? new ArrayList<>() : new ArrayList<>(request.getActions());
         actions.add(ActionPlan.builder().nodeId(actionId).channel("TELEGRAM").chatId(request.getChatId()).build());
         request.setActions(actions);
@@ -450,6 +450,9 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         if (request.getRouters() != null && !events.isEmpty()) {
             for (RouterPlan router : request.getRouters())
                 phase(request, executionId, "router:" + router.getNodeId(), "ROUTE", "Đang kiểm tra điều kiện rẽ nhánh");
+        }
+        for (RecordChangeEvent event : events) {
+            event.setRevision(store.getSnapshotRevision(flow, event.getRecordId()));
         }
         int queued = notificationOutboxService.enqueue(flow, executionId, request.getRouters(), request.getActions(),
                 events, columns, request.getConflictActionIds(), conflicts);

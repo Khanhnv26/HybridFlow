@@ -69,3 +69,37 @@ test('multiple router conditions use plain-language choices while preserving ANY
     assert.equal(text(ui.root).includes('snapshot'), false);
   } finally { if (ui) await act(async () => ui.unmount()); }
 });
+
+test('event previews explain missing history instead of counting current rows', async () => {
+  let ui;
+  try {
+    await act(async () => { ui = create(React.createElement(RouterConditionConfigModal, {
+      data: { routerConditions: [{ columnName: 'status', operator: 'CHANGED_TO', value: 'READY' }] },
+      availableColumns: ['id', 'status'], previewRows: [{ id: '1', status: 'READY' }],
+      disabled: false, onClose() {}, onSave: async () => {},
+    })); });
+    assert.match(text(ui.root), /Chưa thể đếm dòng phù hợp từ dữ liệu hiện tại/);
+    assert.equal(text(ui.root).includes('1/1'), false);
+  } finally { if (ui) await act(async () => ui.unmount()); }
+});
+
+test('numeric operators require NUMBER columns and invalid thresholds cannot be saved', async () => {
+  let ui, saved;
+  try {
+    await act(async () => { ui = create(React.createElement(RouterConditionConfigModal, {
+      data: { routerConditions: [{ columnName: 'quantity', operator: 'LESS_THAN', value: '' }] },
+      availableColumns: ['id', 'quantity'], columnTypes: { quantity: 'NUMBER' },
+      disabled: false, onClose() {}, onSave: async settings => { saved = settings; },
+    })); });
+    await act(async () => ui.root.findAllByType('button').at(-1).props.onClick());
+    assert.equal(saved, undefined);
+    assert.match(text(ui.root), /Nhập số hợp lệ/);
+    await act(async () => ui.root.findByProps({ 'aria-label': 'Giá trị điều kiện 1' }).props.onChange({ target: { value: '10.5' } }));
+    await act(async () => ui.root.findAllByType('button').at(-1).props.onClick());
+    assert.equal(saved.routerConditions[0].value, '10.5');
+    await act(async () => ui.root.findByProps({ 'aria-label': 'Cách so sánh 1' }).props.onChange({ target: { value: 'COLUMN_CHANGED' } }));
+    assert.equal(ui.root.findByProps({ 'aria-label': 'Giá trị điều kiện 1' }).props.disabled, true);
+    await act(async () => ui.root.findAllByType('button').at(-1).props.onClick());
+    assert.equal(saved.routerConditions[0].value, '');
+  } finally { if (ui) await act(async () => ui.unmount()); }
+});

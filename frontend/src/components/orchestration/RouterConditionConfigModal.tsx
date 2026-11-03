@@ -1,13 +1,14 @@
 import { useEffect, useState } from 'react';
 import { Plus, Trash2, Split, Save, X, RefreshCw } from 'lucide-react';
 import type { OrchestrationNodeData, RouterConditionItem, RouterMatchMode, RouterOperator, RouterTriggerOn } from '../../types';
-import { matchesCurrentValues } from '../../services/notificationPreview';
+import { isEventOperator, isNumericOperator, isValidRuleNumber, matchesCurrentValues, requiresConditionValue } from '../../services/notificationPreview';
 
 interface PreviewSource { id: string; name: string; rows: Record<string, string>[]; error?: string; loading?: boolean }
 interface Props {
   data: OrchestrationNodeData;
   availableColumns: string[];
   idColumn?: string;
+  columnTypes?: Record<string, 'TEXT' | 'NUMBER'>;
   previewRows?: Record<string, string>[];
   previewSources?: PreviewSource[];
   actionNames?: string[];
@@ -24,6 +25,12 @@ const operators: { value: RouterOperator; label: string; sentence: string }[] = 
   { value: 'NOT_EQUALS', label: 'Không phải', sentence: 'không phải' },
   { value: 'CONTAINS', label: 'Có chứa', sentence: 'có chứa' },
   { value: 'CHANGED_TO', label: 'Vừa đổi thành', sentence: 'vừa đổi thành' },
+  { value: 'LESS_THAN', label: 'Nhỏ hơn (<)', sentence: 'nhỏ hơn' },
+  { value: 'GREATER_THAN', label: 'Lớn hơn (>)', sentence: 'lớn hơn' },
+  { value: 'LESS_OR_EQUAL', label: 'Nhỏ hơn hoặc bằng (≤)', sentence: 'nhỏ hơn hoặc bằng' },
+  { value: 'GREATER_OR_EQUAL', label: 'Lớn hơn hoặc bằng (≥)', sentence: 'lớn hơn hoặc bằng' },
+  { value: 'COLUMN_CHANGED', label: 'Cột này vừa thay đổi', sentence: 'vừa thay đổi' },
+  { value: 'IS_EMPTY', label: 'Đang trống', sentence: 'đang trống' },
   { value: 'IS_NOT_EMPTY', label: 'Có dữ liệu', sentence: 'có dữ liệu' },
 ];
 const triggers: { value: RouterTriggerOn; label: string; detail: string; sentence: string }[] = [
@@ -34,7 +41,7 @@ const triggers: { value: RouterTriggerOn; label: string; detail: string; sentenc
 const field = 'w-full rounded-lg border border-gray-700 bg-[#0d1118] px-3 py-2 text-sm text-gray-100 focus:border-purple-400 focus:outline-none disabled:opacity-50';
 
 export function RouterConditionConfigModal({
-  data, availableColumns, idColumn = 'id', previewRows = [], previewSources = [], actionNames = [],
+  data, availableColumns, idColumn = 'id', columnTypes = {}, previewRows = [], previewSources = [], actionNames = [],
   reading = false, readErrors = [], onRetryRead, disabled, onClose, onSave,
 }: Props) {
   const [trigger, setTrigger] = useState<RouterTriggerOn>(data.routerTriggerOn || data.triggerOn || 'CHANGED');
@@ -49,10 +56,11 @@ export function RouterConditionConfigModal({
   const locked = disabled || saving;
   const source = previewSources.find(item => item.id === sourceId) || previewSources[0];
   const rows = source ? source.rows : previewRows;
+  const needsEvent = conditions.some(item => isEventOperator(item.operator));
   const matching = rows.filter(row => matchesCurrentValues(conditions, mode, row));
   const sampleColumns = [...new Set([idColumn, ...conditions.map(item => item.columnName)])].filter(Boolean).slice(0, 4);
   const sentence = conditions.map(item => item.columnName + ' ' + (operators.find(operator => operator.value === item.operator)?.sentence || '')
-    + (item.operator === 'IS_NOT_EMPTY' ? '' : ' “' + (item.value || '…') + '”')).join(mode === 'ALL' ? ' và ' : ' hoặc ');
+    + (!requiresConditionValue(item.operator) ? '' : ' “' + (item.value || '…') + '”')).join(mode === 'ALL' ? ' và ' : ' hoặc ');
   const destinations = actionNames.length ? actionNames.join(', ') : 'các khối thông báo được nối';
 
   useEffect(() => {
@@ -70,12 +78,16 @@ export function RouterConditionConfigModal({
     for (const condition of conditions) {
       if (!availableColumns.includes(condition.columnName)) { setError('Cột ' + (condition.columnName || 'đang chọn') + ' chưa có trong danh sách đồng bộ. Chọn lại cột hoặc đọc lại dữ liệu.'); return; }
       if (!operators.some(item => item.value === condition.operator)) { setError('Chọn cách so sánh cho từng điều kiện.'); return; }
-      if (condition.operator !== 'IS_NOT_EMPTY' && condition.value === undefined) { setError('Nhập giá trị cần so sánh.'); return; }
+      if (requiresConditionValue(condition.operator) && condition.value == null) { setError('Nhập giá trị cần so sánh.'); return; }
+      if (isNumericOperator(condition.operator)) {
+        if (columnTypes[condition.columnName] !== 'NUMBER') { setError('Chọn kiểu Số cho cột ' + condition.columnName + ' trong khối Điều phối & Đồng bộ.'); return; }
+        if (!isValidRuleNumber(condition.value)) { setError('Nhập số hợp lệ, tối đa 15 chữ số có nghĩa và dùng dấu chấm thập phân.'); return; }
+      }
     }
     setSaving(true); setError('');
     try {
       await onSave({ routerTriggerOn: trigger, routerMatchMode: mode,
-        routerConditions: conditions.map(item => ({ ...item, columnName: item.columnName.trim(), value: item.operator === 'IS_NOT_EMPTY' ? '' : item.value ?? '' })) });
+        routerConditions: conditions.map(item => ({ ...item, columnName: item.columnName.trim(), value: !requiresConditionValue(item.operator) ? '' : item.value ?? '' })) });
       onClose();
     } catch (error) {
       const detail = error as { response?: { data?: { message?: string } }; message?: string };
@@ -116,17 +128,18 @@ export function RouterConditionConfigModal({
                   {availableColumns.map(column => <option key={column} value={column}>{column}</option>)}
                 </select></label>
                 <label className="block space-y-1 text-xs text-gray-400"><span>Điều kiện</span><select aria-label={'Cách so sánh ' + (index + 1)} disabled={locked} className={field} value={item.operator} onChange={event => update(index, { operator: event.target.value as RouterOperator })}>
-                  {operators.map(operator => <option key={operator.value} value={operator.value}>{operator.label}</option>)}
+                  {isNumericOperator(item.operator) && columnTypes[item.columnName] !== 'NUMBER' && <option value={item.operator}>Cần chọn kiểu Số cho cột</option>}
+                  {operators.filter(operator => !isNumericOperator(operator.value) || columnTypes[item.columnName] === 'NUMBER').map(operator => <option key={operator.value} value={operator.value}>{operator.label}</option>)}
                 </select></label>
-                <label className="block space-y-1 text-xs text-gray-400"><span>Giá trị</span><input type="text" aria-label={'Giá trị điều kiện ' + (index + 1)} disabled={locked || item.operator === 'IS_NOT_EMPTY'} className={field} value={item.operator === 'IS_NOT_EMPTY' ? '' : item.value ?? ''}
-                  placeholder={item.operator === 'IS_NOT_EMPTY' ? 'Không cần nhập' : examples[0] ? 'Ví dụ: ' + examples[0] : 'Nhập giá trị…'} list={'router-values-' + index} onChange={event => update(index, { value: event.target.value })} />
+                <label className="block space-y-1 text-xs text-gray-400"><span>Giá trị</span><input type="text" aria-label={'Giá trị điều kiện ' + (index + 1)} disabled={locked || !requiresConditionValue(item.operator)} className={field} value={!requiresConditionValue(item.operator) ? '' : item.value ?? ''}
+                  placeholder={!requiresConditionValue(item.operator) ? 'Không cần nhập' : examples[0] ? 'Ví dụ: ' + examples[0] : 'Nhập giá trị…'} list={'router-values-' + index} onChange={event => update(index, { value: event.target.value })} />
                   <datalist id={'router-values-' + index}>{examples.map(value => <option key={value} value={value} />)}</datalist>
                 </label>
               </div>
             </div>;
           })}
           <button type="button" disabled={locked} className="flex items-center gap-2 rounded-lg border border-gray-600 px-3 py-2 text-sm hover:bg-gray-800" onClick={() => { setConditions(previous => [...previous, { columnName: availableColumns.find(column => column !== idColumn) || availableColumns[0] || '', operator: 'EQUALS', value: '' }]); setError(''); }}><Plus size={15} />Thêm điều kiện</button>
-          <details className="text-xs text-gray-400"><summary className="cursor-pointer">Giải thích cách so sánh</summary><p className="mt-2">“Là”, “Không phải” và “Vừa đổi thành” phân biệt chữ hoa, chữ thường. “Có chứa” tìm từ khóa không phân biệt hoa thường. “Vừa đổi thành” chỉ áp dụng cho dòng đã có, khi giá trị cột thực sự thay đổi.</p></details>
+          <details className="text-xs text-gray-400"><summary className="cursor-pointer">Giải thích cách so sánh</summary><p className="mt-2">“Là”, “Không phải” và “Vừa đổi thành” phân biệt chữ hoa, chữ thường. “Có chứa” tìm từ khóa không phân biệt hoa thường. “Vừa đổi thành” và “Cột này vừa thay đổi” chỉ áp dụng cho dòng đã có, khi cột thực sự thay đổi. So sánh số yêu cầu cột kiểu Số; ô trống không được hiểu thành 0.</p></details>
         </section>
         <section className="space-y-2 rounded-xl border border-gray-700 bg-[#10151d] p-3">
           <h3 className="text-sm font-medium">Bộ lọc của bạn</h3>
@@ -134,15 +147,16 @@ export function RouterConditionConfigModal({
           {!actionNames.length && <p className="text-xs text-gray-400">Nối đầu ra của khối này với Telegram để chọn nơi nhận.</p>}
         </section>
         <details className="space-y-3 border-t border-gray-700 pt-4">
-          <summary className="cursor-pointer font-semibold">Thử điều kiện với dữ liệu mẫu</summary>
+          <summary className="cursor-pointer font-semibold">Thử điều kiện với dữ liệu hiện tại</summary>
           <div className="flex flex-wrap items-center justify-between gap-2">{onRetryRead && <button type="button" disabled={reading} onClick={onRetryRead} className="text-xs text-purple-300">{reading ? 'Đang đọc…' : 'Đọc lại dữ liệu'}</button>}</div>
           {reading && <p role="status" className="flex items-center gap-2 text-xs text-gray-400"><RefreshCw size={14} className="animate-spin" />Đang đọc dữ liệu mẫu. Bạn vẫn có thể chỉnh hoặc đóng cửa sổ.</p>}
           {previewSources.length > 0 && <label className="block space-y-1 text-xs text-gray-400"><span>Bảng tính dùng để thử</span><select aria-label="Bảng tính dùng để thử" className={field} value={source?.id || ''} onChange={event => setSourceId(event.target.value)}>{previewSources.map(item => <option key={item.id} value={item.id}>{item.name}</option>)}</select></label>}
-          {source?.error ? <p className="text-sm text-amber-200">{source.error}</p> : rows.length > 0 ? <>
+          {needsEvent && <p role="status" className="text-sm text-amber-200">Điều kiện thay đổi cần dữ liệu trước và sau một lần đồng bộ. Chưa thể đếm dòng phù hợp từ dữ liệu hiện tại.</p>}
+          {source?.error ? <p className="text-sm text-amber-200">{source.error}</p> : !needsEvent && rows.length > 0 ? <>
             <p role="status" className="text-sm text-gray-200">{source ? source.name + ': ' : ''}{matching.length}/{rows.length} dòng phù hợp với điều kiện.</p>
             {matching.length > 0 && <div className="overflow-x-auto rounded-lg border border-gray-700"><table className="w-full text-left text-xs"><thead><tr>{sampleColumns.map(column => <th key={column} className="border-b border-gray-700 p-2 font-medium text-gray-400">{column}</th>)}</tr></thead><tbody>{matching.slice(0, 5).map((row, index) => <tr key={index}>{sampleColumns.map(column => <td key={column} className="max-w-48 truncate border-b border-gray-800 p-2">{row[column] || '—'}</td>)}</tr>)}</tbody></table></div>}
-          </> : !reading && <p className="text-sm text-gray-400">Chưa có dòng mẫu. Đọc dữ liệu từ bảng tính đã nối để thử điều kiện.</p>}
-          <p className="text-xs text-gray-400">Mẫu minh họa bộ lọc trên một bảng tính. Khi đồng bộ, hệ thống kiểm tra các dòng mới hoặc vừa thay đổi sau khi hợp nhất dữ liệu.</p>
+          </> : !reading && !needsEvent && <p className="text-sm text-gray-400">Chưa có dòng mẫu. Đọc dữ liệu từ bảng tính đã nối để thử điều kiện.</p>}
+          <p className="text-xs text-gray-400">Số dòng phù hợp chỉ phản ánh giá trị hiện tại, không phải số thông báo sẽ gửi. Thông báo chỉ được xếp hàng cho sự kiện mới hoặc cập nhật đã xác minh, không còn xung đột.</p>
         </details>
         {readErrors.map((message, index) => <p key={index} role="alert" className="text-xs text-amber-200">{message}</p>)}
       </div>

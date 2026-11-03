@@ -17,6 +17,7 @@ import java.util.Set;
 public class RecordChangeEvent {
     private String recordId;
     private String kind;
+    private Long revision;
     private Map<String, String> before;
     private Map<String, String> after;
     private Set<String> changedColumns;

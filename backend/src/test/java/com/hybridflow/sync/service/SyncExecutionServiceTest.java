@@ -1,5 +1,6 @@
 package com.hybridflow.sync.service;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
 import com.hybridflow.connector.google.dto.response.SheetDataResponse;
 import com.hybridflow.connector.google.service.GoogleSheetsService;
@@ -13,14 +14,15 @@ import com.hybridflow.sync.dto.request.SheetEndpointRequest;
 import com.hybridflow.sync.dto.response.RunSyncResponse;
 import com.hybridflow.sync.engine.ThreeWayDiffEngine;
 import com.hybridflow.sync.entity.SyncConflict;
+import com.hybridflow.sync.model.RecordChangeEvent;
+import com.hybridflow.sync.model.SheetWritePlan;
 import com.hybridflow.sync.service.impl.DataTransformerServiceImpl;
 import com.hybridflow.sync.service.impl.SyncExecutionServiceImpl;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
-import com.hybridflow.sync.model.RecordChangeEvent;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
@@ -34,14 +36,24 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyMap;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.*;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
 class SyncExecutionServiceTest {
@@ -136,12 +148,12 @@ class SyncExecutionServiceTest {
         request.setColumnTypes(Map.of("status", "NUMBER"));
         service.executeSync(request);
         @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<com.hybridflow.sync.model.SheetWritePlan>> plans = ArgumentCaptor.forClass(List.class);
+        ArgumentCaptor<List<SheetWritePlan>> plans = ArgumentCaptor.forClass(List.class);
         verify(writes).apply(eq("token"), plans.capture());
         assertEquals(multi ? 2 : 1, plans.getValue().size());
-        for (com.hybridflow.sync.model.SheetWritePlan plan : plans.getValue()) {
+        for (SheetWritePlan plan : plans.getValue()) {
             assertEquals("NUMBER", plan.getColumnTypes().get("status"));
-            assertEquals(1, plan.getChanges().size(), new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(plan).toString());
+            assertEquals(1, plan.getChanges().size(), new ObjectMapper().valueToTree(plan).toString());
             assertEquals("20000", plan.getChanges().getFirst().getBefore());
             assertEquals("20000", plan.getChanges().getFirst().getAfter());
         }
@@ -220,8 +232,8 @@ class SyncExecutionServiceTest {
     @Test void vaultChangesAreWrittenBackToSheetsBeforeCheckpointAdvances() {
         rows("NEW", "CANCELLED");
         service.executeSync(request());
-        InOrder order = inOrder(sheets, store);
-        order.verify(sheets).updateCells("test-token", "sheet", Map.of("'Data'!B2", "CANCELLED"));
+        InOrder order = inOrder(writes, store);
+        order.verify(writes).apply(eq("test-token"), argThat(plans -> plans.getFirst().getChanges().getFirst().getAfter().equals("CANCELLED")));
         order.verify(store).saveVaultRecord("flow", "1", Map.of("id", "1", "status", "CANCELLED"));
         order.verify(store).saveSnapshot("flow", "1", Map.of("id", "1", "status", "CANCELLED"));
     }
@@ -235,7 +247,7 @@ class SyncExecutionServiceTest {
 
     @Test void failedSheetWriteDoesNotAdvanceCheckpointOrClaimSuccess() {
         rows("NEW", "CANCELLED");
-        doThrow(new IllegalStateException("unavailable")).when(sheets).updateCells(anyString(), anyString(), anyMap());
+        doThrow(new IllegalStateException("unavailable")).when(writes).apply(anyString(), any());
         assertThrows(IllegalStateException.class, () -> service.executeSync(request()));
         verify(store, never()).saveSnapshot(anyString(), anyString(), anyMap());
         verify(store, never()).saveVaultRecord(anyString(), anyString(), anyMap());
@@ -255,7 +267,7 @@ class SyncExecutionServiceTest {
         rows("SHIPPING", "CANCELLED");
         RunSyncRequest request = request(); request.setConflictPolicy("DESTINATION_WINS");
         service.executeSync(request);
-        verify(sheets).updateCells("test-token", "sheet", Map.of("'Data'!B2", "CANCELLED"));
+        verify(writes).apply(eq("test-token"), argThat(plans -> plans.getFirst().getChanges().getFirst().getAfter().equals("CANCELLED")));
     }
 
     @Test void conflictingFieldsKeepTheOldCheckpointUntilApproved() {
@@ -422,9 +434,9 @@ class SyncExecutionServiceTest {
     }
 
     @Test void threeSourcesAreNormalizedIndependentlyAndOnlySelectedSourcesAreCleaned() {
-        var request = transformRequest(true, true);
-        var rules = request.getSheets().getFirst().getTransforms();
-        var endpoints = new ArrayList<>(request.getSheets());
+        RunSyncRequest request = transformRequest(true, true);
+        List<ColumnTransformConfig> rules = request.getSheets().getFirst().getTransforms();
+        List<SheetEndpointRequest> endpoints = new ArrayList<>(request.getSheets());
         endpoints.get(1).setTransforms(rules);
         endpoints.add(SheetEndpointRequest.builder().spreadsheetId("c").sheetName("Data").transforms(rules).writeBackCleanData(true).build());
         request.setSheets(endpoints);
@@ -435,7 +447,7 @@ class SyncExecutionServiceTest {
             return SheetDataResponse.builder().spreadsheetId(read.getSpreadsheetId()).sheetName("Data").headers(List.of("id", "status"))
                     .rows(List.of(Map.of("id", rawId, "status", " new "))).build();
         });
-        var result = service.executeSync(request);
+        RunSyncResponse result = service.executeSync(request);
         assertEquals("SUCCESS", result.getStatus());
         assertEquals(List.of("SP01"), result.getCleanRecordIds());
         assertTrue(result.getConflicts().isEmpty());
@@ -447,7 +459,7 @@ class SyncExecutionServiceTest {
     }
 
     @Test void missingTransformColumnNamesTheSourceAndPreventsAllWrites() {
-        var request = transformRequest(true, true);
+        RunSyncRequest request = transformRequest(true, true);
         request.getSheets().get(1).setTransforms(request.getSheets().getFirst().getTransforms());
         reset(sheets);
         when(sheets.readSheet(any())).thenAnswer(inv -> {
@@ -456,7 +468,7 @@ class SyncExecutionServiceTest {
                     .headers(read.getSpreadsheetId().equals("a") ? List.of("id", "status") : List.of("id"))
                     .rows(List.of(Map.of("id", "1", "status", " new "))).build();
         });
-        var error = assertThrows(IllegalArgumentException.class, () -> service.executeSync(request));
+        IllegalArgumentException error = assertThrows(IllegalArgumentException.class, () -> service.executeSync(request));
         assertTrue(error.getMessage().contains("Kho b / Data"));
         assertTrue(error.getMessage().contains("status"));
         verify(writes, never()).apply(any(), any());
@@ -502,7 +514,7 @@ class SyncExecutionServiceTest {
 
         assertEquals("SUCCESS", response.getStatus());
         assertEquals(1, response.getNotificationsQueued());
-        verify(ruleEvaluationService).validate(eq(List.of(router)), any(), any());
+        verify(ruleEvaluationService).validate(eq(List.of(router)), any(), any(), any());
         verify(notificationTemplateService).validateTemplate(eq("Đơn {id} chuyển sang {status}"), any());
         verify(notificationOutboxService).enqueue(eq("router-flow"), any(), eq(List.of(router)), eq(List.of(action)), argThat(events -> events.size() == 1 && events.getFirst().getKind().equals("UPDATED")), any(), any(), any());
     }

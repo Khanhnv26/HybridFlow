@@ -13,10 +13,27 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
-import java.util.*;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
+
+import java.util.HashMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.atomic.AtomicReference;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
 class SheetWriteServiceTest {
     private final GoogleSheetsService sheets = mock(GoogleSheetsService.class);
@@ -46,8 +63,8 @@ class SheetWriteServiceTest {
     }
 
     @Test void typedWriteRollbackRestoresTheOriginalTextTypeEvenWhenTheDisplayedValueDidNotChange() {
-        java.util.concurrent.atomic.AtomicReference<String> type = new java.util.concurrent.atomic.AtomicReference<>("TEXT");
-        java.util.concurrent.atomic.AtomicReference<String> raw = new java.util.concurrent.atomic.AtomicReference<>("20000.50");
+        AtomicReference<String> type = new AtomicReference<>("TEXT");
+        AtomicReference<String> raw = new AtomicReference<>("20000.50");
         doAnswer(call -> SheetDataResponse.builder().sheetName("Data").headers(List.of("id", "price"))
                 .rows(List.of(Map.of("id", "00123", "price", "20000.5"))).valueTypes(List.of(Map.of("price", type.get()))).rawRows(List.of(Map.of("price", raw.get()))).build()).when(sheets).readSheet(any());
         doAnswer(call -> { Map<String, String> types = call.getArgument(3); type.set(types.get("'Data'!B2")); Map<String, String> values = call.getArgument(2); raw.set(values.get("'Data'!B2")); return null; })
@@ -84,6 +101,13 @@ class SheetWriteServiceTest {
         assertThrows(IllegalStateException.class, () -> service.apply("token", plans()));
         verify(sheets, never()).updateCells(anyString(), anyString(), anyMap());
         verifyNoInteractions(journal);
+    }
+
+    @Test void aSuccessfulHttpWriteWithoutTheExpectedDataFailsVerification() {
+        doNothing().when(sheets).updateCells(anyString(), anyString(), anyMap());
+        assertThrows(IllegalStateException.class, () -> service.apply("token", plans()));
+        verify(journal, never()).complete(anyString());
+        assertEquals(Map.of("a", "A", "b", "B"), live);
     }
     @Test void interruptedWriteIsRecoveredBeforeNextRun() {
         live.put("a", "WINNER");
@@ -146,7 +170,7 @@ class SheetWriteServiceTest {
             if (row.get("id").equals("SP01")) throw new IllegalStateException("timeout after commit");
             return null;
         }).when(sheets).updateCells(anyString(), anyString(), anyMap());
-        var plan = new SheetWritePlan("a", "Data", "id", List.of("id", "status"), List.of(
+        SheetWritePlan plan = new SheetWritePlan("a", "Data", "id", List.of("id", "status"), List.of(
                 new SheetCellChange(0, "id", " sp01 ", " sp01 ", "SP01"),
                 new SheetCellChange(0, "status", " sp01 ", " new ", "NEW")));
         assertThrows(IllegalStateException.class, () -> service.apply("token", List.of(plan)));

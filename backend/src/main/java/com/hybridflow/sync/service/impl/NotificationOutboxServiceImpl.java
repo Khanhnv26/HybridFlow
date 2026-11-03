@@ -64,7 +64,9 @@ public class NotificationOutboxServiceImpl implements NotificationOutboxService 
                             && router.getActionNodeIds().contains(action.getNodeId())
                             && ruleEvaluationService.matches(router, event));
                     if (matched) {
-                        String key = executionId + ":" + event.getRecordId();
+                        String key = event.getRevision() == null
+                                ? executionId + ":" + event.getRecordId()
+                                : "revision:" + flowId.length() + ":" + flowId + ":" + event.getRecordId() + ":" + event.getRevision();
                         candidates.putIfAbsent("RECORD:" + key, item(flowId, executionId, action, "RECORD", key,
                                 templateService.renderRecordMessage(action.getRecordTemplate(), event, syncColumns)));
                     }

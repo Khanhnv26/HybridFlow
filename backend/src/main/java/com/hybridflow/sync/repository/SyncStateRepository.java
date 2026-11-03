@@ -27,7 +27,18 @@ public class SyncStateRepository {
     }
 
     public void saveSnapshot(String flowId, String recordId, Map<String, String> data) {
-        write("sync_snapshots", flowId, recordId, data);
+        jdbc.update("""
+                INSERT INTO sync_snapshots (flow_id, record_id, data, updated_at)
+                VALUES (?, ?, ?::jsonb, CURRENT_TIMESTAMP)
+                ON CONFLICT (flow_id, record_id) DO UPDATE
+                SET data = EXCLUDED.data, updated_at = CURRENT_TIMESTAMP, revision = sync_snapshots.revision + 1
+                WHERE sync_snapshots.data IS DISTINCT FROM EXCLUDED.data
+                """, flowId, recordId, codec.encode(data));
+    }
+
+    public Long findSnapshotRevision(String flowId, String recordId) {
+        return jdbc.queryForObject("SELECT revision FROM sync_snapshots WHERE flow_id=? AND record_id=?",
+                Long.class, flowId, recordId);
     }
 
     public void saveVaultRecord(String flowId, String recordId, Map<String, String> data) {

@@ -5,9 +5,11 @@ import com.hybridflow.sync.dto.request.RouterPlan;
 import com.hybridflow.sync.model.RecordChangeEvent;
 
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 public interface RuleEvaluationService {
     void validate(List<RouterPlan> routers, List<ActionPlan> actions, Set<String> availableColumns);
+    void validate(List<RouterPlan> routers, List<ActionPlan> actions, Set<String> availableColumns, Map<String, String> columnTypes);
     boolean matches(RouterPlan router, RecordChangeEvent event);
 }

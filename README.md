@@ -17,7 +17,7 @@ Backend đọc các biến môi trường:
 
 File `client_secret.json` của Google OAuth đặt trong `backend/src/main/resources/` và được Git bỏ qua. Các thiết lập riêng đã có được giữ trong `backend/application-local.properties` (cũng được Git bỏ qua). Khi chạy từ thư mục `backend` hoặc gốc repo, Spring tự đọc file local này; biến môi trường có thể ghi đè các giá trị được chuyển sang đó. Không commit token hay file local. Nếu token từng được đưa lên Git, cần thay token tại nhà cung cấp.
 
-Chạy backend từ `backend`: `mvn spring-boot:run`. Khởi động lại backend sau khi cập nhật mã để Flyway áp dụng các migration đến V6. Không sửa/xóa lịch sử migration trong database đang dùng.
+Chạy backend từ `backend`: `mvn spring-boot:run`. Khởi động lại backend sau khi cập nhật mã để Flyway áp dụng các migration mới, hiện đến V11. Không sửa/xóa lịch sử migration trong database đang dùng.
 
 Chạy frontend từ `frontend`: `npm install`, sau đó `npm run dev`. Vite chạy ở cổng 3000 và proxy `/api` sang backend 8080. Khi deploy, cấu hình reverse proxy `/api` hoặc đặt `VITE_API_BASE_URL` theo `frontend/.env.example` trước khi build. Nếu cổng 3000 bận, cấu hình `FRONTEND_ORIGIN` theo origin thực tế.
 
@@ -33,7 +33,19 @@ Chạy frontend từ `frontend`: `npm install`, sau đó `npm run dev`. Vite ch�
 
 Nguồn file, tab, cột khóa và vùng lưu trữ tạo thành mã luồng ổn định. Đổi một trong các giá trị này tạo ngữ cảnh mới; backend kiểm tra binding để không dùng nhầm checkpoint. Cấu hình đang chỉnh được giữ ở trình duyệt; **Lưu cấu hình** và mỗi lần chạy sẽ lưu định nghĩa luồng lên backend. Lịch sử chạy và xung đột lấy từ backend theo mã luồng, không dựng mẫu khi API lỗi.
 
-Đồng bộ hỗ trợ thêm dòng và cập nhật trường trên các dòng đã có. Dòng bị xóa khỏi Sheet trong khi vẫn có ở Vault sẽ báo lỗi để tránh xóa dữ liệu ngầm; cần khôi phục dòng hoặc chủ động khởi tạo một luồng mới. Các khối webhook, rẽ nhánh, biến đổi và ghi Sheet độc lập chưa có bộ thực thi nên bị vô hiệu hóa. Tùy chọn **Tự động khi mở trang** chạy trong trình duyệt và dừng khi đóng trang; lịch backend bên dưới hoạt động độc lập với tùy chọn này.
+Đồng bộ hỗ trợ thêm dòng và cập nhật trường trên các dòng đã có. Dòng bị xóa khỏi Sheet trong khi vẫn có ở Vault sẽ báo lỗi để tránh xóa dữ liệu ngầm; cần khôi phục dòng hoặc chủ động khởi tạo một luồng mới. Các khối webhook và ghi Sheet độc lập chưa có bộ thực thi nên bị vô hiệu hóa. Khối chuẩn hóa và điều kiện đã hỗ trợ thực thi trong các đường nối được mô tả bên dưới. Tùy chọn **Tự động khi mở trang** chạy trong trình duyệt và dừng khi đóng trang; lịch backend bên dưới hoạt động độc lập với tùy chọn này.
+
+## Quy tắc Khi–Nếu–Thì
+
+Nối cổng Hành động (`clean`) của **Điều phối & Đồng bộ** vào **Rẽ Nhánh Điều Kiện**, rồi nối cổng **Thỏa điều kiện** (`out`) tới Telegram. Có thể tạo nhiều quy tắc độc lập và nhiều nơi nhận. Điều kiện không thỏa thì không gửi; chưa hỗ trợ cổng False, nối chuỗi điều kiện hay nối trực tiếp `clean` tới Telegram. Cổng `conflict` vẫn dùng riêng cho cảnh báo xung đột.
+
+Trong khối Điều kiện, chọn Khi thêm dòng, sửa dòng hoặc cả hai; kết hợp điều kiện bằng tất cả/ít nhất một. Giữ nguyên cách so sánh chuỗi của `EQUALS`, `NOT_EQUALS`, `CONTAINS`, `CHANGED_TO`. Bổ sung `IS_EMPTY`, `COLUMN_CHANGED` và bốn phép so sánh số `<`, `>`, `<=`, `>=`. “Vừa đổi thành” và “Cột này vừa thay đổi” chỉ áp dụng cho dòng UPDATED có thay đổi thực tế; ba toán tử kiểm tra trống/có dữ liệu/cột thay đổi không cần nhập giá trị.
+
+Để tạo cảnh báo tồn kho, chọn kiểu **Số** cho cột tồn kho trong khối Điều phối & Đồng bộ, rồi cấu hình Khi sửa dòng, Nếu tồn kho nhỏ hơn ngưỡng cố định (ví dụ 10), Thì gửi Telegram. Ô trống không phải số 0. Ngưỡng dùng dấu chấm thập phân, tối đa 15 chữ số có nghĩa theo quy tắc số của bảng tính. Dữ liệu NUMBER sai định dạng bị từ chối trước ghi; nếu bộ đánh giá rule nhận giá trị số không hợp lệ thì bỏ qua toàn bộ rule cho bản ghi đó, kể cả chế độ ít nhất một, và ghi lý do vào log mà không ghi giá trị ô.
+
+Preview chỉ kiểm tra giá trị hiện tại của bảng đang chọn, không dự đoán số tin sẽ gửi. Điều kiện cần lịch sử trước/sau hiển thị giải thích thay cho số dòng. Bootstrap, chạy lại không đổi dữ liệu, sửa kiểu ô và thay đổi phản chiếu không tạo thông báo bản ghi. Bản ghi còn conflict không gửi thông báo nghiệp vụ; cảnh báo conflict vẫn hoạt động riêng. Một cập nhật mới từ 8 xuống 7 vẫn gửi nếu điều kiện là tồn kho < 10; chưa có cơ chế chỉ báo lúc vượt ngưỡng.
+
+Migration V11 thêm revision cho snapshot và tăng kích thước khóa nguồn outbox. Revision chỉ tăng khi dữ liệu checkpoint thay đổi. Khóa thông báo dùng flow, record và revision để chống tạo trùng qua nhiều execution; quay lại giá trị cũ sau một cập nhật khác là revision mới. Checkpoint, revision và outbox commit/rollback cùng giao dịch. Các lần ghi Sheet–Vault cũng dùng journal và đọc lại để verify trước khi lưu checkpoint hoặc xếp hàng thông báo; worker Telegram retry độc lập theo delivery status hiện có. Việc chống tạo trùng trong outbox không phải cam kết Telegram nhận đúng một lần nếu tiến trình chết sau khi nhà cung cấp đã nhận tin nhưng trước khi lưu trạng thái SENT.
 
 ## Lập lịch backend
 

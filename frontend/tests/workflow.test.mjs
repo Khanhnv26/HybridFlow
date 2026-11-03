@@ -1,13 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { readFile } from 'node:fs/promises';
-import ts from 'typescript';
-const source = await readFile(new URL('../src/services/workflow.ts', import.meta.url), 'utf8');
-const compiled = ts.transpileModule(source, {
-  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
-}).outputText;
+import { build } from 'esbuild';
+import { fileURLToPath } from 'node:url';
+const bundle = await build({
+  entryPoints: [fileURLToPath(new URL('../src/services/workflow.ts', import.meta.url))],
+  bundle: true, write: false, platform: 'node', format: 'esm',
+});
 const { workflowConfig, flowIdFor, cellRange, connectedSheetSources } = await import(
-  `data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`
+  `data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`
 );
 function graph() {
   return {
@@ -30,6 +30,26 @@ function graph() {
     ],
   };
 }
+
+test('numeric rule validation follows column types and accepts operators without values', () => {
+  const { nodes, edges } = graph();
+  const diff = nodes.find(node => node.id === 'diff');
+  const router = { id: 'rule', type: 'routerCondition', data: { conditions: [{ columnName: 'quantity', operator: 'LESS_THAN', value: '10' }] } };
+  nodes.push(router, { id: 'telegram', type: 'telegramAction', data: { chatId: '123' } });
+  edges.push({ source: 'diff', sourceHandle: 'clean', target: 'rule', targetHandle: 'in' },
+    { source: 'rule', sourceHandle: 'out', target: 'telegram', targetHandle: 'in' });
+  assert.throws(() => workflowConfig(nodes, edges), /kiểu Số/);
+  diff.data.columnTypes = { quantity: 'NUMBER' };
+  assert.equal(workflowConfig(nodes, edges).routers[0].conditions[0].operator, 'LESS_THAN');
+  for (const value of ['', 'abc', '1,000', 'NaN', '1234567890123456', '1e-400']) {
+    router.data.conditions[0].value = value;
+    assert.throws(() => workflowConfig(nodes, edges), /số không hợp lệ/);
+  }
+  for (const operator of ['IS_EMPTY', 'COLUMN_CHANGED']) {
+    router.data.conditions = [{ columnName: 'quantity', operator }];
+    assert.equal(workflowConfig(nodes, edges).routers[0].conditions[0].operator, operator);
+  }
+});
 
 test('single-sheet shared columns change scope and identity while timer changes do not', async () => {
   const { nodes, edges } = graph();

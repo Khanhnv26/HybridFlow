@@ -1,9 +1,18 @@
 package com.hybridflow.sync;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.api.client.googleapis.auth.oauth2.GoogleTokenResponse;
+import com.hybridflow.connection.service.GoogleCredentialService;
 import com.hybridflow.connection.service.GoogleOAuthService;
+import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
 import com.hybridflow.connector.google.dto.response.SheetDataResponse;
 import com.hybridflow.connector.google.service.GoogleSheetsService;
+import com.hybridflow.notification.dto.response.TelegramDeliveryResult;
 import com.hybridflow.notification.service.TelegramNotificationService;
+import com.hybridflow.sync.dto.request.RunSyncRequest;
+import com.hybridflow.sync.service.NotificationOutboxService;
+import com.hybridflow.sync.service.SyncExecutionService;
+import com.hybridflow.sync.service.WorkflowJobService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -15,13 +24,40 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
-import java.util.*;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicReference;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.ArgumentMatchers.*;
-import static org.mockito.Mockito.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyMap;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
+import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /** Opt-in: run only against a disposable PostgreSQL database, never a developer database. */
 @EnabledIfEnvironmentVariable(named = "HYBRIDFLOW_TEST_DB_URL", matches = "jdbc:postgresql://(localhost|127[.]0[.]0[.]1):15432/hybridflow_test")
@@ -39,14 +75,19 @@ class SyncApiIntegrationTest {
     @MockBean GoogleSheetsService sheets;
     @MockBean GoogleOAuthService oauth;
     @MockBean TelegramNotificationService telegram;
-    @Autowired com.hybridflow.connection.service.GoogleCredentialService credentials;
-    @Autowired com.hybridflow.sync.service.WorkflowJobService scheduler;
-    @Autowired com.hybridflow.sync.service.SyncExecutionService execution;
-    @Autowired com.hybridflow.sync.service.NotificationOutboxService outbox;
+    @Autowired GoogleCredentialService credentials;
+    @Autowired WorkflowJobService scheduler;
+    @Autowired SyncExecutionService execution;
+    @Autowired NotificationOutboxService outbox;
 
     @BeforeEach void cleanDatabase() {
         jdbc.execute("TRUNCATE notification_outbox,workflow_jobs,sheet_write_journal,sync_conflicts,sync_snapshots,vault_records,sync_flow_bindings,sync_executions,workflow_definitions,google_connections RESTART IDENTITY");
         source("NEW");
+        doAnswer(call -> {
+            Map<String, String> cells = call.getArgument(2);
+            if (cells.containsKey("'Data'!B2")) source(cells.get("'Data'!B2"));
+            return null;
+        }).when(sheets).updateCells(anyString(), anyString(), anyMap());
     }
     private void source(String status) {
         when(sheets.readSheet(any())).thenReturn(SheetDataResponse.builder().spreadsheetId("sheet")
@@ -87,7 +128,7 @@ class SyncApiIntegrationTest {
         source("READY");
         String response = mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.notificationsQueued").value(3)).andReturn().getResponse().getContentAsString();
-        String executionId = new com.fasterxml.jackson.databind.ObjectMapper().readTree(response).path("executionId").asText();
+        String executionId = new ObjectMapper().readTree(response).path("executionId").asText();
         assertEquals(List.of("Audit READY", "Manager 1", "Ops 1:READY"), jdbc.queryForList("SELECT message FROM notification_outbox ORDER BY message", String.class));
         mvc.perform(get("/api/v1/workflows/routed/notifications").param("executionId", executionId))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(3));
@@ -143,15 +184,66 @@ class SyncApiIntegrationTest {
         assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM notification_outbox", Integer.class));
     }
 
+    @Test void inventoryRulesNotifyOnlyVerifiedUpdatesAndAllowLaterRevisionsOfTheSameValue() throws Exception {
+        AtomicReference<String> quantity = new AtomicReference<>("12");
+        when(sheets.readSheet(any())).thenAnswer(call -> SheetDataResponse.builder().sheetName("Data")
+                .headers(List.of("id", "quantity")).rows(List.of(Map.of("id", "1", "quantity", quantity.get())))
+                .valueTypes(List.of(Map.of("quantity", "NUMBER"))).build());
+        String body = request("inventory").replace("\"conflictPolicy\":\"ASK_TELEGRAM\"", """
+                "conflictPolicy":"ASK_TELEGRAM","columnTypes":{"quantity":"NUMBER"},
+                "routers":[{"nodeId":"r","triggerOn":"UPDATED","matchMode":"ALL","actionNodeIds":["t"],
+                "conditions":[{"columnName":"quantity","operator":"LESS_THAN","value":"10"},
+                {"columnName":"quantity","operator":"COLUMN_CHANGED"}]}],
+                "actions":[{"nodeId":"t","chatId":"123","recordTemplate":"Stock {quantity}"}]
+                """);
+        String[] quantities = {"12", "8", "8", "7", "12", "8"};
+        int[] queued = {0, 1, 0, 1, 0, 1};
+        for (int index = 0; index < quantities.length; index++) {
+            quantity.set(quantities[index]);
+            mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isOk()).andExpect(jsonPath("$.notificationsQueued").value(queued[index]));
+        }
+        assertEquals(3, jdbc.queryForObject("SELECT count(*) FROM notification_outbox WHERE flow_id='inventory'", Integer.class));
+        assertEquals(5L, jdbc.queryForObject("SELECT revision FROM sync_snapshots WHERE flow_id='inventory'", Long.class));
+        assertEquals(3, jdbc.queryForObject("SELECT count(DISTINCT source_key) FROM notification_outbox WHERE flow_id='inventory'", Integer.class));
+        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON)
+                .content(body.replace("\"value\":\"10\"", "\"value\":\"abc\""))).andExpect(status().isBadRequest());
+        assertEquals(5L, jdbc.queryForObject("SELECT revision FROM sync_snapshots WHERE flow_id='inventory'", Long.class));
+        verifyNoInteractions(telegram);
+    }
+
+    @Test void failedReadBackDoesNotAdvanceRevisionOrEnqueueBusinessNotifications() throws Exception {
+        String body = routedRequest("verify-failure");
+        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk());
+        jdbc.update("UPDATE vault_records SET data=jsonb_set(data,'{status}','\"READY\"') WHERE flow_id='verify-failure'");
+        // Provider accepts the request but a subsequent read still contains the old value.
+        doNothing().when(sheets).updateCells(anyString(), anyString(), anyMap());
+        mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body))
+                .andExpect(status().isInternalServerError());
+        assertEquals("NEW", statusOf("sync_snapshots", "verify-failure"));
+        assertEquals(1L, jdbc.queryForObject("SELECT revision FROM sync_snapshots WHERE flow_id='verify-failure'", Long.class));
+        assertEquals(0, jdbc.queryForObject("SELECT count(*) FROM notification_outbox", Integer.class));
+        verifyNoInteractions(telegram);
+    }
+
     @Test void numericPriceRepairAndConflictResolutionKeepTheNumericWriteContract() throws Exception {
         String body = request("numeric-price").replace("\"conflictPolicy\":\"ASK_TELEGRAM\"", "\"conflictPolicy\":\"ASK_TELEGRAM\",\"columnTypes\":{\"price\":\"NUMBER\"}");
-        when(sheets.readSheet(any())).thenReturn(SheetDataResponse.builder().sheetName("Data").headers(List.of("id", "price"))
-                .rows(List.of(Map.of("id", "00123", "price", "20000"))).valueTypes(List.of(Map.of("price", "TEXT"))).build());
+        AtomicReference<String> price = new AtomicReference<>("20000");
+        AtomicReference<String> priceType = new AtomicReference<>("TEXT");
+        when(sheets.readSheet(any())).thenAnswer(call -> SheetDataResponse.builder().sheetName("Data").headers(List.of("id", "price"))
+                .rows(List.of(Map.of("id", "00123", "price", price.get()))).valueTypes(List.of(Map.of("price", priceType.get()))).build());
+        doAnswer(call -> {
+            Map<String, String> cells = call.getArgument(2);
+            Map<String, String> types = call.getArgument(3);
+            price.set(cells.get("'Data'!B2"));
+            priceType.set(types.get("'Data'!B2"));
+            return null;
+        }).when(sheets).updateTypedCells(anyString(), anyString(), anyMap(), anyMap());
         mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk());
         verify(sheets).updateTypedCells("test-token", "sheet", Map.of("'Data'!B2", "20000"), Map.of("'Data'!B2", "NUMBER"));
         assertEquals("20000", jdbc.queryForObject("SELECT data->>'price' FROM sync_snapshots WHERE flow_id='numeric-price'", String.class));
-        when(sheets.readSheet(any())).thenReturn(SheetDataResponse.builder().sheetName("Data").headers(List.of("id", "price"))
-                .rows(List.of(Map.of("id", "00123", "price", "30000"))).valueTypes(List.of(Map.of("price", "NUMBER"))).build());
+        price.set("30000");
+        priceType.set("NUMBER");
         jdbc.update("UPDATE vault_records SET data=jsonb_set(data,'{price}','\"40000\"') WHERE flow_id='numeric-price'");
         mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(body)).andExpect(status().isOk());
         Long conflictId = jdbc.queryForObject("SELECT id FROM sync_conflicts WHERE status='OPEN'", Long.class);
@@ -207,7 +299,7 @@ class SyncApiIntegrationTest {
         run("flow-one");
         source("SHIPPING");
         jdbc.update("UPDATE vault_records SET data=jsonb_set(data,'{status}','\"CANCELLED\"') WHERE flow_id='flow-one'");
-        when(telegram.sendDetailedMessage(any(), eq("123"))).thenReturn(com.hybridflow.notification.dto.response.TelegramDeliveryResult.builder().success(true).build());
+        when(telegram.sendDetailedMessage(any(), eq("123"))).thenReturn(TelegramDeliveryResult.builder().success(true).build());
         String notifyingRequest = request("flow-one").replace("\"notifyConflicts\":false", "\"notifyConflicts\":true,\"chatId\":\"123\"");
         mvc.perform(post("/api/v1/sync/run").contentType(MediaType.APPLICATION_JSON).content(notifyingRequest))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.notificationsSent").value(0))
@@ -252,7 +344,7 @@ class SyncApiIntegrationTest {
     }
 
     @Test void savedWorkflowManualBootstrapThenScheduledRunUsesTheSameCheckpoint() throws Exception {
-        String connection = credentials.store(new com.google.api.client.googleapis.auth.oauth2.GoogleTokenResponse()
+        String connection = credentials.store(new GoogleTokenResponse()
                 .setAccessToken("test-access").setRefreshToken("test-refresh").setExpiresInSeconds(3600L));
         String graph = """
                 {"accessToken":"%s","nodes":[
@@ -268,7 +360,7 @@ class SyncApiIntegrationTest {
         mvc.perform(get("/api/v1/workflows/editor/definition")).andExpect(status().isOk()).andExpect(jsonPath("$.accessToken").doesNotExist());
         String manual = mvc.perform(post("/api/v1/workflows/editor/run").param("bootstrapConfirmed", "true"))
                 .andExpect(status().isOk()).andExpect(jsonPath("$.bootstrapRequired").value(false)).andReturn().getResponse().getContentAsString();
-        String flow = new com.fasterxml.jackson.databind.ObjectMapper().readTree(manual).path("flowId").asText();
+        String flow = new ObjectMapper().readTree(manual).path("flowId").asText();
         assertEquals("flow-985d2076bff98552d3637ea2b5f4678c6861575eb9f169e9bf2d6bb3ad92b15e", flow);
         assertEquals("NEW", statusOf("sync_snapshots", flow));
         source("UPDATED");
@@ -290,28 +382,28 @@ class SyncApiIntegrationTest {
     }
 
     @Test void actualReadPhaseIsVisibleBeforeTheSyncTransactionCompletes() throws Exception {
-        java.util.concurrent.CountDownLatch reading = new java.util.concurrent.CountDownLatch(1);
-        java.util.concurrent.CountDownLatch release = new java.util.concurrent.CountDownLatch(1);
+        CountDownLatch reading = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
         when(sheets.readSheet(any())).thenAnswer(invocation -> {
             reading.countDown();
-            assertTrue(release.await(5, java.util.concurrent.TimeUnit.SECONDS));
+            assertTrue(release.await(5, TimeUnit.SECONDS));
             return SheetDataResponse.builder().spreadsheetId("sheet").sheetName("Data").headers(List.of("id", "status"))
                     .rows(List.of(Map.of("id", "1", "status", "NEW"))).totalRows(1).build();
         });
-        com.hybridflow.sync.dto.request.RunSyncRequest request = com.hybridflow.sync.dto.request.RunSyncRequest.builder()
+        RunSyncRequest request = RunSyncRequest.builder()
                 .flowId("live-progress").accessToken("test-access").spreadsheetId("sheet").sheetName("Data").idColumn("id")
                 .bootstrapConfirmed(true).executionNodes(Map.of("sheets", List.of("sheet-node"), "diff", List.of("diff-node"), "storage", List.of("vault-node"))).build();
-        try (java.util.concurrent.ExecutorService pool = java.util.concurrent.Executors.newSingleThreadExecutor()) {
-            java.util.concurrent.Future<?> running = pool.submit(() -> execution.executeSync(request));
+        try (ExecutorService pool = Executors.newSingleThreadExecutor()) {
+            Future<?> running = pool.submit(() -> execution.executeSync(request));
             try {
-                assertTrue(reading.await(5, java.util.concurrent.TimeUnit.SECONDS));
+                assertTrue(reading.await(5, TimeUnit.SECONDS));
                 assertEquals("RUNNING", jdbc.queryForObject("SELECT status FROM sync_executions WHERE flow_id='live-progress'", String.class));
                 String progress = jdbc.queryForObject("SELECT progress::text FROM sync_executions WHERE flow_id='live-progress'", String.class);
                 assertTrue(progress.contains("READ"));
                 assertTrue(progress.contains("sheet-node"));
                 assertFalse(progress.contains("WRITE"));
             } finally { release.countDown(); }
-            running.get(5, java.util.concurrent.TimeUnit.SECONDS);
+            running.get(5, TimeUnit.SECONDS);
         }
         assertEquals("SUCCESS", jdbc.queryForObject("SELECT status FROM sync_executions WHERE flow_id='live-progress'", String.class));
         assertTrue(jdbc.queryForObject("SELECT progress::text FROM sync_executions WHERE flow_id='live-progress'", String.class).contains("vault-node"));
@@ -328,7 +420,7 @@ class SyncApiIntegrationTest {
     private Map<String, String> multiSources() {
         Map<String, String> live = new HashMap<>(Map.of("a", "NEW", "b", "NEW", "c", "NEW"));
         when(sheets.readSheet(any())).thenAnswer(inv -> {
-            com.hybridflow.connector.google.dto.request.ReadSheetRequest request = inv.getArgument(0);
+            ReadSheetRequest request = inv.getArgument(0);
             return SheetDataResponse.builder().spreadsheetId(request.getSpreadsheetId()).sheetName("Data")
                     .headers(List.of("id", "status")).rows(List.of(Map.of("id", "1", "status", live.get(request.getSpreadsheetId())))).build();
         });
@@ -370,7 +462,7 @@ class SyncApiIntegrationTest {
         Map<String, String> live = multiSources();
         runMulti();
         live.put("a", "EDITED");
-        java.util.concurrent.atomic.AtomicBoolean failOnce = new java.util.concurrent.atomic.AtomicBoolean(true);
+        AtomicBoolean failOnce = new AtomicBoolean(true);
         doAnswer(inv -> {
             Map<String, String> cells = inv.getArgument(2);
             live.put("c", cells.get("'Data'!B2"));

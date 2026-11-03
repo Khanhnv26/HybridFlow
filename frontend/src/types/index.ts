@@ -92,7 +92,7 @@ export interface ColumnTransformConfig {
   defaultValue?: string;
 }
 
-export type RouterOperator = 'CHANGED_TO' | 'EQUALS' | 'NOT_EQUALS' | 'CONTAINS' | 'IS_NOT_EMPTY';
+export type RouterOperator = 'CHANGED_TO' | 'EQUALS' | 'NOT_EQUALS' | 'CONTAINS' | 'IS_NOT_EMPTY' | 'IS_EMPTY' | 'COLUMN_CHANGED' | 'GREATER_THAN' | 'LESS_THAN' | 'GREATER_OR_EQUAL' | 'LESS_OR_EQUAL';
 export type RouterTriggerOn = 'CHANGED' | 'CREATED' | 'UPDATED';
 export type RouterMatchMode = 'ALL' | 'ANY';
 
