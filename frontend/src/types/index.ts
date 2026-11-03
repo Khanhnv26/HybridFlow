@@ -113,6 +113,9 @@ export interface OrchestrationNodeData extends Record<string, unknown> {
   chatId?: string;
   tableName?: string;
   scheduleTime?: string;
+  scheduleIntervalMinutes?: number;
+  scheduleType?: 'interval' | 'daily' | 'cron';
+  scheduleEnabled?: boolean;
   userAccount?: string;
   botName?: string;
   telegramRecipientType?: 'PRIVATE' | 'GROUP';

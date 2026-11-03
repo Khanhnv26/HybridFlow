@@ -42,7 +42,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   // Nhóm 2: Bộ não điều phối
   {
     type: 'diffEngine',
-    label: 'So Khớp 2 Chiều',
+    label: 'Điều phối & Đồng bộ',
     subtitle: '3-Way Diff chống ghi đè nhầm',
     category: 'logic',
     icon: <Sparkles size={15} />,
@@ -111,10 +111,10 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ onAddNode, disabled })
         {items.map((item) => (
           <div
             key={item.type}
-            onClick={() => { if (!disabled && ['sheetsTrigger', 'diffEngine', 'storageAction', 'telegramAction'].includes(item.type)) onAddNode(item); }}
+            onClick={() => { if (!disabled && ['sheetsTrigger', 'scheduleTrigger', 'diffEngine', 'storageAction', 'telegramAction'].includes(item.type)) onAddNode(item); }}
             className="p-2.5 rounded-xl bg-[#171b22] border border-[#2d3748] hover:border-gray-500 hover:bg-[#202632] cursor-pointer transition flex items-center justify-between group shadow-sm"
-            aria-disabled={disabled || !['sheetsTrigger', 'diffEngine', 'storageAction', 'telegramAction'].includes(item.type)}
-            title={['sheetsTrigger', 'diffEngine', 'storageAction', 'telegramAction'].includes(item.type) ? 'Bấm để thêm' : 'Chưa hỗ trợ thực thi'}
+            aria-disabled={disabled || !['sheetsTrigger', 'scheduleTrigger', 'diffEngine', 'storageAction', 'telegramAction'].includes(item.type)}
+            title={['sheetsTrigger', 'scheduleTrigger', 'diffEngine', 'storageAction', 'telegramAction'].includes(item.type) ? 'Bấm để thêm' : 'Chưa hỗ trợ thực thi'}
           >
             <div className="flex items-center gap-2.5">
               <div
@@ -135,7 +135,7 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ onAddNode, disabled })
                   {item.label}
                 </div>
                 <div className="text-[10px] text-gray-400 truncate max-w-[140px] leading-tight mt-0.5">
-                  {['sheetsTrigger', 'diffEngine', 'storageAction', 'telegramAction'].includes(item.type) ? item.subtitle : 'Chưa hỗ trợ thực thi'}
+                  {['sheetsTrigger', 'scheduleTrigger', 'diffEngine', 'storageAction', 'telegramAction'].includes(item.type) ? item.subtitle : 'Chưa hỗ trợ thực thi'}
                 </div>
               </div>
             </div>

@@ -155,15 +155,23 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
   );
   return (
     <div className={cardClass(selected, 'border-purple-400 ring-2 ring-purple-500/20')}>
+      <Handle
+        type="target"
+        position={Position.Top}
+        id="trigger"
+        title="Nối từ khối Hẹn Giờ Định Kỳ phía trên để tự động kích hoạt luồng."
+        aria-label="Cổng nhận kích hoạt hẹn giờ từ phía trên"
+        className={`${handleClass} !border-emerald-400`}
+      />
       <NodeHeading
         icon={<Sparkles size={18} className="text-purple-300" />}
-        title="So khớp 2 chiều"
+        title="Điều phối & Đồng bộ"
       />
       <div className="space-y-1.5 px-3 py-2.5 text-[11px]">
         <div className="flex items-center justify-between gap-2 text-gray-400">
-          <span>Khóa so sánh</span>
+          <span>Cột định danh (Khóa)</span>
           <code
-            className="max-w-[140px] truncate rounded border border-[#303b4b] bg-[#121620] px-1.5 py-0.5 text-purple-200"
+            className="max-w-[130px] truncate rounded border border-[#303b4b] bg-[#121620] px-1.5 py-0.5 text-purple-200"
             title={nodeData.uniqueKey}
           >
             {nodeData.uniqueKey || 'Chưa chọn khóa'}
@@ -223,7 +231,7 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
           </button>
         )}
       </div>
-      <div className="relative flex h-8 items-center justify-between border-t border-[#293241] bg-[#151b25] px-3 text-[11px] font-medium">
+      <div className="relative flex h-8 items-center justify-between rounded-b-xl border-t border-[#293241] bg-[#151b25] px-2.5 text-[10px] font-medium">
         <Handle
           type="target"
           position={Position.Left}
@@ -234,27 +242,13 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
           className={`${handleClass} !border-purple-400`}
         />
         <span className="text-purple-200" title={sheetHint}>
-          Sheet ⇄
+          ⇄ Đầu vào
         </span>
-        <span className="text-emerald-200" title={rightHint}>
-          {legacy ? 'Kho lưu trữ' : 'Sheet ⇄'}
-        </span>
-        <Handle
-          type="source"
-          position={Position.Right}
-          id="clean"
-          title={rightHint}
-          aria-label={legacy ? 'Kết nối Kho lưu trữ' : 'Kết nối Sheet bên phải'}
-          style={{ top: '50%' }}
-          className={`${handleClass} !border-emerald-400`}
-        />
-      </div>
-      <div className="relative flex h-8 items-center justify-center rounded-b-xl border-t border-[#293241] px-3 text-[11px] font-medium">
         <span
-          className="flex items-center gap-1.5 text-amber-200"
+          className="flex items-center gap-1 text-amber-200"
           title="Nối với Telegram để gửi cảnh báo khi có xung đột."
         >
-          <Zap size={12} /> Cảnh báo · Telegram
+          <Zap size={11} /> Báo động
         </span>
         <Handle
           type="source"
@@ -263,6 +257,18 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
           title="Nối xuống Telegram để gửi cảnh báo xung đột."
           aria-label="Cảnh báo xung đột tới Telegram"
           className={`${handleClass} !border-amber-400`}
+        />
+        <span className="text-emerald-200" title={rightHint}>
+          Hành động ➔
+        </span>
+        <Handle
+          type="source"
+          position={Position.Right}
+          id="clean"
+          title={rightHint}
+          aria-label={legacy ? 'Kết nối Kho lưu trữ' : 'Kết nối mở rộng bên phải'}
+          style={{ top: '50%' }}
+          className={`${handleClass} !border-emerald-400`}
         />
       </div>
     </div>
@@ -329,6 +335,66 @@ export const TelegramActionNode: React.FC<any> = ({ id, data, selected }) => {
           </div>
         </details>
       </div>
+    </div>
+  );
+};
+
+export const ScheduleTriggerNode: React.FC<any> = ({ id, data, selected }) => {
+  const nodeData = data as OrchestrationNodeData;
+  useHandleGeometry(id);
+  const isEnabled = nodeData.scheduleEnabled !== false;
+  const interval = nodeData.scheduleIntervalMinutes || 5;
+  const type = nodeData.scheduleType || 'interval';
+  const time = nodeData.scheduleTime || '08:00';
+
+  const scheduleDescription =
+    type === 'daily'
+      ? `${time} mỗi ngày`
+      : interval >= 60
+        ? `Mỗi ${Math.floor(interval / 60)} giờ`
+        : `Mỗi ${interval} phút`;
+
+  return (
+    <div className={cardClass(selected, 'border-emerald-400 ring-2 ring-emerald-500/20')}>
+      <NodeHeading
+        icon={<Clock size={18} className="text-emerald-400" />}
+        title={nodeData.label || 'Hẹn Giờ Định Kỳ'}
+      />
+      <div className="space-y-1.5 px-3 py-2.5 text-[11px]">
+        <div className="flex items-center justify-between gap-2 text-gray-400">
+          <span>Chu kỳ kích hoạt</span>
+          <code
+            className="truncate rounded border border-emerald-500/40 bg-emerald-950/40 px-2 py-0.5 text-xs font-semibold text-emerald-200"
+            title={scheduleDescription}
+          >
+            {scheduleDescription}
+          </code>
+        </div>
+        <div className="flex items-center justify-between gap-2">
+          <span className="text-gray-400">Trạng thái</span>
+          <span
+            className={`flex items-center gap-1 font-medium ${
+              isEnabled ? 'text-emerald-300' : 'text-gray-400'
+            }`}
+          >
+            <span
+              className={`h-2 w-2 rounded-full ${
+                isEnabled ? 'bg-emerald-400 animate-pulse' : 'bg-gray-500'
+              }`}
+            />
+            {isEnabled ? 'Đang kích hoạt' : 'Tạm dừng'}
+          </span>
+        </div>
+        <p className="text-[10px] text-gray-500">Bấm khối để đổi chu kỳ phút / giờ</p>
+      </div>
+      <Handle
+        type="source"
+        position={Position.Bottom}
+        id="out"
+        title="Nối thẳng xuống đỉnh khối Điều phối & Đồng bộ ở phía dưới."
+        aria-label="Cổng xuất kích hoạt ở đáy"
+        className={`${handleClass} !border-emerald-400`}
+      />
     </div>
   );
 };

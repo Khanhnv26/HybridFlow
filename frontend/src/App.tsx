@@ -25,6 +25,7 @@ import {
   DiffEngineNode,
   StorageActionNode,
   TelegramActionNode,
+  ScheduleTriggerNode,
   GenericOrchestrationNode,
 } from './components/nodes/OrchestrationNodes';
 import { googleService, syncService, workflowService, telegramService } from './services/api';
@@ -52,7 +53,7 @@ const initialNodes: Node<OrchestrationNodeData>[] = [
     type: 'diffEngine',
     position: { x: 520, y: 180 },
     data: {
-      label: 'So Khớp 2 Chiều',
+      label: 'Điều phối & Đồng bộ',
       type: 'diffEngine',
       category: 'logic',
       subtitle: '3-Way Diff chống ghi đè',
@@ -517,7 +518,7 @@ export default function App() {
       diffEngine: DiffEngineNode,
       storageAction: StorageActionNode,
       telegramAction: TelegramActionNode,
-      scheduleTrigger: GenericOrchestrationNode,
+      scheduleTrigger: ScheduleTriggerNode,
       webhookTrigger: GenericOrchestrationNode,
       routerCondition: GenericOrchestrationNode,
       dataTransform: GenericOrchestrationNode,
@@ -650,6 +651,10 @@ export default function App() {
                     conflictPolicy: 'ASK_TELEGRAM',
                     tableName: 'vault',
                     chatId: '',
+                    scheduleIntervalMinutes: 5,
+                    scheduleType: 'interval',
+                    scheduleEnabled: true,
+                    scheduleTime: '08:00',
                   },
                 },
               ]);

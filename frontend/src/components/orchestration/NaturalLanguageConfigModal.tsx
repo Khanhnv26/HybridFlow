@@ -4,6 +4,7 @@ import type { Node } from '@xyflow/react';
 import type { OrchestrationNodeData, SheetDataResponse } from '../../types';
 import { SheetSourceConfig } from './SheetSourceConfig';
 import { TelegramConfig } from './TelegramConfig';
+import { ScheduleConfig } from './ScheduleConfig';
 interface Props {
   node: Node<OrchestrationNodeData> | null;
   onClose: () => void;
@@ -56,6 +57,15 @@ export const NaturalLanguageConfigModal: React.FC<Props> = ({
         onSave={(source) => onSaveSource(node.id, source)}
       />
     );
+  if (node.type === 'scheduleTrigger')
+    return (
+      <ScheduleConfig
+        data={node.data}
+        disabled={disabled}
+        onClose={onClose}
+        onSave={(settings) => onSaveSource(node.id, settings)}
+      />
+    );
   if (node.type === 'telegramAction')
     return (
       <TelegramConfig
@@ -98,7 +108,9 @@ export const NaturalLanguageConfigModal: React.FC<Props> = ({
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80">
       <div className="bg-[#171b24] border border-gray-700 rounded-2xl w-full max-w-4xl max-h-[85vh] flex flex-col">
         <div className="p-4 border-b border-gray-700 flex items-center justify-between gap-3">
-          <h3 className="font-semibold">{node.data.label}</h3>
+          <h3 className="font-semibold">
+            {node.type === 'diffEngine' ? 'Điều phối & Đồng bộ' : node.data.label}
+          </h3>
           <div className="flex items-center gap-4">
             <button
               disabled={testing || disabled}
