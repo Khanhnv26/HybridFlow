@@ -95,6 +95,14 @@ public class WorkflowGraphParser {
             return Optional.empty();
         }
 
+        java.util.Map<String, List<String>> transformNodes = new java.util.LinkedHashMap<>();
+        for (JsonNode node : definition.path("nodes")) if ("dataTransform".equals(node.path("type").asText())) {
+            String transformId = node.path("id").asText();
+            transformNodes.put("transforms", java.util.stream.Stream.concat(transformNodes.getOrDefault("transforms", List.of()).stream(), java.util.stream.Stream.of(transformId)).toList());
+            for (JsonNode edge : definition.path("edges")) if (transformId.equals(edge.path("target").asText()))
+                transformNodes.put("transform:" + edge.path("source").asText(), List.of(transformId));
+        }
+        definition = normalizeTransforms(definition);
         JsonNode nodes = definition.path("nodes");
         JsonNode edges = definition.path("edges");
         if (!nodes.isArray() || !edges.isArray()) throw new IllegalArgumentException("Cấu hình luồng không hợp lệ.");
@@ -147,6 +155,8 @@ public class WorkflowGraphParser {
                     .spreadsheetId(spreadsheetId)
                     .spreadsheetTitle(sheetData.path("spreadsheetTitle").asText(null))
                     .sheetName(sheetName)
+                    .transforms(readTransforms(sheetData.path("transforms")))
+                    .writeBackCleanData(sheetData.path("writeBackCleanData").asBoolean(false))
                     .build();
             connectedSheets.add(endpoint);
             index++;
@@ -208,7 +218,7 @@ public class WorkflowGraphParser {
             throw new IllegalArgumentException("Nối khối hẹn giờ vào cổng kích hoạt.");
 
         String resolvedFlowId = computeFlowId(connectedSheets, idColumn, storageName, syncColumns);
-        java.util.Map<String, List<String>> executionNodes = new java.util.LinkedHashMap<>();
+        java.util.Map<String, List<String>> executionNodes = new java.util.LinkedHashMap<>(transformNodes);
         executionNodes.put("sheets", connectedSheets.stream().map(SheetEndpointRequest::getNodeId).toList());
         executionNodes.put("diff", List.of(diffId));
         if (storageNode != null) executionNodes.put("storage", List.of(storageNode.path("id").asText()));
@@ -221,6 +231,8 @@ public class WorkflowGraphParser {
                 .executionNodes(executionNodes)
                 .spreadsheetId(connectedSheets.get(0).getSpreadsheetId())
                 .sheetName(connectedSheets.get(0).getSheetName())
+                .transforms(connectedSheets.get(0).getTransforms())
+                .writeBackCleanData(connectedSheets.get(0).isWriteBackCleanData())
                 .sheets(connectedSheets.size() >= 2 ? connectedSheets : null)
                 .idColumn(idColumn)
                 .syncColumns(syncColumns)
@@ -242,6 +254,76 @@ public class WorkflowGraphParser {
         return fromTime.plusSeconds(Math.multiplyExact(60L, intervalMinutes));
     }
 
+    private List<com.hybridflow.sync.dto.request.ColumnTransformConfig> readTransforms(JsonNode configs) {
+        if (configs.isMissingNode() || configs.isNull()) return null;
+        if (!configs.isArray()) throw new IllegalArgumentException("Cấu hình chuẩn hóa không hợp lệ.");
+        List<com.hybridflow.sync.dto.request.ColumnTransformConfig> result = new ArrayList<>();
+        Set<String> seen = new LinkedHashSet<>();
+        for (JsonNode config : configs) {
+            String column = config.path("columnName").asText();
+            if (column.isBlank() || !seen.add(column) || !config.path("rules").isArray())
+                throw new IllegalArgumentException("Cột chuẩn hóa không hợp lệ.");
+            List<String> rules = new ArrayList<>();
+            for (JsonNode rule : config.path("rules")) {
+                if (!Set.of("TRIM", "UPPERCASE", "LOWERCASE", "CAPITALIZE", "PHONE_VN", "DEFAULT_IF_EMPTY").contains(rule.asText()))
+                    throw new IllegalArgumentException("Quy tắc chuẩn hóa không hợp lệ.");
+                rules.add(rule.asText());
+            }
+            result.add(new com.hybridflow.sync.dto.request.ColumnTransformConfig(column, rules, config.path("defaultValue").asText("")));
+        }
+        return result;
+    }
+
+    private JsonNode normalizeTransforms(JsonNode definition) {
+        JsonNode copy = definition.deepCopy();
+        JsonNode nodes = copy.path("nodes"), edges = copy.path("edges");
+        if (!nodes.isArray() || !edges.isArray()) return copy;
+        Set<String> allIds = new LinkedHashSet<>();
+        for (JsonNode node : nodes) if (node.path("id").asText().isBlank() || !allIds.add(node.path("id").asText()))
+            throw new IllegalArgumentException("Mã khối không hợp lệ hoặc bị trùng.");
+        Set<String> bound = new LinkedHashSet<>();
+        Set<String> removed = new LinkedHashSet<>();
+        List<com.fasterxml.jackson.databind.node.ObjectNode> links = new ArrayList<>();
+        for (JsonNode transform : nodes) {
+            if (!"dataTransform".equals(transform.path("type").asText())) continue;
+            String id = transform.path("id").asText();
+            List<JsonNode> incoming = new ArrayList<>(), outgoing = new ArrayList<>();
+            for (JsonNode edge : edges) {
+                if (id.equals(edge.path("target").asText())) incoming.add(edge);
+                if (id.equals(edge.path("source").asText())) outgoing.add(edge);
+            }
+            if (incoming.size() != 1 || outgoing.size() != 1) throw new IllegalArgumentException("Nối một Sheet → Chuẩn hóa → So khớp.");
+            String sourceId = incoming.getFirst().path("source").asText(), targetId = outgoing.getFirst().path("target").asText();
+            JsonNode source = null, target = null;
+            for (JsonNode node : nodes) {
+                if (sourceId.equals(node.path("id").asText())) source = node;
+                if (targetId.equals(node.path("id").asText())) target = node;
+            }
+            if (source == null || target == null || !"sheetsTrigger".equals(source.path("type").asText())
+                    || !"diffEngine".equals(target.path("type").asText()) || !bound.add(sourceId)
+                    || !hasEdge(edges, sourceId, "out", id, "in") || !hasEdge(edges, id, "out", targetId, "in")
+                    || isSheetConnected(edges, sourceId, targetId))
+                throw new IllegalArgumentException("Đường nối chuẩn hóa không hợp lệ; không nối song song hoặc nối chuỗi.");
+            JsonNode config = transform.path("data");
+            readTransforms(config.path("transforms"));
+            com.fasterxml.jackson.databind.node.ObjectNode data = (com.fasterxml.jackson.databind.node.ObjectNode) source.path("data");
+            data.set("transforms", config.path("transforms").isMissingNode() ? new com.fasterxml.jackson.databind.ObjectMapper().createArrayNode() : config.path("transforms"));
+            data.put("writeBackCleanData", config.path("writeBackCleanData").asBoolean(false));
+            removed.add(id);
+            com.fasterxml.jackson.databind.node.ObjectNode link = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+            link.put("source", sourceId).put("target", targetId).put("sourceHandle", "out").put("targetHandle", "in");
+            links.add(link);
+        }
+        com.fasterxml.jackson.databind.node.ArrayNode normalizedNodes = new com.fasterxml.jackson.databind.ObjectMapper().createArrayNode();
+        for (JsonNode node : nodes) if (!removed.contains(node.path("id").asText())) normalizedNodes.add(node);
+        com.fasterxml.jackson.databind.node.ArrayNode normalizedEdges = new com.fasterxml.jackson.databind.ObjectMapper().createArrayNode();
+        for (JsonNode edge : edges) if (!removed.contains(edge.path("source").asText()) && !removed.contains(edge.path("target").asText())) normalizedEdges.add(edge);
+        links.forEach(normalizedEdges::add);
+        ((com.fasterxml.jackson.databind.node.ObjectNode) copy).set("nodes", normalizedNodes);
+        ((com.fasterxml.jackson.databind.node.ObjectNode) copy).set("edges", normalizedEdges);
+        return copy;
+    }
+
     private int count(JsonNode nodes, String type) {
         int count = 0;
         for (JsonNode node : nodes) if (type.equals(node.path("type").asText())) count++;
@@ -257,6 +339,12 @@ public class WorkflowGraphParser {
         } else {
             identity.addAll(List.of(sheets.get(0).getSpreadsheetId(), sheets.get(0).getSheetName(), key, storage));
             if (!columns.isEmpty()) identity.add(columns.stream().sorted().toList());
+        }
+        if (sheets.stream().anyMatch(s -> s.getTransforms() != null && !s.getTransforms().isEmpty() || s.isWriteBackCleanData())) {
+            identity.add(sheets.stream().map(s -> List.of(
+                    s.getTransforms() == null ? List.of() : s.getTransforms().stream()
+                        .map(c -> List.of(c.getColumnName(), c.getRules(), c.getDefaultValue() == null ? "" : c.getDefaultValue())).toList(),
+                    s.isWriteBackCleanData())).toList());
         }
         try {
             byte[] bytes = new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsBytes(identity);

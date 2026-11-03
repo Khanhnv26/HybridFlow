@@ -21,6 +21,8 @@ public class RunSyncRequest {
     private boolean scheduledExecution;
     private String spreadsheetId;
     private String sheetName;
+    private List<ColumnTransformConfig> transforms;
+    private boolean writeBackCleanData;
     private List<SheetEndpointRequest> sheets;
     @Builder.Default
     private String idColumn = "id";

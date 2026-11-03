@@ -411,6 +411,22 @@ export const ScheduleTriggerNode: React.FC<any> = ({ id, data, selected }) => {
   );
 };
 
+export const DataTransformNode: React.FC<any> = ({ id, data, selected }) => {
+  const nodeData = data as OrchestrationNodeData;
+  const count = (nodeData.transforms || []).filter(config => config.rules.length).length;
+  useHandleGeometry(id, String(count));
+  return <div className={cardClass(selected, 'border-purple-400 ring-2 ring-purple-500/20', nodeData.executionState)}>
+    <Handle type="target" position={Position.Left} id="in" className={handleClass + ' !border-purple-400'} />
+    <NodeHeading icon={<Wand2 size={20} className="text-purple-300" />} title="Chuẩn Hóa Dữ Liệu" execution={nodeData.executionState} />
+    <div className="space-y-2 px-3 py-3 text-xs">
+      <p className="w-fit rounded-full bg-purple-950 px-2 py-1 text-purple-200">Đang chuẩn hóa {count} cột</p>
+      <p className="text-gray-400">{nodeData.writeBackCleanData ? 'Ghi dữ liệu sạch lại Sheet gốc' : 'Làm sạch trước khi so khớp'}</p>
+      <p className="text-gray-500">Bấm để chọn cột và xem trước</p>
+    </div>
+    <Handle type="source" position={Position.Right} id="out" className={handleClass + ' !border-purple-400'} />
+  </div>;
+};
+
 // Generic Node for Palette Drag & Drop additions
 export const GenericOrchestrationNode: React.FC<any> = ({ data, selected }) => {
   const nodeData = data as OrchestrationNodeData;

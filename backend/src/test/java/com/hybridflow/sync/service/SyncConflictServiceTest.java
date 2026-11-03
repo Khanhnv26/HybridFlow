@@ -32,6 +32,7 @@ class SyncConflictServiceTest {
     @Mock SheetWriteService writes;
     @Mock TelegramNotificationService notifications;
     @Spy SyncJsonCodec codec = new SyncJsonCodec(new ObjectMapper());
+    @Spy com.hybridflow.sync.service.impl.DataTransformerServiceImpl transformer = new com.hybridflow.sync.service.impl.DataTransformerServiceImpl();
     @InjectMocks SyncConflictServiceImpl service;
     private SyncConflict conflict() { return SyncConflict.builder().id(1L).flowId("flow").spreadsheetId("sheet")
             .sheetName("Data").idColumn("id").recordId("1").columnName("status")
@@ -207,5 +208,31 @@ class SyncConflictServiceTest {
         when(repository.findByFlowIdAndStatus("flow", "OPEN")).thenReturn(List.of(conflict()));
         service.retainOpenConflicts("flow", List.of());
         verify(repository).save(argThat(c -> "SUPERSEDED".equals(c.getStatus())));
+    }
+
+    @Test void normalizedMultiSheetConflictCanBeResolvedAgainstRawSheetValues() {
+        var rules = List.of(new com.hybridflow.sync.dto.request.ColumnTransformConfig("id", List.of("TRIM", "UPPERCASE"), null),
+                new com.hybridflow.sync.dto.request.ColumnTransformConfig("status", List.of("TRIM", "UPPERCASE"), null));
+        var endpoints = List.of(SheetEndpointRequest.builder().spreadsheetId("a").sheetName("Data").transforms(rules).build(),
+                SheetEndpointRequest.builder().spreadsheetId("b").sheetName("Data").build());
+        var observed = new LinkedHashMap<String, String>();
+        observed.put(com.hybridflow.sync.util.SheetEndpointUtils.identity(endpoints.getFirst()), "SHIPPING");
+        observed.put(com.hybridflow.sync.util.SheetEndpointUtils.identity(endpoints.get(1)), "CANCELLED");
+        var conflict = conflict(); conflict.setRecordId("SP01"); conflict.setEndpointsJson(codec.encode(endpoints));
+        conflict.setObservationsJson(codec.encode(observed));
+        when(repository.findFlowIdById(1L)).thenReturn(Optional.of("flow"));
+        when(repository.findLockedById(1L)).thenReturn(Optional.of(conflict));
+        when(sheets.readSheet(any())).thenAnswer(inv -> {
+            var read = (com.hybridflow.connector.google.dto.request.ReadSheetRequest) inv.getArgument(0);
+            boolean first = read.getSpreadsheetId().equals("a");
+            return SheetDataResponse.builder().sheetName("Data").headers(List.of("id", "status"))
+                    .rows(List.of(Map.of("id", first ? " sp01 " : "SP01", "status", first ? " shipping " : "CANCELLED"))).build();
+        });
+        service.resolveConflict(1L, "CANCELLED", "token");
+        verify(writes).apply(eq("token"), argThat(plans -> plans.getFirst().getChanges().getFirst().getBefore().equals(" shipping ")
+                && plans.getFirst().getChanges().getFirst().getRecordId().equals(" sp01 ")
+                && plans.getFirst().getChanges().getFirst().getAfter().equals("CANCELLED")));
+        verify(store).saveSnapshot("flow", "SP01", Map.of("id", "SP01", "status", "CANCELLED"));
+        assertEquals("RESOLVED", conflict.getStatus());
     }
 }

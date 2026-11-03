@@ -16,11 +16,13 @@ import {
 import { Map, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { StudioHeader } from './components/orchestration/StudioHeader';
 import { NodePalette } from './components/orchestration/NodePalette';
+import { DataTransformConfigModal } from './components/orchestration/DataTransformConfigModal';
 import { NaturalLanguageConfigModal } from './components/orchestration/NaturalLanguageConfigModal';
 import { RunHistoryDrawer } from './components/orchestration/RunHistoryDrawer';
 import { ConflictModal } from './components/nocode/ConflictModal';
 import { DataTableModal } from './components/nocode/DataTableModal';
 import {
+  DataTransformNode,
   SheetsTriggerNode,
   DiffEngineNode,
   StorageActionNode,
@@ -33,6 +35,7 @@ import { connectedSheetSources, flowIdFor, workflowConfig } from './services/wor
 import { historyLog } from './services/history';
 import { useSheetReads } from './hooks/useSheetReads';
 import { useWorkflowPolling } from './hooks/useWorkflowPolling';
+import { useExecutionCompletion } from './hooks/useExecutionCompletion';
 import { executionVisuals } from './services/executionVisuals';
 import { ExecutionEdge } from './components/orchestration/ExecutionEdge';
 import type { RunHistoryItem, OrchestrationNodeData, SyncConflictDto, ExecutionHistoryDto } from './types';
@@ -474,6 +477,7 @@ export default function App() {
     [setEdges],
   );
   const pendingExecution = manualRunning && latestExecution?.id === manualBaseline;
+  const recentlyCompleted = useExecutionCompletion(flowId, latestExecution, observedRunData.current?.flowId === flowId);
   const executionView = useMemo(() => executionVisuals(nodes, edges, pendingExecution ? null : latestExecution, pendingExecution),
     [nodes, edges, latestExecution, pendingExecution]);
   const enhancedNodes = useMemo(
@@ -541,7 +545,7 @@ export default function App() {
       scheduleTrigger: ScheduleTriggerNode,
       webhookTrigger: GenericOrchestrationNode,
       routerCondition: GenericOrchestrationNode,
-      dataTransform: GenericOrchestrationNode,
+      dataTransform: DataTransformNode,
       sheetWriteAction: GenericOrchestrationNode,
     }),
     [],
@@ -552,16 +556,20 @@ export default function App() {
         ...edge,
         type: 'execution',
         animated: false,
-        data: { ...edge.data, ...executionView.edgeStates[edge.id] },
+        data: { ...edge.data, ...executionView.edgeStates[edge.id],
+          recentlyCompleted: recentlyCompleted && !executionView.running && ['success', 'warning'].includes(executionView.edgeStates[edge.id]?.state) },
         label:
           edge.sourceHandle === 'conflict' && conflicts.length > 0
             ? `${conflicts.length} xung đột`
             : undefined,
       })),
-    [edges, executionView, conflicts.length],
+    [edges, executionView, conflicts.length, recentlyCompleted],
   );
   const edgeTypes = useMemo(() => ({ execution: ExecutionEdge }), []);
   const activeNode = nodes.find((n) => n.id === activeNodeId) || null;
+  const transformSource = activeNode?.type === 'dataTransform'
+    ? nodes.find(node => node.type === 'sheetsTrigger' && edges.some(edge => edge.source === node.id && edge.target === activeNode.id && edge.sourceHandle === 'out' && edge.targetHandle === 'in'))
+    : undefined;
   const connectGoogle = async () => {
     const opened = window.open('about:blank', 'hybridflow-google', 'width=600,height=700');
     if (!opened) throw new Error('Trình duyệt đã chặn cửa sổ đăng nhập Google.');
@@ -713,7 +721,7 @@ export default function App() {
               <div role="status" aria-live="polite" className={`workflow-run-summary workflow-run-summary--${executionView.running ? 'running' : latestExecution?.status === 'ERROR' ? 'error' : ['CONFLICT', 'AWAITING_CONFIRMATION'].includes(latestExecution?.status || '') ? 'warning' : 'success'}`}>
                 <span className="workflow-run-indicator" />
                 <div><strong>{executionView.label}</strong>
-                  <span>{pendingExecution ? 'Đang chờ backend nhận yêu cầu' : executionView.running ? 'Trạng thái từ lượt chạy hiện tại' : 'Kết quả lượt gần nhất · giữ đến lượt tiếp theo'}</span>
+                  <span>{pendingExecution ? 'Đang chờ backend nhận yêu cầu' : executionView.running ? 'Trạng thái từ lượt chạy hiện tại' : recentlyCompleted ? 'Lượt vừa hoàn tất · dây sáng xác nhận kết quả' : 'Kết quả lượt gần nhất · giữ đến lượt tiếp theo'}</span>
                 </div>
               </div>
             </Panel>}
@@ -752,10 +760,19 @@ export default function App() {
           {toastMessage}
         </div>
       )}
+      {activeNode?.type === 'dataTransform' && <DataTransformConfigModal
+        key={activeNode.id}
+        data={activeNode.data}
+        source={transformSource ? stateFor(sourceDescriptor(transformSource)).data || undefined : undefined}
+        onRead={transformSource ? () => readSheetSource(sourceDescriptor(transformSource)) : undefined}
+        onClose={() => setActiveNodeId(null)}
+        disabled={isRunning}
+        onSave={settings => setNodes(items => items.map(node => node.id === activeNode.id ? { ...node, data: { ...node.data, ...settings } } : node))}
+      />}
       <NaturalLanguageConfigModal
         workflowId={workflowId}
         key={activeNodeId}
-        node={activeNode}
+        node={activeNode?.type === 'dataTransform' ? null : activeNode}
         onClose={() => setActiveNodeId(null)}
         onTestStep={testStep}
         connectionVersion={connectionVersion}

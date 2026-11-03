@@ -1,4 +1,4 @@
-import type { OrchestrationNodeData, RunSyncRequestPayload, SheetEndpointPayload } from '../types';
+import type { ColumnTransformConfig, OrchestrationNodeData, RunSyncRequestPayload, SheetEndpointPayload } from '../types';
 
 type WorkflowNode = { id: string; type?: string; data: OrchestrationNodeData };
 type WorkflowEdge = {
@@ -15,7 +15,45 @@ const supported = new Set([
   'telegramAction',
 ]);
 
+// A transform belongs to exactly one Sheet and feeds exactly one comparison node.
+function transformPaths(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
+  const settings = new Map<string, { transforms: ColumnTransformConfig[]; writeBackCleanData: boolean }>();
+  let resolved = [...edges];
+  for (const node of nodes.filter(n => n.type === 'dataTransform')) {
+    const incoming = edges.filter(e => e.target === node.id);
+    const outgoing = edges.filter(e => e.source === node.id);
+    const source = nodes.find(n => n.id === incoming[0]?.source);
+    const target = nodes.find(n => n.id === outgoing[0]?.target);
+    if (incoming.length !== 1 || outgoing.length !== 1 || source?.type !== 'sheetsTrigger'
+      || target?.type !== 'diffEngine' || incoming[0].sourceHandle !== 'out' || incoming[0].targetHandle !== 'in'
+      || outgoing[0].sourceHandle !== 'out' || outgoing[0].targetHandle !== 'in'
+      || settings.has(source.id) || edges.some(e => (e.source === source.id && e.target === target.id)
+        || (e.source === target.id && e.target === source.id)))
+      throw new Error('Nối đúng một Sheet → Chuẩn Hóa Dữ Liệu → So khớp; không nối song song hoặc nối chuỗi.');
+    const transforms = node.data.transforms || [];
+    const seen = new Set<string>();
+    for (const config of transforms) {
+      if (!config.columnName || seen.has(config.columnName) || !Array.isArray(config.rules)
+        || config.rules.some(rule => !['TRIM','UPPERCASE','LOWERCASE','CAPITALIZE','PHONE_VN','DEFAULT_IF_EMPTY'].includes(rule)))
+        throw new Error('Cột hoặc quy tắc chuẩn hóa không hợp lệ.');
+      seen.add(config.columnName);
+    }
+    settings.set(source.id, { transforms, writeBackCleanData: !!node.data.writeBackCleanData });
+    resolved = resolved.filter(e => e.source !== node.id && e.target !== node.id);
+    resolved.push({ source: source.id, target: target.id, sourceHandle: 'out', targetHandle: 'in' });
+  }
+  return { nodes: nodes.filter(n => n.type !== 'dataTransform'), edges: resolved, settings };
+}
+
 export function workflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
+  const normalized = transformPaths(nodes, edges);
+  const config = baseWorkflowConfig(normalized.nodes, normalized.edges);
+  if (config.sheets) return { ...config, sheets: config.sheets.map(sheet => ({ ...sheet, ...normalized.settings.get(sheet.nodeId) })) };
+  const source = normalized.nodes.find(n => n.type === 'sheetsTrigger');
+  return { ...config, ...normalized.settings.get(source?.id || '') };
+}
+
+function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
   if (nodes.some((n) => !supported.has(n.type || '')))
     throw new Error('Luồng có khối chưa được hỗ trợ thực thi.');
 
@@ -200,8 +238,10 @@ export async function flowIdFor(config: {
   syncColumns?: string[];
   idColumn: string;
   storageName: string;
+  transforms?: ColumnTransformConfig[];
+  writeBackCleanData?: boolean;
 }) {
-  const payload =
+  const payload: unknown[] =
     config.sheets && config.sheets.length >= 2
       ? [
           config.sheets.map((s) => [s.spreadsheetId, s.sheetName]),
@@ -210,6 +250,12 @@ export async function flowIdFor(config: {
         ]
       : [config.spreadsheetId, config.sheetName, config.idColumn, config.storageName,
           ...((config.syncColumns || []).length ? [[...(config.syncColumns || [])].sort()] : [])];
+  const settings = config.sheets && config.sheets.length >= 2 ? config.sheets : [config];
+  if (settings.some(s => (s.transforms || []).length || s.writeBackCleanData))
+    payload.push(settings.map(s => [
+      (s.transforms || []).map(c => [c.columnName, c.rules, c.defaultValue || '']),
+      !!s.writeBackCleanData,
+    ]));
   const data = JSON.stringify(payload);
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(data));
   return `flow-${Array.from(new Uint8Array(bytes), (b) => b.toString(16).padStart(2, '0')).join('')}`;
@@ -232,6 +278,11 @@ export function connectedSheetSources(
   edges: WorkflowEdge[],
   diffId: string,
 ) {
+  const transformedEdges = nodes.filter(n => n.type === 'dataTransform').flatMap(transform =>
+    edges.filter(e => e.source === transform.id && e.target === diffId && e.sourceHandle === 'out' && e.targetHandle === 'in')
+      .flatMap(() => edges.filter(e => e.target === transform.id && e.sourceHandle === 'out' && e.targetHandle === 'in')
+        .map(e => ({ ...e, target: diffId }))));
+  edges = [...edges, ...transformedEdges];
   return nodes
     .filter((node) => node.type === 'sheetsTrigger')
     .map((node, index) => ({ node, number: index + 1 }))

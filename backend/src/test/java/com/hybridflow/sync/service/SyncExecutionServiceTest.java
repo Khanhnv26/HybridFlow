@@ -31,7 +31,49 @@ class SyncExecutionServiceTest {
     @Mock SyncConflictService conflicts;
     @Mock TelegramNotificationService notifications;
     @Spy ThreeWayDiffEngine engine = new ThreeWayDiffEngine();
+    @Spy com.hybridflow.sync.service.impl.DataTransformerServiceImpl transformer = new com.hybridflow.sync.service.impl.DataTransformerServiceImpl();
     @InjectMocks SyncExecutionServiceImpl service;
+
+    private RunSyncRequest transformRequest(boolean writeBack, boolean confirm) {
+        var rules = List.of(new com.hybridflow.sync.dto.request.ColumnTransformConfig("id", List.of("TRIM", "UPPERCASE"), null),
+                new com.hybridflow.sync.dto.request.ColumnTransformConfig("status", List.of("TRIM", "UPPERCASE"), null));
+        when(sheets.readSheet(any())).thenAnswer(inv -> {
+            var read = (com.hybridflow.connector.google.dto.request.ReadSheetRequest) inv.getArgument(0);
+            boolean first = read.getSpreadsheetId().equals("a");
+            return SheetDataResponse.builder().sheetName("Data").headers(List.of("id", "status"))
+                    .rows(List.of(Map.of("id", first ? " sp01 " : "SP01", "status", first ? " new " : "NEW"))).build();
+        });
+        return RunSyncRequest.builder().flowId("transform").accessToken("token").idColumn("id")
+                .sheets(List.of(SheetEndpointRequest.builder().spreadsheetId("a").sheetName("Data").transforms(rules).writeBackCleanData(writeBack).build(),
+                        SheetEndpointRequest.builder().spreadsheetId("b").sheetName("Data").build()))
+                .syncColumns(java.util.Set.of("status")).bootstrapConfirmed(confirm).build();
+    }
+    @Test void normalizedKeysAndValuesProduceZeroConflictsWithoutCleaningSourceByDefault() {
+        RunSyncResponse result = service.executeSync(transformRequest(false, true));
+        assertEquals("SUCCESS", result.getStatus());
+        assertEquals(List.of("SP01"), result.getCleanRecordIds());
+        assertTrue(result.getConflicts().isEmpty());
+        verify(writes).apply(eq("token"), argThat(plans -> plans.stream().allMatch(p -> p.getChanges().isEmpty())));
+        verify(conflicts, never()).saveMultiSheetConflict(any(), any(), any(), any(), any(), any(), any());
+    }
+    @Test void cleanupWritesUseOriginalValuesAndOriginalRecordIdentity() {
+        service.executeSync(transformRequest(true, true));
+        verify(writes).apply(eq("token"), argThat(plans -> plans.getFirst().getChanges().size() == 2
+                && plans.getFirst().getChanges().stream().allMatch(c -> c.getRecordId().equals(" sp01 "))
+                && plans.getFirst().getChanges().stream().anyMatch(c -> c.getBefore().equals(" new ") && c.getAfter().equals("NEW"))));
+    }
+    @Test void bootstrapPromptNeverWritesCleanup() {
+        assertEquals("AWAITING_CONFIRMATION", service.executeSync(transformRequest(true, false)).getStatus());
+        verify(writes, never()).apply(any(), any());
+    }
+    @Test void normalizedDuplicateKeysFailBeforeWriting() {
+        RunSyncRequest request = transformRequest(true, true);
+        reset(sheets);
+        doReturn(SheetDataResponse.builder().sheetName("Data").headers(List.of("id", "status"))
+                .rows(List.of(Map.of("id", " sp01 ", "status", "new"), Map.of("id", "SP01", "status", "new"))).build()).when(sheets).readSheet(any());
+        assertThrows(IllegalArgumentException.class, () -> service.executeSync(request));
+        verify(writes, never()).apply(any(), any());
+    }
 
     @Test
     void rejectsMissingIdColumnInsteadOfReportingAnEmptySuccess() {

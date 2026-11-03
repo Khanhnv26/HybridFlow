@@ -255,3 +255,59 @@ test('a sheet wired through both comparison ports is listed only once', () => {
   ];
   assert.equal(connectedSheetSources(nodes, edges, 'brain').length, 1);
 });
+
+function withTransform() {
+  const g = graph();
+  g.nodes[1].data.sharedColumns = 'status';
+  g.nodes.push({ id: 'second', type: 'sheetsTrigger', data: { spreadsheetId: 'sheet-B', sheetName: 'Data' } },
+    { id: 'transform', type: 'dataTransform', data: { transforms: [{ columnName: 'sku', rules: ['TRIM', 'UPPERCASE'] }], writeBackCleanData: true } });
+  g.nodes = g.nodes.filter(n => n.type !== 'storageAction');
+  g.edges = [
+    { source: 'source', target: 'transform', sourceHandle: 'out', targetHandle: 'in' },
+    { source: 'transform', target: 'diff', sourceHandle: 'out', targetHandle: 'in' },
+    { source: 'second', target: 'diff', sourceHandle: 'out', targetHandle: 'in' },
+  ];
+  return g;
+}
+test('transforms bind only to the upstream Sheet and are visible to comparison UI', async () => {
+  const { nodes, edges } = withTransform();
+  const config = workflowConfig(nodes, edges);
+  assert.deepEqual(config.sheets[0].transforms, [{ columnName: 'sku', rules: ['TRIM', 'UPPERCASE'] }]);
+  assert.equal(config.sheets[0].writeBackCleanData, true);
+  assert.equal(config.sheets[1].transforms, undefined);
+  assert.deepEqual(connectedSheetSources(nodes, edges, 'diff').map(s => s.nodeId), ['source', 'second']);
+  const before = await flowIdFor(config);
+  nodes.at(-1).data.transforms[0].rules.reverse();
+  assert.notEqual(await flowIdFor(workflowConfig(nodes, edges)), before);
+});
+test('transform identity includes defaults and write-back and matches backend fixture', async () => {
+  const { nodes, edges } = withTransform();
+  const config = workflowConfig(nodes, edges);
+  assert.equal(await flowIdFor(config), 'flow-2e49963d24cbf2beab372defc7aa1e405b80480c7109e4a289a1ab13d9ef9daa');
+  for (const patch of [{ defaultValue: 'unknown' }, { rules: ['TRIM'] }]) {
+    const changed = structuredClone(config);
+    Object.assign(changed.sheets[0].transforms[0], patch);
+    assert.notEqual(await flowIdFor(changed), await flowIdFor(config));
+  }
+  const changed = structuredClone(config); changed.sheets[0].writeBackCleanData = false;
+  assert.notEqual(await flowIdFor(changed), await flowIdFor(config));
+});
+test('orphan, parallel, reversed and chained transforms fail validation', () => {
+  for (const mutate of [
+    g => g.edges.pop(),
+    g => g.edges.push({ source: 'source', target: 'diff', sourceHandle: 'out', targetHandle: 'in' }),
+    g => g.edges[0].targetHandle = 'out',
+    g => { g.nodes.push({ id: 't2', type: 'dataTransform', data: {} }); g.edges[1].target = 't2'; },
+  ]) {
+    const g = withTransform(); mutate(g);
+    assert.throws(() => workflowConfig(g.nodes, g.edges));
+  }
+});
+test('Sheet to Vault also supports transformation and rule changes reset identity', async () => {
+  const { nodes, edges } = graph();
+  nodes.push({ id: 't', type: 'dataTransform', data: { transforms: [{ columnName: 'sku', rules: ['TRIM'] }] } });
+  edges[0].target = 't'; edges.push({ source: 't', target: 'diff', sourceHandle: 'out', targetHandle: 'in' });
+  const config = workflowConfig(nodes, edges);
+  assert.equal(config.transforms[0].columnName, 'sku');
+  assert.notEqual(await flowIdFor(config), await flowIdFor({ ...config, transforms: [] }));
+});

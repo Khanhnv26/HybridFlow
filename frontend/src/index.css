@@ -101,6 +101,15 @@ body {
 .workflow-edge-stream--reverse { animation-direction:reverse; }
 .workflow-edge-particle-halo { fill:#60a5fa; opacity:.3; }
 .workflow-edge-particle-core { fill:#fff; stroke:#93c5fd; stroke-width:1.5; }
+.workflow-edge--recent .react-flow__edge-path { stroke-width:4.5; }
+.workflow-edge--recent .workflow-edge-halo { stroke:#34d399; }
+.workflow-edge--recent .workflow-edge-stream { stroke:#a7f3d0; }
+.workflow-edge--recent .workflow-edge-particle-halo { fill:#34d399; }
+.workflow-edge--recent .workflow-edge-particle-core { stroke:#6ee7b7; }
+.workflow-edge--recent.workflow-edge--warning .workflow-edge-halo { stroke:#fbbf24; }
+.workflow-edge--recent.workflow-edge--warning .workflow-edge-stream { stroke:#fde68a; }
+.workflow-edge--recent.workflow-edge--warning .workflow-edge-particle-halo { fill:#fbbf24; }
+.workflow-edge--recent.workflow-edge--warning .workflow-edge-particle-core { stroke:#fcd34d; }
 .workflow-run-summary { display:flex; align-items:center; gap:10px; max-width:280px; padding:10px 14px; border:1px solid #334155; border-radius:10px; background:#151b25; color:#6ee7b7; }
 .workflow-run-summary strong { display:block; font-size:12px; font-weight:600; }
 .workflow-run-summary span:not(.workflow-run-indicator) { display:block; margin-top:3px; color:#94a3b8; font-size:10px; }

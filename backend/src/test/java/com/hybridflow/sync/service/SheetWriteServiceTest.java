@@ -113,4 +113,23 @@ class SheetWriteServiceTest {
         assertThrows(IllegalStateException.class, () -> service.recover("token", List.of("a")));
         verify(sheets, never()).updateCells(anyString(), anyString(), anyMap());
     }
+
+    @Test void failedCleanupRestoresOriginalKeyAndValuesAfterRemoteCommit() {
+        Map<String, String> row = new LinkedHashMap<>(Map.of("id", " sp01 ", "status", " new "));
+        doAnswer(inv -> SheetDataResponse.builder().sheetName("Data").headers(List.of("id", "status"))
+                .rows(List.of(new LinkedHashMap<>(row))).build()).when(sheets).readSheet(any());
+        doAnswer(inv -> {
+            Map<String, String> cells = inv.getArgument(2);
+            if (cells.containsKey("'Data'!A2")) row.put("id", cells.get("'Data'!A2"));
+            if (cells.containsKey("'Data'!B2")) row.put("status", cells.get("'Data'!B2"));
+            if (row.get("id").equals("SP01")) throw new IllegalStateException("timeout after commit");
+            return null;
+        }).when(sheets).updateCells(anyString(), anyString(), anyMap());
+        var plan = new SheetWritePlan("a", "Data", "id", List.of("id", "status"), List.of(
+                new SheetCellChange(0, "id", " sp01 ", " sp01 ", "SP01"),
+                new SheetCellChange(0, "status", " sp01 ", " new ", "NEW")));
+        assertThrows(IllegalStateException.class, () -> service.apply("token", List.of(plan)));
+        assertEquals(Map.of("id", " sp01 ", "status", " new "), row);
+        verify(journal).recovered(anyString());
+    }
 }

@@ -104,7 +104,10 @@ public class SheetWriteServiceImpl implements SheetWriteService {
             Integer existingPosition = liveIndex.get(cell.getRecordId());
             if (existingPosition != null && existingPosition != cell.getRowIndex()) stale();
             String liveId = value(live, cell.getRowIndex(), plan.getIdColumn());
-            if (!Objects.equals(liveId, cell.getRecordId()) && !(newRows.contains(cell.getRowIndex()) && liveId.isEmpty())) stale();
+            boolean transformedId = recovering && plan.getChanges().stream().anyMatch(change ->
+                    change.getRowIndex() == cell.getRowIndex() && change.getColumn().equals(plan.getIdColumn())
+                            && Objects.equals(liveId, change.getAfter()));
+            if (!Objects.equals(liveId, cell.getRecordId()) && !transformedId && !(newRows.contains(cell.getRowIndex()) && liveId.isEmpty())) stale();
             String current = value(live, cell.getRowIndex(), cell.getColumn());
             if (!Objects.equals(current, cell.getBefore()) && !(recovering && Objects.equals(current, cell.getAfter()))) stale();
             if (newRows.contains(cell.getRowIndex()) && liveId.isEmpty() && cell.getRowIndex() < live.getRows().size()

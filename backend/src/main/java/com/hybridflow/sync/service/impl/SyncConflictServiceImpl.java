@@ -35,6 +35,7 @@ public class SyncConflictServiceImpl implements SyncConflictService {
     private final TelegramNotificationService notifications;
     private final SyncJsonCodec codec;
     private final SheetWriteService writes;
+    private final com.hybridflow.sync.service.DataTransformerService dataTransformerService;
 
     @Override
     @Transactional
@@ -54,6 +55,9 @@ public class SyncConflictServiceImpl implements SyncConflictService {
                 result.add(repository.save(SyncConflict.builder().flowId(context.getFlowId())
                         .spreadsheetId(context.getSpreadsheetId()).sheetName(sheetName).idColumn(context.getIdColumn())
                         .recordId(diff.getRecordId()).columnName(field.getColumn()).baseValue(field.getBaseValue())
+                        .endpointsJson(context.getTransforms() == null || context.getTransforms().isEmpty() ? null : codec.encode(List.of(
+                                SheetEndpointRequest.builder().spreadsheetId(context.getSpreadsheetId()).sheetName(sheetName)
+                                        .transforms(context.getTransforms()).writeBackCleanData(context.isWriteBackCleanData()).build())))
                         .valueA(field.getValueA()).valueB(field.getValueB()).status("OPEN").createdAt(LocalDateTime.now()).build()));
             }
         }
@@ -150,9 +154,10 @@ public class SyncConflictServiceImpl implements SyncConflictService {
         SyncConflict conflict = repository.findLockedById(conflictId).orElseThrow(() -> new IllegalArgumentException("Không tìm thấy xung đột."));
         if (!"OPEN".equals(conflict.getStatus())) throw new IllegalArgumentException("Xung đột đã được xử lý. Tải lại danh sách.");
 
+        List<SheetEndpointRequest> endpoints = List.of();
         if (conflict.getEndpointsJson() != null && !conflict.getEndpointsJson().isBlank()) {
-            List<SheetEndpointRequest> endpoints = codec.decodeEndpoints(conflict.getEndpointsJson());
-            if (!endpoints.isEmpty()) {
+            endpoints = codec.decodeEndpoints(conflict.getEndpointsJson());
+            if (endpoints.size() >= 2) {
                 return resolveMultiSheetConflict(conflict, endpoints, value, accessToken);
             }
         }
@@ -165,6 +170,8 @@ public class SyncConflictServiceImpl implements SyncConflictService {
         writes.recover(accessToken, List.of(conflict.getSpreadsheetId()));
         SheetDataResponse sheet = sheets.readSheet(ReadSheetRequest.builder().accessToken(accessToken)
                 .spreadsheetId(conflict.getSpreadsheetId()).sheetname(conflict.getSheetName()).build());
+        if (!endpoints.isEmpty() && endpoints.getFirst().getTransforms() != null)
+            sheet.setRows(dataTransformerService.transformRows(sheet.getRows(), endpoints.getFirst().getTransforms()));
         Map<String, Integer> index = SheetRowUtils.index(sheet, conflict.getIdColumn());
         Integer rowIndex = index.get(conflict.getRecordId());
         Map<String, String> vault = store.getVaultRecord(conflict.getFlowId(), conflict.getRecordId());
@@ -209,13 +216,17 @@ public class SyncConflictServiceImpl implements SyncConflictService {
         for (SheetEndpointRequest ep : endpoints) {
             SheetDataResponse sheet = sheets.readSheet(ReadSheetRequest.builder().accessToken(accessToken)
                     .spreadsheetId(ep.getSpreadsheetId()).sheetname(ep.getSheetName()).build());
+            List<Map<String, String>> raw = sheet.getRows();
+            if (ep.getTransforms() != null && !ep.getTransforms().isEmpty())
+                sheet.setRows(dataTransformerService.transformRows(raw, ep.getTransforms()));
             Integer rowIndex = SheetRowUtils.index(sheet, conflict.getIdColumn()).get(conflict.getRecordId());
             String expected = observed.get(SheetEndpointUtils.identity(ep));
             if (rowIndex == null || expected == null || !sheet.getHeaders().contains(conflict.getColumnName())
                     || !Objects.equals(expected, sheet.getRows().get(rowIndex).getOrDefault(conflict.getColumnName(), "")))
                 throw new IllegalArgumentException("Dữ liệu đã đổi từ lúc phát hiện xung đột. Chạy lại đồng bộ trước khi chọn.");
-            List<SheetCellChange> changes = Objects.equals(expected, value) ? List.of() : List.of(
-                    new SheetCellChange(rowIndex, conflict.getColumnName(), conflict.getRecordId(), expected, value));
+            String rawValue = raw.get(rowIndex).getOrDefault(conflict.getColumnName(), "");
+            List<SheetCellChange> changes = Objects.equals(rawValue, value) ? List.of() : List.of(
+                    new SheetCellChange(rowIndex, conflict.getColumnName(), raw.get(rowIndex).get(conflict.getIdColumn()), rawValue, value));
             plans.add(new SheetWritePlan(ep.getSpreadsheetId(), sheet.getSheetName(), conflict.getIdColumn(), sheet.getHeaders(), changes));
         }
         writes.apply(accessToken, plans);

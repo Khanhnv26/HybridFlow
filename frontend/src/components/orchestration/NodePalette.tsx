@@ -59,7 +59,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   {
     type: 'dataTransform',
     label: 'Chuẩn Hóa Dữ Liệu',
-    subtitle: 'Đổi định dạng, ghép cột',
+    subtitle: 'Làm sạch cột trước khi so khớp',
     category: 'logic',
     icon: <Wand2 size={15} />,
     color: 'purple',

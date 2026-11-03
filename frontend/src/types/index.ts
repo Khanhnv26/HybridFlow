@@ -83,7 +83,20 @@ export type OrchestrationNodeType =
   | 'telegramAction'
   | 'sheetWriteAction';
 
+export type TransformRule = 'TRIM' | 'UPPERCASE' | 'LOWERCASE' | 'CAPITALIZE' | 'PHONE_VN' | 'DEFAULT_IF_EMPTY';
+export interface ColumnTransformConfig {
+  columnName: string;
+  rules: TransformRule[];
+  defaultValue?: string;
+}
+export interface DataTransformNodeData extends OrchestrationNodeData {
+  transforms?: ColumnTransformConfig[];
+  writeBackCleanData?: boolean;
+}
+
 export interface OrchestrationNodeData extends Record<string, unknown> {
+  transforms?: ColumnTransformConfig[];
+  writeBackCleanData?: boolean;
   label: string;
   category: 'trigger' | 'logic' | 'action';
   type: OrchestrationNodeType;
@@ -146,6 +159,8 @@ export interface TelegramLink {
 }
 
 export interface SheetEndpointPayload {
+  transforms?: ColumnTransformConfig[];
+  writeBackCleanData?: boolean;
   nodeId: string;
   label: string;
   spreadsheetId: string;
@@ -175,6 +190,8 @@ export interface SyncConflictDto {
 }
 
 export interface RunSyncRequestPayload {
+  transforms?: ColumnTransformConfig[];
+  writeBackCleanData?: boolean;
   flowId: string;
   accessToken: string;
   spreadsheetId: string;

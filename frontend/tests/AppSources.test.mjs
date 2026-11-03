@@ -48,7 +48,7 @@ const bundle = await build({
       export const useEdgesState = useNodesState;
       const refreshNode = () => {};
       export function useUpdateNodeInternals() { return refreshNode; }
-      export function ReactFlow({ nodes, nodeTypes, children }) { return React.createElement('div', null,
+      export function ReactFlow({ nodes, edges, nodeTypes, children }) { return React.createElement('div', { 'data-execution-edges': JSON.stringify(edges) },
         nodes.map(node => React.createElement(nodeTypes[node.type], { key: node.id, id: node.id, data: node.data })), children); }
       export const Background = () => null, Controls = () => null, MiniMap = () => null, Handle = () => null;
       export const Panel = ({ children }) => React.createElement('div', null, children);
@@ -145,11 +145,17 @@ test('scheduled completions update history and source data without reloading the
   for (let attempt = 0; attempt < 5; attempt++) await act(async () => new Promise(setImmediate));
   assert.match(text(renderer.root), /Lịch sử \(0\)/);
   history = [{ id: 'scheduled-run', status: 'SUCCESS', started_at: '2026-11-03T03:00:00Z',
+    progress: JSON.stringify([{ nodes: ['a'], stage: 'READ', label: 'Đang đọc' }, { nodes: ['diff'], stage: 'COMPARE', label: 'Đang so khớp' }, { nodes: ['vault'], stage: 'WRITE', label: 'Đang ghi' }]),
     result: JSON.stringify({ cleanRecordIds: ['1'], conflicts: [], totalRowsProcessed: 1, notificationsSent: 0, notificationsFailed: 0 }) }];
   await act(async () => context.mock.timers.tick(5000));
   assert.match(text(renderer.root), /Lịch sử \(1\)/);
   assert.match(text(renderer.root), /Đồng bộ 1 bản ghi/);
   assert.deepEqual(reads, [['file-a', 'Tab A']]);
+  const paintedEdges = () => JSON.parse(renderer.root.find(node => node.props['data-execution-edges'] !== undefined).props['data-execution-edges']);
+  assert.equal(paintedEdges().some(edge => edge.data.recentlyCompleted), true, 'A scheduled run missed between polls still needs visible completion feedback');
+  assert.match(text(renderer.root), /vừa hoàn tất/);
+  await act(async () => context.mock.timers.tick(2000));
+  assert.equal(paintedEdges().some(edge => edge.data.recentlyCompleted), false);
   await act(async () => context.mock.timers.tick(5000));
   assert.equal(reads.length, 1, 'Unchanged history must not trigger another Google Sheets read');
 });

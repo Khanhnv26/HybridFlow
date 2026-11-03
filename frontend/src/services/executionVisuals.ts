@@ -42,9 +42,11 @@ export function executionVisuals(nodes: Node[], edges: Edge[], run: ExecutionHis
     const from = nodes.find((node) => node.id === edge.source);
     const to = nodes.find((node) => node.id === edge.target);
     const active = (id: string) => nodeStates[id]?.state === 'running';
-    const sheetEdge = from?.type === 'sheetsTrigger' && to?.type === 'diffEngine' || from?.type === 'diffEngine' && to?.type === 'sheetsTrigger';
+    const sheetEdge = from?.type === 'sheetsTrigger' && ['diffEngine', 'dataTransform'].includes(to?.type || '')
+      || from?.type === 'dataTransform' && to?.type === 'diffEngine'
+      || from?.type === 'diffEngine' && to?.type === 'sheetsTrigger';
     const moving = running && !pending && current && (
-      current.stage === 'READ' && sheetEdge && (active(edge.source) || active(edge.target)) ||
+      ['READ', 'TRANSFORM'].includes(current.stage) && sheetEdge && (active(edge.source) || active(edge.target)) ||
       current.stage === 'WRITE' && (sheetEdge && (active(edge.source) || active(edge.target)) || to?.type === 'storageAction' && active(edge.target)) ||
       current.stage === 'TRIGGER' && from?.type === 'scheduleTrigger' && active(edge.source) ||
       current.stage === 'NOTIFY' && to?.type === 'telegramAction' && active(edge.target));
