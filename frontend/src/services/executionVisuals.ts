@@ -49,8 +49,12 @@ export function executionVisuals(nodes: Node[], edges: Edge[], run: ExecutionHis
       ? edges.filter(link => link.target === from.id && nodes.some(node => node.id === link.source && node.type === 'sheetsTrigger')).map(link => link.source)
       : [];
     const writingSheet = current?.stage === 'WRITE' && (active(edge.source) || active(edge.target) || upstreamSheets.some(active));
+    // Shared transforms report the source Sheet alongside the transform node.
+    const reportedSheets = current?.nodes.filter(id => nodes.some(node => node.id === id && node.type === 'sheetsTrigger')) || [];
+    const transforming = current?.stage === 'TRANSFORM' && sheetEdge && (active(edge.source) || active(edge.target))
+      && (!reportedSheets.length || from?.type !== 'sheetsTrigger' || reportedSheets.includes(from.id));
     const moving = running && !pending && current && (
-      ['READ', 'TRANSFORM'].includes(current.stage) && sheetEdge && (active(edge.source) || active(edge.target)) ||
+      current.stage === 'READ' && sheetEdge && (active(edge.source) || active(edge.target)) || transforming ||
       current.stage === 'WRITE' && (sheetEdge && writingSheet || to?.type === 'storageAction' && active(edge.target)) ||
       current.stage === 'TRIGGER' && from?.type === 'scheduleTrigger' && active(edge.source) ||
       current.stage === 'NOTIFY' && to?.type === 'telegramAction' && active(edge.target));

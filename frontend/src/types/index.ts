@@ -95,6 +95,9 @@ export interface DataTransformNodeData extends OrchestrationNodeData {
 }
 
 export interface OrchestrationNodeData extends Record<string, unknown> {
+  writeBackBySource?: Record<string, boolean>;
+  transformSourceCount?: number;
+  transformWriteBackCount?: number;
   transforms?: ColumnTransformConfig[];
   writeBackCleanData?: boolean;
   label: string;

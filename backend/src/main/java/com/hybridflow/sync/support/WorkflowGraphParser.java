@@ -100,7 +100,7 @@ public class WorkflowGraphParser {
             String transformId = node.path("id").asText();
             transformNodes.put("transforms", java.util.stream.Stream.concat(transformNodes.getOrDefault("transforms", List.of()).stream(), java.util.stream.Stream.of(transformId)).toList());
             for (JsonNode edge : definition.path("edges")) if (transformId.equals(edge.path("target").asText()))
-                transformNodes.put("transform:" + edge.path("source").asText(), List.of(transformId));
+                transformNodes.put("transform:" + edge.path("source").asText(), List.of(transformId, edge.path("source").asText()));
         }
         definition = normalizeTransforms(definition);
         JsonNode nodes = definition.path("nodes");
@@ -292,27 +292,31 @@ public class WorkflowGraphParser {
                 if (id.equals(edge.path("target").asText())) incoming.add(edge);
                 if (id.equals(edge.path("source").asText())) outgoing.add(edge);
             }
-            if (incoming.size() != 1 || outgoing.size() != 1) throw new IllegalArgumentException("Nối một Sheet → Chuẩn hóa → So khớp.");
-            String sourceId = incoming.getFirst().path("source").asText(), targetId = outgoing.getFirst().path("target").asText();
-            JsonNode source = null, target = null;
-            for (JsonNode node : nodes) {
-                if (sourceId.equals(node.path("id").asText())) source = node;
-                if (targetId.equals(node.path("id").asText())) target = node;
-            }
-            if (source == null || target == null || !"sheetsTrigger".equals(source.path("type").asText())
-                    || !"diffEngine".equals(target.path("type").asText()) || !bound.add(sourceId)
-                    || !hasEdge(edges, sourceId, "out", id, "in") || !hasEdge(edges, id, "out", targetId, "in")
-                    || isSheetConnected(edges, sourceId, targetId))
-                throw new IllegalArgumentException("Đường nối chuẩn hóa không hợp lệ; không nối song song hoặc nối chuỗi.");
+            if (incoming.isEmpty() || outgoing.size() != 1)
+                throw new IllegalArgumentException("Nối một hoặc nhiều Sheet → Chuẩn hóa → So khớp.");
+            String targetId = outgoing.getFirst().path("target").asText();
+            JsonNode target = null;
+            for (JsonNode node : nodes) if (targetId.equals(node.path("id").asText())) target = node;
+            if (target == null || !"diffEngine".equals(target.path("type").asText()) || !hasEdge(edges, id, "out", targetId, "in"))
+                throw new IllegalArgumentException("Khối Chuẩn hóa cần nối ra đúng một khối So khớp.");
             JsonNode config = transform.path("data");
             readTransforms(config.path("transforms"));
-            com.fasterxml.jackson.databind.node.ObjectNode data = (com.fasterxml.jackson.databind.node.ObjectNode) source.path("data");
-            data.set("transforms", config.path("transforms").isMissingNode() ? new com.fasterxml.jackson.databind.ObjectMapper().createArrayNode() : config.path("transforms"));
-            data.put("writeBackCleanData", config.path("writeBackCleanData").asBoolean(false));
+            for (JsonNode input : incoming) {
+                String sourceId = input.path("source").asText();
+                JsonNode source = null;
+                for (JsonNode node : nodes) if (sourceId.equals(node.path("id").asText())) source = node;
+                if (source == null || !"sheetsTrigger".equals(source.path("type").asText()) || !bound.add(sourceId)
+                        || !"out".equals(input.path("sourceHandle").asText()) || !"in".equals(input.path("targetHandle").asText())
+                        || isSheetConnected(edges, sourceId, targetId))
+                    throw new IllegalArgumentException("Đường nối chuẩn hóa không hợp lệ; không nối trùng, song song hoặc nối chuỗi.");
+                com.fasterxml.jackson.databind.node.ObjectNode data = (com.fasterxml.jackson.databind.node.ObjectNode) source.path("data");
+                data.set("transforms", config.path("transforms").isMissingNode() ? new com.fasterxml.jackson.databind.ObjectMapper().createArrayNode() : config.path("transforms"));
+                data.put("writeBackCleanData", config.path("writeBackBySource").path(sourceId).asBoolean(config.path("writeBackCleanData").asBoolean(false)));
+                com.fasterxml.jackson.databind.node.ObjectNode link = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
+                link.put("source", sourceId).put("target", targetId).put("sourceHandle", "out").put("targetHandle", "in");
+                links.add(link);
+            }
             removed.add(id);
-            com.fasterxml.jackson.databind.node.ObjectNode link = new com.fasterxml.jackson.databind.ObjectMapper().createObjectNode();
-            link.put("source", sourceId).put("target", targetId).put("sourceHandle", "out").put("targetHandle", "in");
-            links.add(link);
         }
         com.fasterxml.jackson.databind.node.ArrayNode normalizedNodes = new com.fasterxml.jackson.databind.ObjectMapper().createArrayNode();
         for (JsonNode node : nodes) if (!removed.contains(node.path("id").asText())) normalizedNodes.add(node);

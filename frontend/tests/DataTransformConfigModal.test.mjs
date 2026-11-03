@@ -76,7 +76,7 @@ test('cancel does not modify saved settings and missing columns block save until
   let saves = 0, closes = 0;
   await mount({ data, onSave: async () => { saves++; }, onClose: () => { closes++; } });
   assert.equal(button('Lưu cấu hình').props.disabled, true);
-  assert.match(text(renderer.root), /Cột không còn trong Sheet: old/);
+  assert.match(text(renderer.root), /Cột không còn trong Sheet.*Kho Hà Nội · Data → old/);
   await act(async () => checkbox('Gọn khoảng trắng').props.onChange({ target: { checked: true } }));
   await act(async () => button('Hủy').props.onClick());
   assert.equal(saves, 0); assert.equal(closes, 1);
@@ -108,4 +108,46 @@ test('a refreshed source replaces old preview while keeping the selected rules',
   assert.match(text(renderer.root), /"sp02"/);
   assert.doesNotMatch(text(renderer.root), /"sp01"/);
   assert.equal(checkbox('Gọn khoảng trắng').props.checked, true);
+});
+
+
+test('shared rules preview each source separately and persist independent write-back switches', async () => {
+  const sources = ['a', 'b', 'c'].map((nodeId, index) => ({ nodeId, name: 'Kho ' + nodeId,
+    data: { ...sheet, rows: [{ sku: ' sp0' + (index + 1) + ' ' }] }, read: async () => sheet }));
+  let saved;
+  await mount({ sources, data: { transforms: [{ columnName: 'sku', rules: ['TRIM', 'UPPERCASE'] }] }, onSave: async value => { saved = value; } });
+  assert.match(text(renderer.root), /3 Sheet/);
+  assert.match(text(renderer.root), /"SP01"/);
+  const select = renderer.root.findByProps({ 'aria-label': 'Sheet xem trước' });
+  await act(async () => select.props.onChange({ target: { value: 'c' } }));
+  assert.match(text(renderer.root), /"SP03"/);
+  assert.doesNotMatch(text(renderer.root), /"SP01"/);
+  for (const name of ['Kho a', 'Kho c']) await act(async () => renderer.root.findByProps({ 'aria-label': 'Ghi sạch về ' + name }).props.onChange({ target: { checked: true } }));
+  await act(async () => button('Lưu cấu hình').props.onClick());
+  assert.deepEqual(saved.writeBackBySource, { a: true, b: false, c: true });
+  assert.deepEqual(saved.transforms[0].rules, ['TRIM', 'UPPERCASE']);
+});
+test('every source is validated and the missing column identifies its Sheet', async () => {
+  const sources = [{ nodeId: 'a', name: 'Kho A', data: sheet, read: async () => sheet },
+    { nodeId: 'b', name: 'Kho B', data: { ...sheet, headers: ['email'], rows: [{ email: 'a@b.com' }] }, read: async () => sheet }];
+  await mount({ sources, data: { transforms: [{ columnName: 'sku', rules: ['TRIM'] }] } });
+  assert.match(text(renderer.root), /Kho B → sku/);
+  assert.equal(button('Lưu cấu hình').props.disabled, true);
+  const column = renderer.root.findAllByType('fieldset').find(node => text(node).startsWith('sku'));
+  await act(async () => column.findAllByType('label').find(node => text(node) === 'Gọn khoảng trắng').findByType('input').props.onChange({ target: { checked: false } }));
+  assert.equal(button('Lưu cấu hình').props.disabled, false);
+});
+test('one failed shared source blocks saving rules and retry reads all sources', async () => {
+  let failed = true; const reads = [];
+  const sources = ['a', 'b'].map(nodeId => ({ nodeId, name: 'Kho ' + nodeId, read: async () => {
+    reads.push(nodeId); if (nodeId === 'b' && failed) throw new Error('Không có quyền'); return sheet;
+  } }));
+  await mount({ sources, data: { transforms: [{ columnName: 'sku', rules: ['TRIM'] }] } });
+  assert.deepEqual(reads, ['a', 'b']);
+  assert.match(text(renderer.root), /Kho b: Không có quyền/);
+  assert.equal(button('Lưu cấu hình').props.disabled, true);
+  failed = false;
+  await act(async () => button('Đọc lại dữ liệu mẫu').props.onClick());
+  assert.deepEqual(reads, ['a', 'b', 'a', 'b']);
+  assert.equal(button('Lưu cấu hình').props.disabled, false);
 });

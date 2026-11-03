@@ -419,8 +419,8 @@ export const DataTransformNode: React.FC<any> = ({ id, data, selected }) => {
     <Handle type="target" position={Position.Left} id="in" className={handleClass + ' !border-purple-400'} />
     <NodeHeading icon={<Wand2 size={20} className="text-purple-300" />} title="Chuẩn Hóa Dữ Liệu" execution={nodeData.executionState} />
     <div className="space-y-2 px-3 py-3 text-xs">
-      <p className="w-fit rounded-full bg-purple-950 px-2 py-1 text-purple-200">Đang chuẩn hóa {count} cột</p>
-      <p className="text-gray-400">{nodeData.writeBackCleanData ? 'Ghi dữ liệu sạch lại Sheet gốc' : 'Làm sạch trước khi so khớp'}</p>
+      <p className="w-fit rounded-full bg-purple-950 px-2 py-1 text-purple-200">{count} cột · {nodeData.transformSourceCount || 0} Sheet</p>
+      <p className="text-gray-400">{nodeData.transformWriteBackCount ? 'Ghi sạch về ' + nodeData.transformWriteBackCount + ' Sheet' : 'Làm sạch trước khi so khớp'}</p>
       <p className="text-gray-500">Bấm để chọn cột và xem trước</p>
     </div>
     <Handle type="source" position={Position.Right} id="out" className={handleClass + ' !border-purple-400'} />

@@ -329,3 +329,19 @@ test('ambiguous node identities are rejected before resolving transform paths', 
   g.nodes.push({ id: 'transform', type: 'dataTransform', data: {} });
   assert.throws(() => workflowConfig(g.nodes, g.edges), /bị trùng/);
 });
+
+
+test('three Sheets share one rule set with independent write-back and canonical identity', async () => {
+  const g = withTransform();
+  g.nodes.push({ id: 'third', type: 'sheetsTrigger', data: { spreadsheetId: 'sheet-C', sheetName: 'Data' } });
+  g.edges = g.edges.filter(e => e.source !== 'second');
+  for (const source of ['second', 'third']) g.edges.push({ source, target: 'transform', sourceHandle: 'out', targetHandle: 'in' });
+  g.nodes.find(n => n.id === 'transform').data.writeBackBySource = { source: true, second: false, third: true };
+  const config = workflowConfig(g.nodes, g.edges);
+  assert.deepEqual(config.sheets.map(s => s.writeBackCleanData), [true, false, true]);
+  assert.equal(config.sheets.length, 3);
+  assert.deepEqual(connectedSheetSources(g.nodes, g.edges, 'diff').map(s => s.nodeId), ['source', 'second', 'third']);
+  assert.equal(await flowIdFor(config), 'flow-3de00f0e45057f912e6f975f793d7e82f1921d90fa09e3094c2e18d359226d54');
+  g.edges.push({ source: 'second', target: 'transform', sourceHandle: 'out', targetHandle: 'in' });
+  assert.throws(() => workflowConfig(g.nodes, g.edges), /nối trùng/);
+});

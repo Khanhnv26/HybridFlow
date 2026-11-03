@@ -50,4 +50,30 @@ class WorkflowGraphParserTest {
         ((com.fasterxml.jackson.databind.node.ArrayNode) disconnected.path("edges")).remove(1);
         assertThrows(IllegalArgumentException.class, () -> parser.buildSyncRequest("ignored", disconnected, "token"));
     }
+
+    private com.fasterxml.jackson.databind.node.ObjectNode sharedGraph() throws Exception {
+        var graph = transformGraph();
+        ((com.fasterxml.jackson.databind.node.ObjectNode) graph.path("edges").get(2)).put("target", "transform");
+        var third = ((com.fasterxml.jackson.databind.node.ArrayNode) graph.path("nodes")).addObject();
+        third.put("id", "third").put("type", "sheetsTrigger");
+        third.putObject("data").put("spreadsheetId", "sheet-C").put("sheetName", "Data");
+        ((com.fasterxml.jackson.databind.node.ArrayNode) graph.path("edges")).addObject()
+                .put("source", "third").put("target", "transform").put("sourceHandle", "out").put("targetHandle", "in");
+        ((com.fasterxml.jackson.databind.node.ObjectNode) graph.path("nodes").get(3).path("data"))
+                .putObject("writeBackBySource").put("source", true).put("second", false).put("third", true);
+        return graph;
+    }
+    @Test void sharedTransformDistributesRulesAndWriteBackPerSourceWithFrontendIdentity() throws Exception {
+        var request = parser.buildSyncRequest("ignored", sharedGraph(), "token").orElseThrow();
+        assertEquals(3, request.getSheets().size());
+        assertEquals(List.of(true, false, true), request.getSheets().stream().map(s -> s.isWriteBackCleanData()).toList());
+        for (var sheet : request.getSheets()) assertEquals(List.of("TRIM", "UPPERCASE"), sheet.getTransforms().getFirst().getRules());
+        assertEquals("flow-3de00f0e45057f912e6f975f793d7e82f1921d90fa09e3094c2e18d359226d54", request.getFlowId());
+        assertEquals(List.of("transform", "second"), request.getExecutionNodes().get("transform:second"));
+    }
+    @Test void sharedTransformRejectsDuplicateSourceEdges() throws Exception {
+        var graph = sharedGraph();
+        ((com.fasterxml.jackson.databind.node.ArrayNode) graph.path("edges")).add(graph.path("edges").get(2).deepCopy());
+        assertThrows(IllegalArgumentException.class, () -> parser.buildSyncRequest("ignored", graph, "token"));
+    }
 }

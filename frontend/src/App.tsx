@@ -13,7 +13,7 @@ import {
   type Node,
   BackgroundVariant,
 } from '@xyflow/react';
-import { Map, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
+import { Map, LayoutGrid, PanelLeftClose, PanelLeftOpen } from 'lucide-react';
 import { StudioHeader } from './components/orchestration/StudioHeader';
 import { NodePalette } from './components/orchestration/NodePalette';
 import { DataTransformConfigModal } from './components/orchestration/DataTransformConfigModal';
@@ -31,6 +31,7 @@ import {
   GenericOrchestrationNode,
 } from './components/nodes/OrchestrationNodes';
 import { googleService, syncService, workflowService, telegramService } from './services/api';
+import { arrangeWorkflowNodes } from './services/workflowLayout';
 import { connectedSheetSources, flowIdFor, workflowConfig } from './services/workflow';
 import { historyLog } from './services/history';
 import { useSheetReads } from './hooks/useSheetReads';
@@ -135,6 +136,7 @@ export default function App() {
   });
   const [nodes, setNodes, onNodesChange] = useNodesState(startingDraft.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(startingDraft.edges);
+  const fitCanvas = useRef<(() => void) | null>(null);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
   const [isTableModalOpen, setIsTableModalOpen] = useState(false);
   const [isConflictModalOpen, setIsConflictModalOpen] = useState(false);
@@ -541,6 +543,8 @@ export default function App() {
                     }).data?.spreadsheetTitle || source.spreadsheetTitle,
                 }))
               : undefined,
+          transformSourceCount: node.type === 'dataTransform' ? new Set(edges.filter(edge => edge.target === node.id && edge.sourceHandle === 'out' && edge.targetHandle === 'in' && sheetNodes.some(source => source.id === edge.source)).map(edge => edge.source)).size : undefined,
+          transformWriteBackCount: node.type === 'dataTransform' ? sheetNodes.filter(source => edges.some(edge => edge.target === node.id && edge.source === source.id && edge.sourceHandle === 'out' && edge.targetHandle === 'in') && (node.data.writeBackBySource?.[source.id] ?? !!node.data.writeBackCleanData)).length : undefined,
           hasLegacyStorageConnection:
             node.type === 'diffEngine' &&
             edges.some(
@@ -586,6 +590,11 @@ export default function App() {
     [edges, executionView, conflicts.length, recentlyCompleted],
   );
   const edgeTypes = useMemo(() => ({ execution: ExecutionEdge }), []);
+  const arrangeCanvas = () => {
+    if (isRunning) return;
+    setNodes(items => arrangeWorkflowNodes(items, edges));
+    if (fitCanvas.current) requestAnimationFrame(() => requestAnimationFrame(() => fitCanvas.current?.()));
+  };
   const activeNode = nodes.find((n) => n.id === activeNodeId) || null;
   const transformInputs = activeNode?.type === 'dataTransform'
     ? edges.filter(edge => edge.target === activeNode.id && edge.sourceHandle === 'out' && edge.targetHandle === 'in')
@@ -593,7 +602,6 @@ export default function App() {
   const transformSources = transformInputs
     .map(edge => nodes.find(node => node.type === 'sheetsTrigger' && node.id === edge.source))
     .filter((node): node is Node<OrchestrationNodeData> => !!node);
-  const transformSource = transformSources[0];
   const connectGoogle = async () => {
     const opened = window.open('about:blank', 'hybridflow-google', 'width=600,height=700');
     if (!opened) throw new Error('Trình duyệt đã chặn cửa sổ đăng nhập Google.');
@@ -666,11 +674,7 @@ export default function App() {
             .then(() => showToast('Đã lưu cấu hình lên máy chủ.'))
             .catch((e) => showToast(message(e)));
         }}
-        onResetLayout={() => {
-          setNodes(initialNodes);
-          setEdges(initialEdges);
-          setAutoActive(false);
-        }}
+        onResetLayout={arrangeCanvas}
         onOpenTable={() => openTable(tableNodeId)}
         onConnectGoogle={() => {
           void connectGoogle().catch((error) => showToast(message(error)));
@@ -727,6 +731,7 @@ export default function App() {
         )}
         <div className="min-w-0 flex-1 relative h-full">
           <ReactFlow
+            onInit={instance => { fitCanvas.current = () => { void instance.fitView({ padding: 0.18, maxZoom: 1, duration: 250 }); }; }}
             nodes={enhancedNodes}
             edges={enhancedEdges}
             onNodesChange={onNodesChange}
@@ -767,6 +772,7 @@ export default function App() {
               >
                 <Map size={16} /> Bản đồ
               </button>
+              <button aria-label="Sắp xếp canvas" disabled={isRunning} onClick={arrangeCanvas} className="flex items-center gap-2 rounded border border-gray-700 bg-gray-900 px-3 py-2 text-xs disabled:opacity-40"><LayoutGrid size={16} /> Sắp xếp</button>
             </Panel>
             <Controls style={{ bottom: 52 }} />
             {isMinimapOpen && <MiniMap style={{ bottom: 52, width: 140, height: 90 }} />}
@@ -789,20 +795,17 @@ export default function App() {
         </div>
       )}
       {activeNode?.type === 'dataTransform' && <DataTransformConfigModal
-        key={JSON.stringify([activeNode.id, transformSource ? sourceDescriptor(transformSource) : null])}
+        key={JSON.stringify([activeNode.id, transformSources.map(sourceDescriptor)])}
         data={activeNode.data}
-        sourceName={
-          transformSources.length > 1
-            ? `${transformSources.length} nguồn chung: ${transformSources.map(s => s.data.spreadsheetTitle || s.data.label).join(', ')}`
-            : transformSource
-            ? `${transformSource.data.spreadsheetTitle || transformSource.data.label} · ${transformSource.data.sheetName || 'Chưa chọn tab'}`
-            : undefined
-        }
+        sources={transformSources.map(source => ({
+          nodeId: source.id,
+          name: (source.data.spreadsheetTitle || source.data.label) + ' · ' + (source.data.sheetName || 'Chưa chọn tab'),
+          data: stateFor(sourceDescriptor(source)).data || undefined,
+          read: signal => readSheetSource(sourceDescriptor(source), signal),
+        }))}
         connected={connected}
         connectionVersion={connectionVersion}
         onConnectGoogle={connectGoogle}
-        source={transformSource ? stateFor(sourceDescriptor(transformSource)).data || undefined : undefined}
-        onRead={transformSource ? signal => readSheetSource(sourceDescriptor(transformSource), signal) : undefined}
         onClose={() => setActiveNodeId(null)}
         disabled={isRunning}
         onSave={settings => saveSource(activeNode.id, settings, 'Đã lưu cấu hình chuẩn hóa vào hệ thống.')}

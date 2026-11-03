@@ -70,7 +70,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
             </summary>
             <div className="absolute right-0 top-full z-50 mt-2 w-52 rounded-xl border border-[#2d3748] bg-[#171b24] p-1.5">
               <button type="button" disabled={isRunning} onClick={(event) => { onResetLayout(); event.currentTarget.closest('details')?.removeAttribute('open'); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs text-gray-300 hover:bg-[#252d3b] hover:text-white">
-                <RotateCcw size={14} /> Đặt lại bố cục
+                <RotateCcw size={14} /> Sắp xếp bố cục
               </button>
             </div>
           </details>

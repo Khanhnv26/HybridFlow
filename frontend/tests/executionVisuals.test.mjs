@@ -82,3 +82,12 @@ test('transform edges follow backend TRANSFORM and WRITE phases in the actual di
     assert.equal(write.edgeStates[id].reverse, true);
   }
 });
+
+test('a shared transform only animates the Sheet being processed', () => {
+  const graphNodes = [{ id: 'a', type: 'sheetsTrigger' }, { id: 'b', type: 'sheetsTrigger' }, { id: 't', type: 'dataTransform' }, { id: 'd', type: 'diffEngine' }];
+  const graphEdges = [{ id: 'a-t', source: 'a', target: 't' }, { id: 'b-t', source: 'b', target: 't' }, { id: 't-d', source: 't', target: 'd' }];
+  const view = executionVisuals(graphNodes, graphEdges, run('RUNNING', [phase('READ', 'a'), phase('TRANSFORM', 't', 'a')]));
+  assert.equal(view.edgeStates['a-t'].state, 'running');
+  assert.equal(view.edgeStates['b-t'].state, 'idle');
+  assert.equal(view.edgeStates['t-d'].state, 'running');
+});

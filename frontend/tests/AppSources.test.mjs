@@ -347,3 +347,15 @@ test('transform configuration is persisted to the workflow backend and failure k
   assert.deepEqual(draft.nodes.find(node => node.id === 'transform').data.transforms[0].rules, ['TRIM', 'UPPERCASE']);
   assert.equal(renderer.root.findAllByProps({ role: 'dialog' }).length, 0);
 });
+
+test('arranging the canvas keeps the current nodes, connections and settings', async () => {
+  api.googleService = {};
+  await mount();
+  const before = JSON.parse(localStorage.getItem('hybridflow-workflow-v2'));
+  await act(async () => renderer.root.findByProps({ 'aria-label': 'Sắp xếp canvas' }).props.onClick());
+  const after = JSON.parse(localStorage.getItem('hybridflow-workflow-v2'));
+  assert.deepEqual(after.edges, before.edges);
+  assert.deepEqual(after.nodes.map(node => node.data), before.nodes.map(node => node.data));
+  assert.deepEqual(after.nodes.map(node => node.id), ['a', 'b']);
+  assert.ok(after.nodes[1].position.y > after.nodes[0].position.y);
+});

@@ -102,7 +102,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
                 throw new IllegalArgumentException("Không được nối hai khối vào cùng file và trang tính.");
             rawRows.add(sheet.getRows());
             if (endpoint.getTransforms() != null && !endpoint.getTransforms().isEmpty()) {
-                phase(request, executionId, "transform:" + endpoint.getNodeId(), "TRANSFORM", "Đang chuẩn hóa dữ liệu");
+                phase(request, executionId, "transform:" + endpoint.getNodeId(), "TRANSFORM", "Đang chuẩn hóa " + endpoint.getLabel());
                 transformSheet(sheet, endpoint.getTransforms());
             }
             data.add(sheet);
@@ -338,6 +338,11 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
     private void transformSheet(SheetDataResponse sheet, List<com.hybridflow.sync.dto.request.ColumnTransformConfig> configs) {
         Map<String, String> columns = new LinkedHashMap<>();
         sheet.getHeaders().forEach(column -> columns.put(column, ""));
+        for (var config : configs) {
+            if (config != null && !columns.containsKey(config.getColumnName()))
+                throw new IllegalArgumentException("Trang tính '" + (sheet.getSpreadsheetTitle() == null ? sheet.getSpreadsheetId() : sheet.getSpreadsheetTitle())
+                        + " / " + sheet.getSheetName() + "' thiếu cột chuẩn hóa: " + config.getColumnName());
+        }
         dataTransformerService.transformRow(columns, configs);
         sheet.setRows(dataTransformerService.transformRows(sheet.getRows(), configs));
     }

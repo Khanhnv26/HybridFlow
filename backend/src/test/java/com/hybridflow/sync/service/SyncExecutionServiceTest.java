@@ -284,4 +284,45 @@ class SyncExecutionServiceTest {
         locks.verify(store).lock("sheet:b");
         locks.verify(sheets, times(2)).readSheet(any());
     }
+
+    @Test void threeSourcesAreNormalizedIndependentlyAndOnlySelectedSourcesAreCleaned() {
+        var request = transformRequest(true, true);
+        var rules = request.getSheets().getFirst().getTransforms();
+        var endpoints = new java.util.ArrayList<>(request.getSheets());
+        endpoints.get(1).setTransforms(rules);
+        endpoints.add(SheetEndpointRequest.builder().spreadsheetId("c").sheetName("Data").transforms(rules).writeBackCleanData(true).build());
+        request.setSheets(endpoints);
+        reset(sheets);
+        when(sheets.readSheet(any())).thenAnswer(inv -> {
+            var read = (com.hybridflow.connector.google.dto.request.ReadSheetRequest) inv.getArgument(0);
+            String rawId = switch (read.getSpreadsheetId()) { case "a" -> " sp01 "; case "b" -> "SP01 "; default -> "Sp01"; };
+            return SheetDataResponse.builder().spreadsheetId(read.getSpreadsheetId()).sheetName("Data").headers(List.of("id", "status"))
+                    .rows(List.of(Map.of("id", rawId, "status", " new "))).build();
+        });
+        var result = service.executeSync(request);
+        assertEquals("SUCCESS", result.getStatus());
+        assertEquals(List.of("SP01"), result.getCleanRecordIds());
+        assertTrue(result.getConflicts().isEmpty());
+        verify(writes).apply(eq("token"), argThat(plans -> plans.size() == 3
+                && plans.get(0).getChanges().size() == 2 && plans.get(1).getChanges().isEmpty() && plans.get(2).getChanges().size() == 2
+                && plans.get(0).getChanges().getFirst().getRecordId().equals(" sp01 ")
+                && plans.get(2).getChanges().getFirst().getRecordId().equals("Sp01")));
+        verify(store).saveSnapshot("transform", "SP01", Map.of("id", "SP01", "status", "NEW"));
+    }
+    @Test void missingTransformColumnNamesTheSourceAndPreventsAllWrites() {
+        var request = transformRequest(true, true);
+        request.getSheets().get(1).setTransforms(request.getSheets().getFirst().getTransforms());
+        reset(sheets);
+        when(sheets.readSheet(any())).thenAnswer(inv -> {
+            var read = (com.hybridflow.connector.google.dto.request.ReadSheetRequest) inv.getArgument(0);
+            return SheetDataResponse.builder().spreadsheetId(read.getSpreadsheetId()).spreadsheetTitle("Kho " + read.getSpreadsheetId()).sheetName("Data")
+                    .headers(read.getSpreadsheetId().equals("a") ? List.of("id", "status") : List.of("id"))
+                    .rows(List.of(Map.of("id", "1", "status", " new "))).build();
+        });
+        var error = assertThrows(IllegalArgumentException.class, () -> service.executeSync(request));
+        assertTrue(error.getMessage().contains("Kho b / Data"));
+        assertTrue(error.getMessage().contains("status"));
+        verify(writes, never()).apply(any(), any());
+        verify(store, never()).saveSnapshot(any(), any(), any());
+    }
 }

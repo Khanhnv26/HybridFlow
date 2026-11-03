@@ -27,12 +27,14 @@ function transformPaths(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
       || outgoing[0].sourceHandle !== 'out' || outgoing[0].targetHandle !== 'in')
       throw new Error('Nối Sheet → Chuẩn Hóa Dữ Liệu → So khớp; không nối song song hoặc nối chuỗi.');
 
+    const sourceIds = new Set<string>();
     for (const inEdge of incoming) {
       const source = nodes.find(n => n.id === inEdge.source);
       if (source?.type !== 'sheetsTrigger' || inEdge.sourceHandle !== 'out' || inEdge.targetHandle !== 'in'
-        || settings.has(source.id) || edges.some(e => (e.source === source.id && e.target === target.id)
+        || sourceIds.has(source.id) || settings.has(source.id) || edges.some(e => (e.source === source.id && e.target === target.id)
           || (e.source === target.id && e.target === source.id)))
-        throw new Error('Nối Sheet → Chuẩn Hóa Dữ Liệu → So khớp; không nối song song hoặc nối chuỗi.');
+        throw new Error('Nối Sheet → Chuẩn Hóa Dữ Liệu → So khớp; không nối trùng, song song hoặc nối chuỗi.');
+      sourceIds.add(source.id);
     }
 
     const transforms = node.data.transforms || [];
@@ -45,7 +47,7 @@ function transformPaths(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
     }
 
     for (const inEdge of incoming) {
-      settings.set(inEdge.source, { transforms, writeBackCleanData: !!node.data.writeBackCleanData });
+      settings.set(inEdge.source, { transforms, writeBackCleanData: node.data.writeBackBySource?.[inEdge.source] ?? !!node.data.writeBackCleanData });
       resolved.push({ source: inEdge.source, target: target.id, sourceHandle: 'out', targetHandle: 'in' });
     }
     resolved = resolved.filter(e => e.source !== node.id && e.target !== node.id);
