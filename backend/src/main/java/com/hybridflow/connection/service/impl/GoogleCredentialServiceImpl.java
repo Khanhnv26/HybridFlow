@@ -34,9 +34,18 @@ public class GoogleCredentialServiceImpl implements GoogleCredentialService {
 
     @Override
     public String store(GoogleTokenResponse token) {
+        return storeWithTransaction(token, transaction());
+    }
+
+    @Override
+    public String storeInCurrentTransaction(GoogleTokenResponse token) {
+        return storeWithTransaction(token, new TransactionTemplate(transactions));
+    }
+
+    private String storeWithTransaction(GoogleTokenResponse token, TransactionTemplate template) {
         if (token.getAccessToken() == null || token.getAccessToken().isBlank()) throw new GoogleReconnectRequiredException();
         String id = "gconn-" + UUID.randomUUID();
-        transaction().executeWithoutResult(status -> repository.save(new GoogleConnection(id, cipher.encrypt(token.getAccessToken()),
+        template.executeWithoutResult(status -> repository.save(new GoogleConnection(id, cipher.encrypt(token.getAccessToken()),
                 cipher.encrypt(token.getRefreshToken()), clock.instant().plusSeconds(token.getExpiresInSeconds() == null ? 3600 : token.getExpiresInSeconds()), "ACTIVE")));
         return id;
     }

@@ -18,6 +18,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                   key={`${user.id}:${workspace.id}:${workflow.id}`}
                   userId={user.id}
                   workspaceId={workspace.id}
+                  workspaceRole={workspace.role}
                   workflowId={workflow.id}
                 />
               )}

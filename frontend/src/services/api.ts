@@ -134,9 +134,7 @@ export const workspaceConnectionService = {
   list: async (workspaceId: string, signal?: AbortSignal) =>
     (await apiClient.get<WorkspaceConnectionResponse[]>(`/workspaces/${encodeURIComponent(workspaceId)}/connections`, { signal })).data,
   startGoogleOAuth: async (workspaceId: string, connectionName = 'Google Sheets') =>
-    (await apiClient.post<{ url: string }>(`/workspaces/${encodeURIComponent(workspaceId)}/connections/google/start`, null, { params: { connectionName } })).data,
-  completeGoogleOAuth: async (code: string, state: string) =>
-    (await apiClient.get<WorkspaceConnectionResponse>('/workspaces/connections/google/callback', { params: { code, state } })).data,
+    (await apiClient.post<{ url: string; callbackOrigin: string }>(`/workspaces/${encodeURIComponent(workspaceId)}/connections/google/start`, null, { params: { connectionName } })).data,
   createTelegram: async (workspaceId: string, name: string, botToken: string) =>
     (await apiClient.post<WorkspaceConnectionResponse>(`/workspaces/${encodeURIComponent(workspaceId)}/connections/telegram`, { name, botToken })).data,
   grantRole: async (workspaceId: string, connectionId: string, role = 'EDITOR') => {
@@ -185,11 +183,40 @@ export const workspaceConnectionService = {
       payload
     )).data,
   getTelegramInfo: async (workspaceId: string, connectionId: string, signal?: AbortSignal) =>
-    (await apiClient.get<{ configured: boolean; botUsername: string; firstName?: string }>(
+    (await apiClient.get<{ configured: boolean; botUsername: string; firstName?: string; canJoinGroups: boolean; message: string }>(
       `/workspaces/${encodeURIComponent(workspaceId)}/connections/${encodeURIComponent(connectionId)}/telegram/info`,
       { signal }
     )).data,
 };
+
+export function workspaceTelegramApi(workspaceId: string, connectionId: string) {
+  const base = `/workspaces/${encodeURIComponent(workspaceId)}/connections/${encodeURIComponent(connectionId)}/telegram`;
+  const requireConnection = () => { if (!connectionId) throw new Error('Chọn bot Telegram của workspace trước.'); };
+  return {
+    getBot: async (signal?: AbortSignal): Promise<TelegramBotInfo> => {
+      requireConnection();
+      const info = await workspaceConnectionService.getTelegramInfo(workspaceId, connectionId, signal);
+      return { configured: info.configured, username: info.botUsername, displayName: info.firstName || info.botUsername,
+        canJoinGroups: info.canJoinGroups, message: info.message };
+    },
+    startLink: async (recipientType: TelegramRecipient['recipientType']): Promise<TelegramLink> => {
+      requireConnection();
+      return (await apiClient.post(base + '/link', { recipientType })).data;
+    },
+    pollLink: async (id: string, signal?: AbortSignal): Promise<TelegramLink> => {
+      requireConnection();
+      return (await apiClient.get(base + `/link/${encodeURIComponent(id)}`, { signal })).data;
+    },
+    checkRecipient: async (chatId: string, recipientType: TelegramRecipient['recipientType'], signal?: AbortSignal): Promise<TelegramRecipient> => {
+      requireConnection();
+      return (await apiClient.post(base + '/recipient', { chatId, recipientType }, { signal })).data;
+    },
+    sendTest: async (chatId: string, recipientType: TelegramRecipient['recipientType']): Promise<{ success: boolean; message: string; recipient: TelegramRecipient }> => {
+      requireConnection();
+      return (await apiClient.post(base + '/test', { chatId, recipientType })).data;
+    },
+  };
+}
 
 export const googleService = {
   // Bắt đầu OAuth 2.0 Web Flow

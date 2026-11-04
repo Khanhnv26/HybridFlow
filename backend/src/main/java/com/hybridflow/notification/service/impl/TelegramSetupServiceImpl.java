@@ -17,6 +17,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.Map;
 import java.util.UUID;
+import java.util.Objects;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -24,14 +25,23 @@ import java.util.concurrent.ConcurrentHashMap;
 public class TelegramSetupServiceImpl implements TelegramSetupService {
     private final TelegramApiClient client;
     private final Map<String, LinkSession> sessions = new ConcurrentHashMap<>();
-    private JsonNode cachedUpdates;
-    private Instant lastRead = Instant.EPOCH;
+    private final Map<String, UpdatesCache> updateCaches = new ConcurrentHashMap<>();
 
     @Override
     public TelegramBotInfoResponse botInfo() {
-        if (!client.isConfigured()) return new TelegramBotInfoResponse(false, null, null, false,
+        return botInfoFor(null);
+    }
+
+    @Override
+    public TelegramBotInfoResponse botInfo(String token) {
+        requireToken(token);
+        return botInfoFor(token);
+    }
+
+    private TelegramBotInfoResponse botInfoFor(String token) {
+        if (token == null && !client.isConfigured()) return new TelegramBotInfoResponse(false, null, null, false,
                 "Bot Telegram chưa sẵn sàng. Liên hệ quản trị viên để thiết lập bot.");
-        JsonNode bot = client.call("getMe", Map.of());
+        JsonNode bot = call(token, "getMe", Map.of());
         String username = bot.path("username").asText();
         if (!username.matches("[A-Za-z0-9_]+")) throw new ApplicationException(ErrorCode.UPSTREAM_FAILURE, "Không lấy được thông tin bot. Vui lòng thử lại.");
         return new TelegramBotInfoResponse(true, username, bot.path("first_name").asText(), bot.path("can_join_groups").asBoolean(true), "Bot đã sẵn sàng.");
@@ -39,29 +49,51 @@ public class TelegramSetupServiceImpl implements TelegramSetupService {
 
     @Override
     public synchronized TelegramLinkResponse startLink(String recipientType) {
+        return startLinkFor("legacy", null, recipientType);
+    }
+
+    @Override
+    public synchronized TelegramLinkResponse startLink(String scope, String token, String recipientType) {
+        requireToken(token);
+        return startLinkFor(scope, token, recipientType);
+    }
+
+    private TelegramLinkResponse startLinkFor(String scope, String token, String recipientType) {
         validateType(recipientType);
-        TelegramBotInfoResponse bot = botInfo();
+        TelegramBotInfoResponse bot = botInfoFor(token);
         if (!bot.isConfigured()) throw new ApplicationException(ErrorCode.CONFIGURATION_ERROR, bot.getMessage());
         if ("GROUP".equals(recipientType) && !bot.isCanJoinGroups())
             throw new ValidationException("Bot chưa cho phép thêm vào nhóm. Liên hệ quản trị viên hoặc chọn Gửi cho tôi.");
-        if (!client.call("getWebhookInfo", Map.of()).path("url").asText().isBlank())
+        if (!call(token, "getWebhookInfo", Map.of()).path("url").asText().isBlank())
             throw new ValidationException("Bot đang được dùng bởi một kết nối khác. Mở Thiết lập nâng cao để nhập nơi nhận, hoặc liên hệ quản trị viên.");
         Instant now = Instant.now();
         sessions.entrySet().removeIf(entry -> !entry.getValue().expiresAt.isAfter(now));
+        updateCaches.entrySet().removeIf(entry -> entry.getValue().readAt.plus(Duration.ofMinutes(10)).isBefore(now));
         if (sessions.size() >= 1000) throw new ApplicationException(ErrorCode.RATE_LIMITED, "Đang có nhiều yêu cầu kết nối. Vui lòng thử lại sau.");
         String id = UUID.randomUUID().toString().replace("-", "");
-        LinkSession session = new LinkSession(id, recipientType, bot.getUsername(), now, now.plus(Duration.ofMinutes(10)));
+        LinkSession session = new LinkSession(id, scope, recipientType, bot.getUsername(), now, now.plus(Duration.ofMinutes(10)));
         sessions.put(id, session);
         return response(session);
     }
 
     @Override
     public TelegramLinkResponse poll(String id) {
+        return pollFor("legacy", null, id);
+    }
+
+    @Override
+    public TelegramLinkResponse poll(String scope, String token, String id) {
+        requireToken(token);
+        return pollFor(scope, token, id);
+    }
+
+    private TelegramLinkResponse pollFor(String scope, String token, String id) {
         LinkSession session = sessions.get(id);
+        if (session != null && !Objects.equals(scope, session.scope)) throw new ApplicationException(ErrorCode.RESOURCE_NOT_FOUND);
         if (session == null) throw new ValidationException("Kết nối đã hết hạn. Tạo liên kết mới để thử lại.");
         synchronized (session) {
             if (!session.expiresAt.isAfter(Instant.now()) || session.recipient != null) return response(session);
-            JsonNode updates = updates();
+            JsonNode updates = updates(scope, token);
             for (JsonNode update : updates) {
                 JsonNode message = update.path("message");
                 if (message.has("forward_origin") || message.has("forward_date") || message.has("via_bot")) continue;
@@ -78,22 +110,34 @@ public class TelegramSetupServiceImpl implements TelegramSetupService {
         }
     }
 
-    private synchronized JsonNode updates() {
-        if (cachedUpdates == null || lastRead.plusSeconds(2).isBefore(Instant.now())) {
+    private synchronized JsonNode updates(String scope, String token) {
+        UpdatesCache cached = updateCaches.get(scope);
+        if (cached == null || cached.readAt.plusSeconds(2).isBefore(Instant.now())) {
             // No offset or allowed_updates: do not acknowledge other messages or change the bot's delivery filter.
-            cachedUpdates = client.call("getUpdates", Map.of("timeout", 0, "limit", 100));
-            if (!cachedUpdates.isArray()) throw new ApplicationException(ErrorCode.UPSTREAM_FAILURE, "Không đọc được kết quả kết nối Telegram. Thử lại sau.");
-            lastRead = Instant.now();
+            JsonNode result = call(token, "getUpdates", Map.of("timeout", 0, "limit", 100));
+            if (!result.isArray()) throw new ApplicationException(ErrorCode.UPSTREAM_FAILURE, "Không đọc được kết quả kết nối Telegram. Thử lại sau.");
+            cached = new UpdatesCache(result, Instant.now());
+            updateCaches.put(scope, cached);
         }
-        return cachedUpdates;
+        return cached.updates;
     }
 
     @Override
     public TelegramRecipientResponse checkRecipient(String chatId, String recipientType) {
+        return checkRecipientFor(null, chatId, recipientType);
+    }
+
+    @Override
+    public TelegramRecipientResponse checkRecipient(String token, String chatId, String recipientType) {
+        requireToken(token);
+        return checkRecipientFor(token, chatId, recipientType);
+    }
+
+    private TelegramRecipientResponse checkRecipientFor(String token, String chatId, String recipientType) {
         validateType(recipientType);
         if (chatId == null || !chatId.trim().matches("-?[0-9]{1,20}"))
             throw new ValidationException("Chat ID cần là mã số của cuộc trò chuyện Telegram.");
-        JsonNode chat = client.call("getChat", Map.of("chat_id", chatId.trim()));
+        JsonNode chat = call(token, "getChat", Map.of("chat_id", chatId.trim()));
         if (!matchesType(chat.path("type").asText(), recipientType))
             throw new ValidationException("Nơi nhận không khớp lựa chọn. Chọn lại Gửi cho tôi hoặc Gửi vào nhóm.");
         return recipient(chat, recipientType);
@@ -101,10 +145,34 @@ public class TelegramSetupServiceImpl implements TelegramSetupService {
 
     @Override
     public TelegramTestResponse sendTest(String chatId, String recipientType) {
-        TelegramRecipientResponse recipient = checkRecipient(chatId, recipientType);
-        client.call("sendMessage", Map.of("chat_id", recipient.getChatId(), "text",
+        return sendTestFor(null, chatId, recipientType);
+    }
+
+    @Override
+    public TelegramTestResponse sendTest(String token, String chatId, String recipientType) {
+        requireToken(token);
+        return sendTestFor(token, chatId, recipientType);
+    }
+
+    private TelegramTestResponse sendTestFor(String token, String chatId, String recipientType) {
+        TelegramRecipientResponse recipient = checkRecipientFor(token, chatId, recipientType);
+        call(token, "sendMessage", Map.of("chat_id", recipient.getChatId(), "text",
                 "HybridFlow: Kết nối Telegram thành công. Đây là tin nhắn thử để kiểm tra nơi nhận cảnh báo dữ liệu."));
         return new TelegramTestResponse(true, "Đã gửi tin nhắn thử. Mở Telegram để kiểm tra.", recipient);
+    }
+
+    private JsonNode call(String token, String method, Map<String, Object> body) {
+        return token == null ? client.call(method, body) : client.callWithToken(token, method, body);
+    }
+
+    private void requireToken(String token) {
+        if (token == null || token.isBlank()) throw new ApplicationException(ErrorCode.CONNECTION_REQUIRED);
+    }
+
+    private static final class UpdatesCache {
+        private final JsonNode updates;
+        private final Instant readAt;
+        private UpdatesCache(JsonNode updates, Instant readAt) { this.updates = updates; this.readAt = readAt; }
     }
 
     private TelegramRecipientResponse recipient(JsonNode chat, String type) {
@@ -130,13 +198,14 @@ public class TelegramSetupServiceImpl implements TelegramSetupService {
     }
     private static final class LinkSession {
         private final String id;
+        private final String scope;
         private final String recipientType;
         private final String username;
         private final Instant createdAt;
         private final Instant expiresAt;
         private TelegramRecipientResponse recipient;
-        private LinkSession(String id, String recipientType, String username, Instant createdAt, Instant expiresAt) {
-            this.id = id; this.recipientType = recipientType; this.username = username;
+        private LinkSession(String id, String scope, String recipientType, String username, Instant createdAt, Instant expiresAt) {
+            this.id = id; this.scope = scope; this.recipientType = recipientType; this.username = username;
             this.createdAt = createdAt; this.expiresAt = expiresAt;
         }
     }

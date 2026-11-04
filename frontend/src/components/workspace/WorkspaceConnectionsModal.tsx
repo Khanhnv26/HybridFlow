@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { X, RefreshCw, Plus, Trash2, Shield } from 'lucide-react';
 import { ExcelIcon, TelegramIcon } from '../icons/BrandIcons';
 import { workspaceConnectionService } from '../../services/api';
@@ -27,6 +27,13 @@ export function WorkspaceConnectionsModal({
   const [googleName, setGoogleName] = useState('Google Sheets');
   const [telegramName, setTelegramName] = useState('');
   const [telegramToken, setTelegramToken] = useState('');
+  const googlePopup = useRef<Window | null>(null);
+  const callbackOrigin = useRef('');
+  const closeTimer = useRef<ReturnType<typeof setInterval>>();
+  const activeWorkspace = useRef(workspaceId);
+  activeWorkspace.current = workspaceId;
+  const changed = useRef(onConnectionsChanged);
+  changed.current = onConnectionsChanged;
 
   const isOwner = userRole === 'OWNER';
   const isManager = userRole === 'OWNER' || userRole === 'ADMIN';
@@ -36,15 +43,15 @@ export function WorkspaceConnectionsModal({
     setError('');
     try {
       const items = await workspaceConnectionService.list(workspaceId, signal);
-      if (!signal?.aborted) {
+      if (!signal?.aborted && activeWorkspace.current === workspaceId) {
         setConnections(items);
       }
     } catch (err) {
-      if (!signal?.aborted) {
+      if (!signal?.aborted && activeWorkspace.current === workspaceId) {
         setError(errorMessage(err));
       }
     } finally {
-      if (!signal?.aborted) {
+      if (!signal?.aborted && activeWorkspace.current === workspaceId) {
         setLoading(false);
       }
     }
@@ -52,8 +59,33 @@ export function WorkspaceConnectionsModal({
 
   useEffect(() => {
     const controller = new AbortController();
+    setTelegramToken('');
     void loadConnections(controller.signal);
-    return () => controller.abort();
+    const browser = typeof window === 'undefined' ? null : window;
+    const receive = (event: MessageEvent) => {
+      if (event.origin !== callbackOrigin.current || event.source !== googlePopup.current || !googlePopup.current) return;
+      if (event.data?.type !== 'WORKSPACE_GOOGLE_CONNECTED' && event.data?.type !== 'WORKSPACE_GOOGLE_ERROR') return;
+      clearInterval(closeTimer.current);
+      googlePopup.current.close();
+      googlePopup.current = null;
+      callbackOrigin.current = '';
+      setBusy(false);
+      if (event.data.type === 'WORKSPACE_GOOGLE_ERROR') {
+        setError(errorMessage({ response: { data: event.data } }));
+        return;
+      }
+      setSuccess('Đã thêm kết nối Google vào workspace.');
+      void loadConnections().then(() => changed.current?.());
+    };
+    browser?.addEventListener('message', receive);
+    return () => {
+      controller.abort();
+      browser?.removeEventListener('message', receive);
+      clearInterval(closeTimer.current);
+      googlePopup.current?.close();
+      googlePopup.current = null;
+      callbackOrigin.current = '';
+    };
   }, [workspaceId]);
 
   async function handleAddGoogle() {
@@ -61,29 +93,37 @@ export function WorkspaceConnectionsModal({
     setBusy(true);
     setError('');
     setSuccess('');
+    const popup = window.open('about:blank', 'google_connection_oauth', 'width=600,height=700,menubar=no,toolbar=no');
+    googlePopup.current = popup;
     try {
-      const { url } = await workspaceConnectionService.startGoogleOAuth(
+      const { url, callbackOrigin: origin } = await workspaceConnectionService.startGoogleOAuth(
         workspaceId,
         googleName.trim()
       );
-      const popup = window.open(
-        url,
-        'google_connection_oauth',
-        'width=600,height=700,menubar=no,toolbar=no'
-      );
+      if (activeWorkspace.current !== workspaceId) return;
+      callbackOrigin.current = new URL(origin).origin;
       if (!popup) {
         window.location.href = url;
+        setBusy(false);
       } else {
-        const timer = setInterval(() => {
-          if (popup.closed) {
-            clearInterval(timer);
-            void loadConnections().then(() => onConnectionsChanged?.());
+        popup.location.href = url;
+        const startedAt = Date.now();
+        closeTimer.current = setInterval(() => {
+          if (popup.closed || Date.now() - startedAt > 600000) {
+            clearInterval(closeTimer.current);
+            if (!popup.closed) popup.close();
+            googlePopup.current = null;
+            callbackOrigin.current = '';
+            setBusy(false);
+            void loadConnections().then(() => changed.current?.());
           }
         }, 1000);
       }
     } catch (err) {
+      popup?.close();
+      googlePopup.current = null;
+      callbackOrigin.current = '';
       setError(errorMessage(err));
-    } finally {
       setBusy(false);
     }
   }

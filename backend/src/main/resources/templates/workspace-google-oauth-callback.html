@@ -1,0 +1,20 @@
+<!doctype html>
+<html lang="vi">
+<meta charset="utf-8">
+<title>Kết nối Google</title>
+<body>
+<p id="status" role="status">Đang hoàn tất kết nối…</p>
+<button id="return" type="button">Quay lại HybridFlow</button>
+<script>
+  const result = {{PAYLOAD}};
+  const frontend = {{FRONTEND_ORIGIN}};
+  document.getElementById('status').textContent = result.type === 'WORKSPACE_GOOGLE_CONNECTED'
+    ? 'Đã kết nối Google với workspace.' : result.message || 'Không hoàn tất kết nối Google.';
+  document.getElementById('return').onclick = () => window.location.replace(frontend);
+  if (window.opener) {
+    window.opener.postMessage(result, frontend);
+    window.close();
+  }
+</script>
+</body>
+</html>

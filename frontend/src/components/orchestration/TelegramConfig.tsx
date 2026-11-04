@@ -1,5 +1,5 @@
 import { errorMessage } from '../../services/errors';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import {
   CheckCircle2,
   ExternalLink,
@@ -11,7 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { TelegramIcon } from '../icons/BrandIcons';
-import { telegramService, workspaceConnectionService } from '../../services/api';
+import { telegramService, workspaceConnectionService, workspaceTelegramApi } from '../../services/api';
 import { conflictVariables, invalidTemplateVariables, renderTemplatePreview } from '../../services/notificationPreview';
 import type {
   OrchestrationNodeData,
@@ -51,6 +51,8 @@ export function TelegramConfig({
   const [selectedConnectionId, setSelectedConnectionId] = useState<string>(
     () => (typeof data.connectionId === 'string' ? data.connectionId : '')
   );
+  const setup = useMemo(() => workspaceId ? workspaceTelegramApi(workspaceId, selectedConnectionId) : telegramService,
+    [workspaceId, selectedConnectionId]);
   const [type, setType] = useState<TelegramRecipient['recipientType']>(
     data.telegramRecipientType || (data.chatId?.startsWith('-') ? 'GROUP' : 'PRIVATE'),
   );
@@ -81,43 +83,30 @@ export function TelegramConfig({
           return teleConns[0]?.id || '';
         });
       })
-      .catch(() => {});
+      .catch(error => { if (!controller.signal.aborted) { setError(errorMessage(error)); setLoading(false); } });
     return () => controller.abort();
   }, [workspaceId]);
 
   useEffect(() => {
-    if (!workspaceId || !selectedConnectionId) return;
-    const controller = new AbortController();
-    workspaceConnectionService.getTelegramInfo(workspaceId, selectedConnectionId, controller.signal)
-      .then((info) => {
-        if (!controller.signal.aborted && info.botUsername) {
-          setBot({
-            configured: info.configured,
-            username: info.botUsername,
-            displayName: info.firstName || info.botUsername,
-            canJoinGroups: true,
-            message: '',
-          });
-        }
-      })
-      .catch(() => {});
-    return () => controller.abort();
-  }, [workspaceId, selectedConnectionId]);
-
-  useEffect(() => {
+    if (workspaceId && !selectedConnectionId) {
+      setBot(null); setRecipient(null); setSession(null); setLoading(false);
+      return;
+    }
     const controller = new AbortController();
     setLoading(true);
     setError('');
     setBot(null);
-    void telegramService
+    setRecipient(null);
+    setSession(null);
+    void setup
       .getBot(controller.signal)
       .then(async (info) => {
         if (controller.signal.aborted) return;
         setBot(info);
-        if (info.configured && data.chatId) {
+        if (info.configured && data.chatId && (!workspaceId || data.connectionId === selectedConnectionId)) {
           const savedType =
             data.telegramRecipientType || (data.chatId.startsWith('-') ? 'GROUP' : 'PRIVATE');
-          const saved = await telegramService.checkRecipient(
+          const saved = await setup.checkRecipient(
             data.chatId,
             savedType,
             controller.signal,
@@ -132,7 +121,7 @@ export function TelegramConfig({
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [retry, data.chatId, data.telegramRecipientType]);
+  }, [retry, data.chatId, data.telegramRecipientType, data.connectionId, selectedConnectionId, workspaceId, setup]);
 
   useEffect(() => {
     if (!session || session.status !== 'WAITING') return;
@@ -144,7 +133,7 @@ export function TelegramConfig({
         return;
       }
       try {
-        const result = await telegramService.pollLink(session.id, controller.signal);
+        const result = await setup.pollLink(session.id, controller.signal);
         if (controller.signal.aborted) return;
         if (result.status === 'CONNECTED' && result.recipient) {
           setRecipient(result.recipient);
@@ -169,7 +158,7 @@ export function TelegramConfig({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [session]);
+  }, [session, setup]);
 
   const locked = disabled || busy || saving || loading;
   const invalidVariables = [...invalidTemplateVariables(recordTemplate, availableColumns), ...invalidTemplateVariables(conflictTemplate, conflictVariables)];
@@ -192,7 +181,7 @@ export function TelegramConfig({
     setSuccess('');
     setWaitingError('');
     try {
-      setSession(await telegramService.startLink(type));
+      setSession(await setup.startLink(type));
     } catch (error) {
       setError(errorMessage(error));
     } finally {
@@ -206,7 +195,7 @@ export function TelegramConfig({
     setError('');
     setSuccess('');
     try {
-      setRecipient(await telegramService.checkRecipient(chatId.trim(), type));
+      setRecipient(await setup.checkRecipient(chatId.trim(), type));
     } catch (error) {
       setError(errorMessage(error));
     } finally {
@@ -219,7 +208,7 @@ export function TelegramConfig({
     setError('');
     setSuccess('');
     try {
-      const result = await telegramService.sendTest(recipient.chatId, type);
+      const result = await setup.sendTest(recipient.chatId, type);
       if (!result.success) throw new Error(result.message);
       setRecipient(result.recipient);
       setSuccess(result.message);
@@ -299,7 +288,7 @@ export function TelegramConfig({
                 <select
                   disabled={disabled || busy || saving}
                   value={selectedConnectionId}
-                  onChange={(e) => setSelectedConnectionId(e.target.value)}
+                  onChange={(e) => { setSelectedConnectionId(e.target.value); setChatId(''); setRecipient(null); setSession(null); setSuccess(''); }}
                   className="w-full p-2 rounded bg-[#0b0e14] border border-gray-700 text-xs text-gray-200"
                 >
                   {workspaceConnections.map((conn) => (

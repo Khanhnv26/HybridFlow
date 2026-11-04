@@ -24,7 +24,7 @@ public class SecurityConfig {
                 .requestMatchers("/api/v1/auth/csrf", "/api/v1/auth/login/google",
                         "/oauth2/**", "/login/oauth2/**", "/error").permitAll()
                 .requestMatchers("/api/v1/workflows/**", "/api/v1/sync/**", "/api/v1/conflicts/**",
-                        "/api/v1/sync-conflicts/**", "/api/v1/notifications/**").denyAll()
+                        "/api/v1/sync-conflicts/**", "/api/v1/notifications/**", "/api/v1/connections/**").denyAll()
                 .anyRequest().authenticated());
         http.requestCache(cache -> cache.disable());
         http.oauth2Login(login -> login

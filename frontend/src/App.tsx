@@ -34,7 +34,7 @@ import {
   GenericOrchestrationNode,
   RouterConditionNode,
 } from './components/nodes/OrchestrationNodes';
-import { apiClient, googleService, syncService, workflowService, telegramService } from './services/api';
+import { apiClient, googleService, syncService, workflowService, telegramService, workspaceConnectionService, workspaceTelegramApi } from './services/api';
 import { createTenantEditorApi } from './services/tenantEditor';
 import { arrangeWorkflowNodes } from './services/workflowLayout';
 import { connectedSheetSources, flowIdFor, workflowConfig } from './services/workflow';
@@ -44,7 +44,7 @@ import { useWorkflowPolling } from './hooks/useWorkflowPolling';
 import { useExecutionCompletion } from './hooks/useExecutionCompletion';
 import { executionVisuals } from './services/executionVisuals';
 import { ExecutionEdge } from './components/orchestration/ExecutionEdge';
-import type { RunHistoryItem, OrchestrationNodeData, SyncConflictDto, ExecutionHistoryDto, NotificationOutboxItem } from './types';
+import type { RunHistoryItem, OrchestrationNodeData, SyncConflictDto, ExecutionHistoryDto, NotificationOutboxItem, WorkspaceRole } from './types';
 
 const initialNodes: Node<OrchestrationNodeData>[] = [
   {
@@ -115,6 +115,7 @@ const initialEdges: Edge[] = [
   },
 ];
 interface EditorProps {
+  workspaceRole?: WorkspaceRole;
   userId?: string;
   workspaceId?: string;
   workflowId?: string;
@@ -129,7 +130,7 @@ function readDraft(key: string): { nodes: Node<OrchestrationNodeData>[]; edges: 
   return { nodes: initialNodes, edges: initialEdges };
 }
 
-export default function App({ userId, workspaceId, workflowId: propWorkflowId }: EditorProps = {}) {
+export default function App({ userId, workspaceId, workspaceRole, workflowId: propWorkflowId }: EditorProps = {}) {
   const effectiveDraftKey = userId && workspaceId && propWorkflowId
     ? `hybridflow:draft:${userId}:${workspaceId}:${propWorkflowId}`
     : 'hybridflow-workflow-v2';
@@ -174,7 +175,8 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
   const [notificationItems, setNotificationItems] = useState<NotificationOutboxItem[]>([]);
   const [bootstrapRequired, setBootstrapRequired] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
-  const [connected, setConnected] = useState(() => !!localStorage.getItem('google_access_token')?.startsWith('gconn-'));
+  const [legacyConnected, setConnected] = useState(() => !workspaceId && !!localStorage.getItem('google_access_token')?.startsWith('gconn-'));
+  const connected = workspaceId ? nodes.some(node => node.type === 'sheetsTrigger' && node.data.connectionId) : legacyConnected;
   const [connectionVersion, setConnectionVersion] = useState(0);
   const [isConnectionsModalOpen, setIsConnectionsModalOpen] = useState(false);
   const [autoActive, setAutoActive] = useState(false);
@@ -209,6 +211,11 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
   } = useSheetReads(async (target, signal) => {
     if (!target.spreadsheetId.trim() || !target.sheetName.trim())
       throw new Error('Chọn file và trang tính trước khi đọc dữ liệu.');
+    if (workspaceId) {
+      if (!target.connectionId) throw new Error('Chọn kết nối Google của workspace cho nguồn này.');
+      return workspaceConnectionService.readSheet(workspaceId, target.connectionId, target.spreadsheetId.trim(),
+        target.sheetName.trim(), signal, target.columnTypes);
+    }
     const accessToken = localStorage.getItem('google_access_token');
     if (!accessToken) throw new Error('Kết nối Google trước khi đọc dữ liệu.');
     const data = await googleService.readSheet(
@@ -221,6 +228,7 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
     return data;
   });
   const sourceDescriptor = (node: Node<OrchestrationNodeData>) => ({
+    connectionId: node.data.connectionId,
     nodeId: node.id,
     spreadsheetId: node.data.spreadsheetId || '',
     sheetName: node.data.sheetName || '',
@@ -229,24 +237,26 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
   const tableState = tableSource
     ? stateFor(sourceDescriptor(tableSource))
     : { status: 'idle' as const, data: null, error: undefined };
-  const configuredFiles = JSON.stringify([
-    ...new Set(sheetNodes.map((node) => node.data.spreadsheetId?.trim()).filter(Boolean)),
-  ]);
+  const configuredFiles = JSON.stringify(sheetNodes.filter(node => node.data.spreadsheetId?.trim())
+    .map(node => ({ spreadsheetId: node.data.spreadsheetId!.trim(), connectionId: node.data.connectionId })));
   useEffect(() => {
     if (!connected) return;
     const controller = new AbortController();
-    const files = JSON.parse(configuredFiles) as string[];
-    for (const spreadsheetId of files) {
-      const accessToken = localStorage.getItem('google_access_token');
-      if (!accessToken) break;
-      void googleService
-        .getMetadata(accessToken, spreadsheetId, controller.signal)
+    const files = JSON.parse(configuredFiles) as { spreadsheetId: string; connectionId?: string }[];
+    for (const { spreadsheetId, connectionId } of files) {
+      if (workspaceId && !connectionId) continue;
+      const accessToken = workspaceId ? null : localStorage.getItem('google_access_token');
+      if (!workspaceId && !accessToken) break;
+      const metadata = workspaceId
+        ? workspaceConnectionService.getSheetMetadata(workspaceId, connectionId!, spreadsheetId, controller.signal)
+        : googleService.getMetadata(accessToken!, spreadsheetId, controller.signal);
+      void metadata
         .then((metadata) => {
           if (!controller.signal.aborted)
             setNodes((items) =>
               items.map((node) =>
                 node.type === 'sheetsTrigger' &&
-                node.data.spreadsheetId?.trim() === spreadsheetId &&
+                node.data.spreadsheetId?.trim() === spreadsheetId && (!workspaceId || node.data.connectionId === connectionId) &&
                 node.data.spreadsheetTitle !== metadata.title
                   ? { ...node, data: { ...node.data, spreadsheetTitle: metadata.title } }
                   : node,
@@ -258,7 +268,7 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
         });
     }
     return () => controller.abort();
-  }, [configuredFiles, connected, connectionVersion, setNodes]);
+  }, [configuredFiles, connected, connectionVersion, workspaceId, setNodes]);
 
   useEffect(() => {
     localStorage.setItem(effectiveDraftKey, JSON.stringify({ nodes, edges }));
@@ -387,6 +397,7 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
   const fetchData = useCallback(
     async (target: Node<OrchestrationNodeData>, signal?: AbortSignal) =>
       readSheetSource({
+        connectionId: target.data.connectionId,
         nodeId: target.id,
         spreadsheetId: target.data.spreadsheetId || '',
         sheetName: target.data.sheetName || '',
@@ -417,9 +428,9 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
       nodes,
       edges,
       flowId: flowId || undefined,
-      accessToken: localStorage.getItem('google_access_token') || undefined,
+      ...(!workspaceId ? { accessToken: localStorage.getItem('google_access_token') || undefined } : {}),
     });
-  }, [workflowId, workflowApi, nodes, edges, flowId]);
+  }, [workflowId, workflowApi, nodes, edges, flowId, workspaceId]);
   const runWorkflow = useCallback(
     async (bootstrapConfirmed = false) => {
       if (running.current || backendRunning.current) return;
@@ -428,7 +439,7 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
       setIsRunning(true);
       let id = '';
       try {
-        token();
+        if (!workspaceId) token();
         if (!configState.config) throw new Error(configState.error);
         const config = configState.config;
         id = await flowIdFor(config);
@@ -458,7 +469,7 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
         setIsRunning(false);
       }
     },
-    [configState, token, saveWorkflow, refreshRunData, refreshSources, showToast, workflowId, workflowApi, latestExecution?.id],
+    [configState, token, saveWorkflow, refreshRunData, refreshSources, showToast, workflowId, workflowApi, workspaceId, latestExecution?.id],
   );
   useEffect(() => {
     if (!autoActive) return;
@@ -474,7 +485,7 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
       if (node.type === 'sheetsTrigger') return (await fetchData(node)).rows;
       if (node.type === 'diffEngine')
         return Promise.all(connectedSheetSources(nodes, edges, node.id).map(source =>
-          googleService.readSheet(token(), source.spreadsheetId, source.sheetName, undefined, node.data.columnTypes)));
+          readSheetSource({ ...source, connectionId: sheetNodes.find(sheet => sheet.id === source.nodeId)?.data.connectionId, columnTypes: node.data.columnTypes })));
       if (!flowId) throw new Error(configState.error || 'Cấu hình luồng trước khi chạy thử.');
       if (node.type === 'storageAction') return syncApi.getVault(flowId);
       if (node.type === 'telegramAction') {
@@ -487,12 +498,12 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
       }
       throw new Error('Khối này chưa được hỗ trợ thực thi.');
     },
-    [nodes, edges, fetchData, flowId, configState.error, conflicts, token, syncApi],
+    [nodes, edges, sheetNodes, readSheetSource, fetchData, flowId, configState.error, conflicts, token, syncApi],
   );
   const resolveConflict = useCallback(
     async (value: string, conflict: SyncConflictDto) => {
       if (value === undefined) throw new Error('Xung đột thiếu giá trị. Tải lại danh sách.');
-      await syncApi.resolveConflict(conflict.id, value, token());
+      await syncApi.resolveConflict(conflict.id, value, workspaceId ? '' : token());
       refreshRevision.current++;
       setConflicts((items) => items.filter((item) => item.id !== conflict.id));
       await refreshSources();
@@ -501,7 +512,7 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
         showToast(`Đã lưu quyết định; tải lại danh sách thất bại: ${message(error)}`),
       );
     },
-    [token, flowId, tenant, syncApi, refreshRunData, refreshSources, showToast],
+    [token, flowId, tenant, syncApi, workspaceId, refreshRunData, refreshSources, showToast],
   );
   const sendTelegram = useCallback(
     async (conflictId: number) => {
@@ -525,8 +536,7 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
   const updateCell = useCallback(
     async (range: string, value: string) => {
       if (!tableSource?.data.spreadsheetId) throw new Error('Chưa chọn nguồn dữ liệu.');
-      const result = await googleService.updateCell({
-        accessToken: token(),
+      const payload = {
         spreadsheetId: tableSource.data.spreadsheetId,
         range,
         value,
@@ -536,14 +546,18 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
           const column = tableState.data?.headers[index];
           return column ? nodes.find(node => node.type === 'diffEngine')?.data.columnTypes?.[column] || 'TEXT' : 'TEXT';
         })(),
-      });
+      };
+      if (workspaceId && !tableSource.data.connectionId) throw new Error('Chọn kết nối Google của workspace cho nguồn này.');
+      const result = workspaceId
+        ? await workspaceConnectionService.updateCell(workspaceId, tableSource.data.connectionId!, payload)
+        : await googleService.updateCell({ ...payload, accessToken: token() });
       if (!result.success) throw new Error(result.message);
       showToast('Đã cập nhật ô trên trang tính đang chọn. Chạy luồng để đồng bộ các nguồn.');
       await fetchData(tableSource).catch((error) =>
         showToast(`Đã ghi ô; tải lại bảng thất bại: ${message(error)}`),
       );
     },
-    [tableSource, tableState.data, nodes, token, fetchData, showToast],
+    [tableSource, tableState.data, nodes, token, workspaceId, fetchData, showToast],
   );
   const onConnect = useCallback(
     (connection: Connection) => setEdges((items) => addEdge(connection, items)),
@@ -729,6 +743,10 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
     return () => controller.abort();
   }, [activeNode?.id, activeNode?.type, connected, configReadSourcesKey, configReadRetry, isRunning, readSheetSource]);
   const connectGoogle = async () => {
+    if (workspaceId) {
+      setIsConnectionsModalOpen(true);
+      return;
+    }
     const opened = window.open('about:blank', 'hybridflow-google', 'width=600,height=700');
     if (!opened) throw new Error('Trình duyệt đã chặn cửa sổ đăng nhập Google.');
     popup.current = opened;
@@ -762,7 +780,7 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
         nodes: updatedNodes,
         edges,
         flowId: updatedFlowId,
-        accessToken: localStorage.getItem('google_access_token') || undefined,
+        ...(!workspaceId ? { accessToken: localStorage.getItem('google_access_token') || undefined } : {}),
       });
       setNodes(updatedNodes);
       setActiveNodeId(null);
@@ -774,7 +792,9 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
   const saveTelegram = async (nodeId: string, settings: Partial<OrchestrationNodeData>) => {
     if (!settings.chatId || !settings.telegramRecipientType)
       throw new Error('Kết nối nơi nhận trước khi lưu.');
-    const recipient = await telegramService.checkRecipient(
+    if (workspaceId && !settings.connectionId) throw new Error('Chọn bot Telegram của workspace.');
+    const setup = workspaceId ? workspaceTelegramApi(workspaceId, settings.connectionId!) : telegramService;
+    const recipient = await setup.checkRecipient(
       settings.chatId,
       settings.telegramRecipientType,
     );
@@ -995,7 +1015,7 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
         onReadComparisonSource={(id, types, signal) => {
           const source = diffUpstreamSheets.find(item => item.id === id);
           if (!source) return Promise.reject(new Error('Bảng tính chưa được nối vào khối đồng bộ.'));
-          return googleService.readSheet(token(), source.data.spreadsheetId || '', source.data.sheetName, signal, types);
+          return readSheetSource({ ...sourceDescriptor(source), columnTypes: types }, signal);
         }}
         disabled={isRunning}
         connected={connected}
@@ -1039,6 +1059,7 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
       {isConnectionsModalOpen && workspaceId && (
         <WorkspaceConnectionsModal
           workspaceId={workspaceId}
+          userRole={workspaceRole}
           onClose={() => setIsConnectionsModalOpen(false)}
           onConnectionsChanged={() => {
             setConnectionVersion((v) => v + 1);

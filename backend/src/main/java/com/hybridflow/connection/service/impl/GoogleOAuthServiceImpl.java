@@ -69,13 +69,18 @@ public class GoogleOAuthServiceImpl implements GoogleOAuthService {
 
     @Override
     public String buildAuthorizationUrl(String state) {
+        return buildAuthorizationUrl(state, redirectUri);
+    }
+
+    @Override
+    public String buildAuthorizationUrl(String state, String callbackUri) {
         if (flow == null) {
             throw new ApplicationException(ErrorCode.CONFIGURATION_ERROR);
         }
 
         GoogleAuthorizationCodeRequestUrl url = flow.newAuthorizationUrl()
                 .set("prompt", "consent")
-                .setRedirectUri(redirectUri);
+                .setRedirectUri(callbackUri);
         if (state != null) {
             url.setState(state);
         }
@@ -84,9 +89,14 @@ public class GoogleOAuthServiceImpl implements GoogleOAuthService {
 
     @Override
     public GoogleTokenResponse exChangeCode(String code) {
+        return exChangeCode(code, redirectUri);
+    }
+
+    @Override
+    public GoogleTokenResponse exChangeCode(String code, String callbackUri) {
         try {
             return flow.newTokenRequest(code)
-                    .setRedirectUri(redirectUri)
+                    .setRedirectUri(callbackUri)
                     .execute();
         } catch (TokenResponseException exception) {
             throw ExternalErrors.google(exception.getStatusCode(), 0);

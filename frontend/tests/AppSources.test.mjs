@@ -35,7 +35,7 @@ const bundle = await build({
                 name +
                 '[key]; } });',
             )
-            .join('\n'),
+            .join('\n') + '\nexport const workspaceTelegramApi = (...args) => globalThis.__sourceAppApi.workspaceTelegramApi(...args);',
         }));
         builder.onResolve({ filter: /^@xyflow\/react$/ }, () => ({
           path: 'flow',

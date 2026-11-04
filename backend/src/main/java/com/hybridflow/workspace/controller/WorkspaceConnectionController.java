@@ -8,10 +8,18 @@ import com.hybridflow.connector.google.dto.response.UpdateCellResponse;
 import com.hybridflow.workspace.dto.request.CreateTelegramConnectionRequest;
 import com.hybridflow.workspace.dto.response.WorkspaceConnectionResponse;
 import com.hybridflow.workspace.service.WorkspaceConnectionService;
+import com.hybridflow.connection.dto.GoogleOAuthCallbackResponse;
+import com.hybridflow.notification.dto.request.TelegramDestinationRequest;
+import com.hybridflow.notification.dto.response.TelegramLinkResponse;
+import com.hybridflow.notification.dto.response.TelegramRecipientResponse;
+import com.hybridflow.notification.dto.response.TelegramTestResponse;
 import jakarta.servlet.http.HttpSession;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.http.CacheControl;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -37,14 +45,41 @@ public class WorkspaceConnectionController {
                                                 @RequestParam(defaultValue = "Google Sheets") String connectionName,
                                                 HttpSession session) {
         String authUrl = service.startGoogleOAuth(workspaceId, connectionName, session);
-        return Map.of("url", authUrl);
+        return Map.of("url", authUrl, "callbackOrigin", service.googleCallbackOrigin());
     }
 
-    @GetMapping("/connections/google/callback")
-    public WorkspaceConnectionResponse completeGoogleOAuth(@RequestParam String code,
-                                                           @RequestParam String state,
+    @GetMapping(value = "/connections/google/callback", produces = MediaType.TEXT_HTML_VALUE)
+    public ResponseEntity<String> completeGoogleOAuth(@RequestParam(required = false) String code,
+                                                           @RequestParam(required = false) String state,
+                                                           @RequestParam(required = false) String error,
                                                            HttpSession session) {
-        return service.completeGoogleOAuth(code, state, session);
+        GoogleOAuthCallbackResponse result = service.completeGoogleOAuthPage(code, state, error, session);
+        return ResponseEntity.status(result.getStatus()).contentType(MediaType.TEXT_HTML).cacheControl(CacheControl.noStore())
+                .header("Referrer-Policy", "no-referrer").body(result.getHtml());
+    }
+
+    @PostMapping("/{workspaceId}/connections/{connectionId}/telegram/link")
+    public TelegramLinkResponse startTelegramLink(@PathVariable UUID workspaceId, @PathVariable String connectionId,
+                                                 @RequestBody TelegramDestinationRequest request) {
+        return service.startTelegramLink(workspaceId, connectionId, request.getRecipientType());
+    }
+
+    @GetMapping("/{workspaceId}/connections/{connectionId}/telegram/link/{linkId}")
+    public TelegramLinkResponse telegramLink(@PathVariable UUID workspaceId, @PathVariable String connectionId,
+                                            @PathVariable String linkId) {
+        return service.pollTelegramLink(workspaceId, connectionId, linkId);
+    }
+
+    @PostMapping("/{workspaceId}/connections/{connectionId}/telegram/recipient")
+    public TelegramRecipientResponse telegramRecipient(@PathVariable UUID workspaceId, @PathVariable String connectionId,
+                                                      @RequestBody TelegramDestinationRequest request) {
+        return service.checkTelegramRecipient(workspaceId, connectionId, request.getChatId(), request.getRecipientType());
+    }
+
+    @PostMapping("/{workspaceId}/connections/{connectionId}/telegram/test")
+    public TelegramTestResponse telegramTest(@PathVariable UUID workspaceId, @PathVariable String connectionId,
+                                            @RequestBody TelegramDestinationRequest request) {
+        return service.sendTelegramTest(workspaceId, connectionId, request.getChatId(), request.getRecipientType());
     }
 
     @PostMapping("/{workspaceId}/connections/telegram")

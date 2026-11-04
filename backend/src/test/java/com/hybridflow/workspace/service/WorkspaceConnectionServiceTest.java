@@ -43,6 +43,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -81,6 +82,16 @@ class WorkspaceConnectionServiceTest {
         service = new WorkspaceConnectionServiceImpl(
                 catalog, access, currentUser, audit, oauth, credentials,
                 pendingStore, telegramClient, cipher, googleSheetsService);
+    }
+
+    @Test
+    void viewerCannotWriteSheetOrResolveCredentials() {
+        when(access.requireMember(workspaceId)).thenReturn(WorkspaceRole.VIEWER);
+        ApplicationException error = assertThrows(ApplicationException.class,
+                () -> service.updateCell(workspaceId, "connection", new UpdateCellRequest()));
+        assertEquals(ErrorCode.ACCESS_DENIED, error.getErrorCode());
+        verify(credentials, never()).resolveAccessToken(any());
+        verify(googleSheetsService, never()).updateCell(any());
     }
 
     @Test
