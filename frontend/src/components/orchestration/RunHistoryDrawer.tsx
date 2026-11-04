@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import type { RunHistoryItem } from '../../types';
 import { logConflictState } from '../../services/history';
+import { ExecutionOutbox } from './ExecutionOutbox';
+import type { NotificationOutboxItem } from '../../types';
 
 interface RunHistoryDrawerProps {
   logs: RunHistoryItem[];
@@ -17,6 +19,9 @@ interface RunHistoryDrawerProps {
   isRunning: boolean;
   onClearLogs: () => void;
   onOpenConflictModal: () => void;
+  flowId?: string;
+  loadNotifications?: (flowId: string, executionId: string, signal?: AbortSignal, offset?: number) => Promise<NotificationOutboxItem[]>;
+  retryNotification?: (id: string) => Promise<void>;
 }
 
 export const RunHistoryDrawer: React.FC<RunHistoryDrawerProps> = ({
@@ -25,8 +30,12 @@ export const RunHistoryDrawer: React.FC<RunHistoryDrawerProps> = ({
   isRunning,
   onClearLogs,
   onOpenConflictModal,
+  flowId,
+  loadNotifications,
+  retryNotification,
 }) => {
   const [isOpen, setIsOpen] = useState(false);
+  const [selectedKey, setSelectedKey] = useState('');
 
   const latestLog = logs[0];
   const activeIds = new Set(activeConflictIds);
@@ -97,7 +106,7 @@ export const RunHistoryDrawer: React.FC<RunHistoryDrawerProps> = ({
 
       {/* Expanded Log Drawer */}
       {isOpen && (
-        <div className="h-56 bg-[#0d1117] border-t border-[#2d3748] flex flex-col p-4 overflow-hidden animate-slideUp">
+        <div className="h-[min(60vh,32rem)] bg-[#0d1117] border-t border-[#2d3748] flex flex-col p-4 overflow-hidden animate-slideUp">
           <div className="flex items-center justify-between pb-2 border-b border-[#21262d] mb-2 text-xs">
             <div className="flex items-center gap-2 text-gray-400">
               <Clock size={13} />
@@ -130,7 +139,7 @@ export const RunHistoryDrawer: React.FC<RunHistoryDrawerProps> = ({
                 return (
                   <div
                     key={log.id}
-                    className={`p-2.5 rounded-xl border flex items-center justify-between transition ${
+                    className={`p-2.5 rounded-xl border transition ${
                       state.displayType === 'conflict'
                         ? 'bg-amber-950/20 border-amber-800/40 text-amber-200'
                         : state.displayType === 'error'
@@ -138,6 +147,7 @@ export const RunHistoryDrawer: React.FC<RunHistoryDrawerProps> = ({
                           : 'bg-[#161b22] border-[#21262d] text-gray-300 hover:border-gray-600'
                     }`}
                   >
+                    <div className="flex items-center justify-between gap-3 flex-wrap">
                     <div className="flex items-center gap-3">
                       <span className="text-[11px] text-gray-500">{log.time}</span>
                       <div className="flex items-center gap-2">
@@ -155,6 +165,12 @@ export const RunHistoryDrawer: React.FC<RunHistoryDrawerProps> = ({
                     </div>
 
                     <div className="flex items-center gap-3 text-[11px] font-sans">
+                      {flowId && loadNotifications && retryNotification && <button type="button"
+                        aria-expanded={selectedKey === JSON.stringify([flowId, log.id])}
+                        className="px-2 py-1 rounded border border-gray-600 text-sky-300"
+                        onClick={() => setSelectedKey(value => value === JSON.stringify([flowId, log.id]) ? '' : JSON.stringify([flowId, log.id]))}>
+                        {selectedKey === JSON.stringify([flowId, log.id]) ? 'Đóng thông báo' : 'Xem thông báo'}
+                      </button>}
                       {state.pendingIds.length > 0 && (
                         <button
                           onClick={onOpenConflictModal}
@@ -168,6 +184,9 @@ export const RunHistoryDrawer: React.FC<RunHistoryDrawerProps> = ({
                         <span className="text-gray-500 hidden sm:inline">{log.details}</span>
                       )}
                     </div>
+                    </div>
+                    {flowId && loadNotifications && retryNotification && selectedKey === JSON.stringify([flowId, log.id]) &&
+                      <ExecutionOutbox key={selectedKey} flowId={flowId} executionId={log.id} load={loadNotifications} retry={retryNotification} />}
                   </div>
                 );
               })

@@ -889,6 +889,9 @@ export default function App() {
             {isMinimapOpen && <MiniMap style={{ bottom: 52, width: 140, height: 90 }} />}
           </ReactFlow>
           <RunHistoryDrawer
+            flowId={flowId}
+            loadNotifications={syncService.getNotificationPage}
+            retryNotification={syncService.retryNotification}
             logs={logs}
             activeConflictIds={conflicts.map((conflict) => conflict.id)}
             isRunning={isRunning}

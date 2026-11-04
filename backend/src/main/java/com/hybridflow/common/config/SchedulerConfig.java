@@ -12,7 +12,7 @@ public class SchedulerConfig {
     public Clock schedulerClock() { return Clock.systemUTC(); }
 
     @Bean(destroyMethod = "shutdown")
-    public ThreadPoolExecutor workflowExecutor(@Value("${hybridflow.scheduler.workers:4}") int workers) {
+    public ThreadPoolExecutor workflowExecutor(@Value("${hybridflow.scheduler.workers:5}") int workers) {
         return new ThreadPoolExecutor(workers, workers, 0, TimeUnit.SECONDS, new SynchronousQueue<>(),
                 Thread.ofPlatform().name("workflow-worker-", 0).factory(), new ThreadPoolExecutor.AbortPolicy());
     }

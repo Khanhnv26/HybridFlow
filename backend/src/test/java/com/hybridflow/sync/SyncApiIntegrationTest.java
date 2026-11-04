@@ -160,6 +160,13 @@ class SyncApiIntegrationTest {
         jdbc.update("UPDATE notification_outbox SET state='DEAD' WHERE id=?", notification);
         mvc.perform(post("/api/v1/notifications/" + notification + "/retry")).andExpect(status().isOk());
         assertEquals("PENDING", jdbc.queryForObject("SELECT state FROM notification_outbox WHERE id=?", String.class, notification));
+        mvc.perform(post("/api/v1/notifications/" + notification + "/retry")).andExpect(status().isBadRequest());
+        mvc.perform(get("/api/v1/workflows/routed/notifications").param("executionId", executionId).param("limit", "2"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(2));
+        mvc.perform(get("/api/v1/workflows/routed/notifications").param("executionId", executionId).param("limit", "2").param("offset", "2"))
+                .andExpect(status().isOk()).andExpect(jsonPath("$.length()").value(1));
+        mvc.perform(get("/api/v1/workflows/routed/notifications").param("offset", "-1"))
+                .andExpect(status().isBadRequest());
         verifyNoInteractions(telegram);
     }
 

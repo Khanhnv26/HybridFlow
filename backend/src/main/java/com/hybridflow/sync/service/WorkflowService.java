@@ -18,5 +18,6 @@ public interface WorkflowService {
     Map<String, Object> getScheduleStatus(String workflowId);
     List<NotificationOutboxItem> getNotifications(String flowId, int limit);
     List<NotificationOutboxItem> getNotifications(String flowId, String executionId, int limit);
+    List<NotificationOutboxItem> getNotifications(String flowId, String executionId, int limit, int offset);
     void retryNotification(String id);
 }

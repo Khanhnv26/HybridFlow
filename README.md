@@ -13,11 +13,13 @@ Backend đọc các biến môi trường:
 - `GOOGLE_REDIRECT_URI`: mặc định `http://localhost:8080/api/v1/connections/google/callback`; phải khớp OAuth client trên Google Cloud.
 - `FRONTEND_ORIGIN`: mặc định `http://localhost:3000`, dùng cho CORS và đích nhận kết quả OAuth popup. Đổi khi dùng cổng/origin khác.
 - `GOOGLE_CREDENTIAL_ENCRYPTION_KEY`: khóa Base64 của 32 byte ngẫu nhiên, dùng AES-256-GCM để mã hóa access/refresh token trong database. Giữ nguyên khóa qua các lần restart và dùng cùng khóa trên mọi backend. Có thể đặt `google.oauth.encryption-key` trong `backend/application-local.properties` đã được Git bỏ qua. Không đưa khóa vào Git hoặc log; sao lưu khóa cùng quy trình sao lưu database.
-- `SCHEDULER_ENABLED` (mặc định `true`), `SCHEDULER_WORKERS` (mặc định `4`): bật bộ lập lịch và giới hạn số worker trên mỗi backend.
+- `SCHEDULER_ENABLED` (mặc định `true`), `SCHEDULER_WORKERS` (mặc định `5`): bật bộ lập lịch và giới hạn số worker trên mỗi backend.
 
 File `client_secret.json` của Google OAuth đặt trong `backend/src/main/resources/` và được Git bỏ qua. Các thiết lập riêng đã có được giữ trong `backend/application-local.properties` (cũng được Git bỏ qua). Khi chạy từ thư mục `backend` hoặc gốc repo, Spring tự đọc file local này; biến môi trường có thể ghi đè các giá trị được chuyển sang đó. Không commit token hay file local. Nếu token từng được đưa lên Git, cần thay token tại nhà cung cấp.
 
-Chạy backend từ `backend`: `mvn spring-boot:run`. Khởi động lại backend sau khi cập nhật mã để Flyway áp dụng các migration mới, hiện đến V12. Không sửa/xóa lịch sử migration trong database đang dùng.
+Nếu token Telegram bị lộ: mở đúng **@BotFather** trong Telegram, gửi `/revoke` và chọn bot để thu hồi token cũ, rồi lấy token mới. Từ gốc repo, chạy `powershell -NoProfile -File .\scripts\set-telegram-token.ps1` và nhập token mới khi được hỏi (ô nhập ẩn). Script lưu vào cấu hình local được Git bỏ qua; nếu backend dùng biến môi trường `TELEGRAM_BOT_TOKEN`, cần cập nhật biến đó tại nơi chạy backend. Khởi động lại backend và dùng **Gửi tin nhắn thử** trong ứng dụng. Xóa token khỏi mã hoặc lịch sử Git không thay thế bước thu hồi tại BotFather.
+
+Chạy backend từ `backend`: `mvn spring-boot:run`. Khởi động lại backend sau khi cập nhật mã để Flyway áp dụng các migration mới, hiện đến V13. Không sửa/xóa lịch sử migration trong database đang dùng.
 
 Chạy frontend từ `frontend`: `npm install`, sau đó `npm run dev`. Vite chạy ở cổng 3000 và proxy `/api` sang backend 8080. Khi deploy, cấu hình reverse proxy `/api` hoặc đặt `VITE_API_BASE_URL` theo `frontend/.env.example` trước khi build. Nếu cổng 3000 bận, cấu hình `FRONTEND_ORIGIN` theo origin thực tế.
 
@@ -63,6 +65,8 @@ Các lần ghi nhiều ô dùng [Google Sheets values.batchUpdate](https://devel
 
 ## API chính
 
+Trong **Lịch sử**, bấm **Xem thông báo** ở lượt chạy cần kiểm tra, kể cả lượt cũ. Chi tiết hiển thị nội dung, nơi nhận, trạng thái, số lần thử trong đợt hiện tại, lỗi/mã tra cứu và thời điểm thử tiếp. Danh sách phân trang 50 thông báo và tự cập nhật mỗi 2 giây khi đang mở, tạm ngừng khi tab bị ẩn. **Thử gửi lại** chỉ xếp hàng lại thông báo `FAILED`/`DEAD`, không chạy lại đồng bộ; số lần thử được đặt lại cho đợt mới. Thông báo đã gửi hoặc đang xử lý không được gửi lại qua nút retry. Xem [nghiệm thu Chặng 1](NGHIEM_THU_CHANG_1.md) cho phạm vi và bằng chứng kiểm thử.
+
 Editor tự tải lịch sử và xung đột mỗi giây khi tab đang hiển thị, tăng lên mỗi 500 ms khi một phiên đang chạy, đồng thời cập nhật ngay khi quay lại tab. Khi có kết quả đồng bộ mới, dữ liệu các nguồn được đọc lại; lịch sử không đổi không gây đọc Google Sheets lặp lại. Cơ chế theo dõi này chỉ đọc trạng thái, không kích hoạt thêm lượt đồng bộ.
 
 Migration V9 bổ sung tiến trình từng bước vào lịch sử, được lưu bằng giao dịch riêng để giao diện đọc được khi phiên đồng bộ vẫn đang chạy. Khối đang thực hiện có viền xanh dương, biểu tượng xoay và nhãn bước; điểm sáng trên dây đi theo chiều đọc/ghi thực tế. Thành công giữ màu xanh, xung đột/chờ xác nhận giữ màu cam, lỗi giữ màu đỏ đến lượt kế tiếp. Nhánh chưa thực hiện không được đánh dấu thành công; timer chỉ tham gia khi backend ghi nhận kích hoạt theo lịch. Khi nhận một lượt vừa hoàn tất, các dây đã chạy sáng theo màu kết quả trong 2 giây, kèm nhãn xác nhận vừa hoàn tất; trạng thái vẫn là đã xong, không giả lập RUNNING. Hiệu ứng không phát lại lịch sử cũ khi mở trang và đợi tab hiển thị nếu kết quả đến lúc tab bị ẩn. Lịch sử cũ chưa có tiến trình chỉ hiện trạng thái tổng thể. Khi bật giảm chuyển động trong hệ điều hành, vẫn giữ chữ và màu trạng thái nhưng dừng chuyển động.
@@ -73,6 +77,8 @@ Migration V9 bổ sung tiến trình từng bước vào lịch sử, được l
 - `POST /api/v1/conflicts/{id}/resolve`: `resolvedValue`, `accessToken`. Chỉ chấp nhận giá trị một trong hai bên của conflict hiện tại.
 - `POST /api/v1/conflicts/{id}/notify`: `chatId`; trả `success` theo kết quả nhà cung cấp.
 - `GET /api/v1/workflows/{flowId}/history`, `GET /api/v1/workflows/{flowId}/vault`.
+- `GET /api/v1/workflows/{flowId}/notifications?executionId=...&limit=50&offset=0`: lọc thông báo theo lượt chạy, giới hạn tối đa 500/trang; `offset` không âm. Bỏ `executionId` để lấy theo flow. Thứ tự tạo mới nhất, dùng ID để phân định khi trùng thời điểm.
+- `POST /api/v1/notifications/{id}/retry`: xếp hàng lại thông báo lỗi; trả HTTP 400 nếu không tồn tại hoặc không còn ở `FAILED`/`DEAD`.
 - `GET/PUT /api/v1/workflows/{workflowId}/definition`: đọc/lưu `{nodes, edges}`.
 - `POST /api/v1/workflows/{workflowId}/run?bootstrapConfirmed=false`: chạy định nghĩa đã lưu bằng kết nối Google do backend quản lý.
 - `GET /api/v1/workflows/{workflowId}/schedule`: trạng thái lịch/job, lỗi đã lược bỏ chi tiết nhạy cảm và lần chạy gần nhất/kế tiếp.

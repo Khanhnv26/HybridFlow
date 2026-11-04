@@ -131,25 +131,29 @@ public class NotificationOutboxRepository {
     }
 
     public List<NotificationOutboxItem> findByFlowId(String flowId, String executionId, int limit) {
+        return findByFlowId(flowId, executionId, limit, 0);
+    }
+
+    public List<NotificationOutboxItem> findByFlowId(String flowId, String executionId, int limit, int offset) {
         if (executionId != null && !executionId.isBlank()) {
             return jdbc.query("""
                     SELECT * FROM notification_outbox WHERE flow_id = ? AND execution_id = ?
-                    ORDER BY created_at DESC, id LIMIT ?
-                    """, MAPPER, flowId, executionId, limit);
+                    ORDER BY created_at DESC, id DESC LIMIT ? OFFSET ?
+                    """, MAPPER, flowId, executionId, limit, offset);
         }
         return jdbc.query("""
                 SELECT * FROM notification_outbox
                 WHERE flow_id = ?
-                ORDER BY created_at DESC
-                LIMIT ?
-                """, MAPPER, flowId, limit);
+                ORDER BY created_at DESC, id DESC
+                LIMIT ? OFFSET ?
+                """, MAPPER, flowId, limit, offset);
     }
 
-    public void retry(String id, Instant now) {
-        jdbc.update("""
+    public boolean retry(String id, Instant now) {
+        return jdbc.update("""
                 UPDATE notification_outbox
-                SET state = 'PENDING', attempts = 0, available_at = ?, lease_until = NULL, last_error = NULL
+                SET state = 'PENDING', attempts = 0, available_at = ?, lease_until = NULL, last_error = NULL, error_code = NULL
                 WHERE id = ? AND state IN ('FAILED', 'DEAD')
-                """, Timestamp.from(now), id);
+                """, Timestamp.from(now), id) == 1;
     }
 }

@@ -15,6 +15,9 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
 import java.util.UUID;
+import java.util.List;
+import java.util.Set;
+import java.util.HashSet;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
@@ -97,5 +100,36 @@ class NotificationOutboxRepositoryIntegrationTest {
         repository.markFailed(next.getId(), next.getOwner(), "403", now.plusSeconds(18), true);
         repository.retry(next.getId(), now.plusSeconds(19));
         assertEquals(1, repository.claim(now.plusSeconds(20), 60, 5).orElseThrow().getAttempts());
+    }
+
+    @Test void paginationIsStableAndNeverMixesExecutionsOrFlows() {
+        for (int index = 0; index < 55; index++) repository.enqueue(item("page-" + index));
+        NotificationOutboxItem other = item("other");
+        other.setExecutionId("other-execution"); repository.enqueue(other);
+        NotificationOutboxItem foreign = item("foreign");
+        foreign.setFlowId("other-flow"); repository.enqueue(foreign);
+        jdbc.update("UPDATE notification_outbox SET created_at='2026-11-04T00:00:00Z'");
+        List<NotificationOutboxItem> first = repository.findByFlowId("flow", "execution", 50, 0);
+        List<NotificationOutboxItem> second = repository.findByFlowId("flow", "execution", 50, 50);
+        assertEquals(50, first.size()); assertEquals(5, second.size());
+        Set<String> ids = new HashSet<>();
+        first.forEach(row -> assertTrue(ids.add(row.getId())));
+        second.forEach(row -> assertTrue(ids.add(row.getId())));
+        assertTrue(repository.findByFlowId("flow", "execution", 50, 100).isEmpty());
+    }
+
+    @Test void recreatedWorkerRecoversPersistedLeaseAndRetryNeverResendsSentOrActiveMessages() {
+        repository.enqueue(item("durable"));
+        Instant now = Instant.now();
+        NotificationOutboxItem old = repository.claim(now, 60, 5).orElseThrow();
+        assertFalse(repository.retry(old.getId(), now));
+        NotificationOutboxRepository restarted = new NotificationOutboxRepository(jdbc);
+        assertTrue(restarted.claim(now.plusSeconds(59), 60, 5).isEmpty());
+        NotificationOutboxItem recovered = restarted.claim(now.plusSeconds(61), 60, 5).orElseThrow();
+        assertEquals(old.getId(), recovered.getId());
+        restarted.markSent(recovered.getId(), recovered.getOwner(), now.plusSeconds(62));
+        assertFalse(restarted.retry(recovered.getId(), now.plusSeconds(63)));
+        assertFalse(restarted.retry("missing", now));
+        assertEquals(1, restarted.findByFlowId("flow", "execution", 50).size());
     }
 }

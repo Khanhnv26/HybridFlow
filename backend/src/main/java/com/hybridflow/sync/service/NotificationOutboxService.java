@@ -17,6 +17,7 @@ public interface NotificationOutboxService {
                 List<SyncConflict> conflicts);
     boolean processNext();
     List<NotificationOutboxItem> getNotifications(String flowId, String executionId, int limit);
+    List<NotificationOutboxItem> getNotifications(String flowId, String executionId, int limit, int offset);
     default List<NotificationOutboxItem> getNotifications(String flowId, int limit) {
         return getNotifications(flowId, null, limit);
     }

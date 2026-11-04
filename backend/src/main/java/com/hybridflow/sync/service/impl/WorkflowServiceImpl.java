@@ -135,6 +135,14 @@ public class WorkflowServiceImpl implements WorkflowService {
     }
 
     @Override
+    @Transactional(readOnly = true)
+    public List<NotificationOutboxItem> getNotifications(String flowId, String executionId, int limit, int offset) {
+        validateId(flowId);
+        if (offset < 0) throw new ValidationException("Vị trí trang thông báo không hợp lệ.");
+        return outboxService.getNotifications(flowId, executionId, Math.max(1, Math.min(limit, 500)), offset);
+    }
+
+    @Override
     @Transactional
     public void retryNotification(String id) {
         if (id == null || id.isBlank()) {

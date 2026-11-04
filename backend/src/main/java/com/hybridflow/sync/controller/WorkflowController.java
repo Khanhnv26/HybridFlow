@@ -64,8 +64,9 @@ public class WorkflowController {
     @GetMapping("/{flowId}/notifications")
     public List<NotificationOutboxItem> notifications(@PathVariable String flowId,
             @RequestParam(required = false) String executionId,
-            @RequestParam(defaultValue = "50") int limit) {
-        return workflowService.getNotifications(flowId, executionId, limit);
+            @RequestParam(defaultValue = "50") int limit,
+            @RequestParam(defaultValue = "0") int offset) {
+        return workflowService.getNotifications(flowId, executionId, limit, offset);
     }
 
     @PostMapping("/notifications/{id}/retry")

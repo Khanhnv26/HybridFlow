@@ -76,6 +76,8 @@ export const googleService = {
 };
 
 export const syncService = {
+  getNotificationPage: async (flowId: string, executionId: string, signal?: AbortSignal, offset = 0): Promise<NotificationOutboxItem[]> =>
+    (await apiClient.get(`/workflows/${encodeURIComponent(flowId)}/notifications`, { params: { executionId, limit: 50, offset }, signal })).data,
   getNotifications: async (flowId: string, executionId: string, signal?: AbortSignal): Promise<NotificationOutboxItem[]> =>
     (await apiClient.get(`/workflows/${encodeURIComponent(flowId)}/notifications`, { params: { executionId, limit: 500 }, signal })).data,
   retryNotification: async (id: string): Promise<void> => { await apiClient.post(`/notifications/${encodeURIComponent(id)}/retry`); },

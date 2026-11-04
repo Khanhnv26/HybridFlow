@@ -3,6 +3,7 @@ package com.hybridflow.sync.service.impl;
 import com.hybridflow.common.dto.ErrorDetails;
 import com.hybridflow.common.exception.ApplicationException;
 import com.hybridflow.common.exception.ErrorCode;
+import com.hybridflow.common.exception.ValidationException;
 import com.hybridflow.common.util.ErrorClassifier;
 import com.hybridflow.common.util.ErrorContext;
 import com.hybridflow.notification.dto.response.TelegramDeliveryResult;
@@ -169,5 +170,13 @@ public class NotificationOutboxServiceImpl implements NotificationOutboxService 
     }
 
     @Override
-    public void retry(String id) { repository.retry(id, Instant.now()); }
+    public void retry(String id) {
+        if (!repository.retry(id, Instant.now())) throw new ValidationException(
+                "Thông báo không còn ở trạng thái lỗi hoặc không tồn tại. Hãy tải lại danh sách.");
+    }
+
+    @Override
+    public List<NotificationOutboxItem> getNotifications(String flowId, String executionId, int limit, int offset) {
+        return repository.findByFlowId(flowId, executionId, Math.max(1, Math.min(limit, 500)), offset);
+    }
 }

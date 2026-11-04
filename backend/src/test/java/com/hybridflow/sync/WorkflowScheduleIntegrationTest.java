@@ -13,6 +13,11 @@ import com.hybridflow.connection.service.GoogleOAuthService;
 import com.hybridflow.sync.dto.request.RunSyncRequest;
 import com.hybridflow.sync.dto.response.RunSyncResponse;
 import com.hybridflow.sync.model.WorkflowJob;
+import com.hybridflow.sync.model.NotificationOutboxItem;
+import com.hybridflow.sync.repository.NotificationOutboxRepository;
+import com.hybridflow.sync.service.NotificationOutboxService;
+import com.hybridflow.notification.service.TelegramNotificationService;
+import com.hybridflow.notification.dto.response.TelegramDeliveryResult;
 import com.hybridflow.sync.repository.WorkflowJobRepository;
 import com.hybridflow.sync.service.SyncExecutionService;
 import com.hybridflow.sync.service.WorkflowJobService;
@@ -34,6 +39,8 @@ import java.sql.Timestamp;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Set;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -88,6 +95,9 @@ class WorkflowScheduleIntegrationTest {
     @Autowired GoogleCredentialService credentials;
     @Autowired PlatformTransactionManager transactions;
     @Autowired ObjectMapper mapper;
+    @Autowired NotificationOutboxRepository outbox;
+    @Autowired NotificationOutboxService delivery;
+    @MockBean TelegramNotificationService telegram;
     @MockBean GoogleOAuthService oauth;
     @MockBean SyncExecutionService execution;
     @MockBean Clock clock;
@@ -265,28 +275,39 @@ class WorkflowScheduleIntegrationTest {
         assertEquals(1, jdbc.queryForObject("SELECT count(*) FROM workflow_jobs WHERE state='SUCCEEDED'", Integer.class));
     }
 
-    @Test void independentJobsRunConcurrentlyAndLiveWorkerCannotLoseAnExpiredLease() throws Exception {
-        save("one", true);
-        workflows.saveDefinition("two", mapper.readTree(graph(true).replace("\"file\"", "\"another-file\"")));
-        due("one"); due("two"); scheduler.enqueueDue();
-        CountDownLatch started = new CountDownLatch(2);
+    @Test void fiveIndependentJobsRunConcurrentlyAndLiveWorkersCannotLoseExpiredLeases() throws Exception {
+        for (int index = 0; index < 5; index++) {
+            String id = "parallel-" + index;
+            workflows.saveDefinition(id, mapper.readTree(graph(true).replace("\"file\"", "\"file-" + index + "\"")));
+            due(id);
+        }
+        scheduler.enqueueDue();
+        CountDownLatch started = new CountDownLatch(5);
         CountDownLatch release = new CountDownLatch(1);
         when(execution.executeSync(any())).thenAnswer(invocation -> {
             started.countDown();
-            assertTrue(release.await(5, TimeUnit.SECONDS));
+            assertTrue(release.await(15, TimeUnit.SECONDS));
             return RunSyncResponse.builder().status("SUCCESS").build();
         });
-        try (ExecutorService pool = Executors.newFixedThreadPool(2)) {
-            Future<?> first = pool.submit(scheduler::runNext);
-            Future<?> second = pool.submit(scheduler::runNext);
+        try (ExecutorService pool = Executors.newFixedThreadPool(5)) {
+            List<Future<?>> workers = new ArrayList<>();
+            for (int index = 0; index < 5; index++) workers.add(pool.submit(scheduler::runNext));
             try {
-                assertTrue(started.await(5, TimeUnit.SECONDS), "Both independent jobs must enter execution");
+                assertTrue(started.await(10, TimeUnit.SECONDS), "All five independent jobs must enter execution before any completes");
                 now.set(now.get().plusSeconds(121));
                 assertNull(claim(), "Row lock fences active workers even after lease expires");
+                outbox.enqueue(NotificationOutboxItem.builder().flowId("other-flow").executionId("other-execution")
+                        .actionNodeId("telegram").channel("TELEGRAM").destination("test-chat").sourceType("RECORD")
+                        .sourceKey("parallel-notification").message("Test only").availableAt(Instant.now().minusSeconds(1)).build());
+                when(telegram.sendDetailedMessage("Test only", "test-chat"))
+                        .thenReturn(TelegramDeliveryResult.builder().success(true).build());
+                assertTrue(delivery.processNext(), "Outbox must progress while all five sync workers remain blocked");
+                assertEquals("SENT", outbox.findByFlowId("other-flow", "other-execution", 50).getFirst().getState());
             } finally { release.countDown(); }
-            first.get(5, TimeUnit.SECONDS); second.get(5, TimeUnit.SECONDS);
+            for (Future<?> worker : workers) worker.get(10, TimeUnit.SECONDS);
         }
-        assertEquals(2, jdbc.queryForObject("SELECT count(*) FROM workflow_jobs WHERE state='SUCCEEDED'", Integer.class));
+        assertEquals(5, jdbc.queryForObject("SELECT count(*) FROM workflow_jobs WHERE state='SUCCEEDED'", Integer.class));
+        verify(execution, times(5)).executeSync(any());
     }
 
     @Test void manualAndScheduledRunsUseIdenticalIdentityAndColumnScope() throws Exception {
