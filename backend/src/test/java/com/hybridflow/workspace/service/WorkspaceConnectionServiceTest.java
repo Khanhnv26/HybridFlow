@@ -9,9 +9,16 @@ import com.hybridflow.common.exception.ValidationException;
 import com.hybridflow.connection.service.GoogleCredentialService;
 import com.hybridflow.connection.service.GoogleOAuthService;
 import com.hybridflow.connection.support.GoogleTokenCipher;
+import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
+import com.hybridflow.connector.google.dto.request.UpdateCellRequest;
+import com.hybridflow.connector.google.dto.response.SheetDataResponse;
+import com.hybridflow.connector.google.dto.response.SpreadsheetMetadataResponse;
+import com.hybridflow.connector.google.dto.response.UpdateCellResponse;
+import com.hybridflow.connector.google.service.GoogleSheetsService;
 import com.hybridflow.notification.client.TelegramApiClient;
 import com.hybridflow.workspace.dto.request.CreateTelegramConnectionRequest;
 import com.hybridflow.workspace.dto.response.WorkspaceConnectionResponse;
+import com.hybridflow.workspace.model.WorkspaceRole;
 import com.hybridflow.workspace.repository.WorkspaceConnectionRepository;
 import com.hybridflow.workspace.service.impl.WorkspaceConnectionServiceImpl;
 import com.hybridflow.workspace.support.PendingGoogleConnection;
@@ -25,11 +32,14 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
@@ -56,6 +66,8 @@ class WorkspaceConnectionServiceTest {
     @Mock
     private GoogleTokenCipher cipher;
     @Mock
+    private GoogleSheetsService googleSheetsService;
+    @Mock
     private HttpSession session;
 
     private WorkspaceConnectionService service;
@@ -68,7 +80,7 @@ class WorkspaceConnectionServiceTest {
     void setup() {
         service = new WorkspaceConnectionServiceImpl(
                 catalog, access, currentUser, audit, oauth, credentials,
-                pendingStore, telegramClient, cipher);
+                pendingStore, telegramClient, cipher, googleSheetsService);
     }
 
     @Test
@@ -178,5 +190,79 @@ class WorkspaceConnectionServiceTest {
         service.delete(workspaceId, "c1");
         verify(catalog).delete(workspaceId, "c1");
         verify(audit).append(workspaceId, userId, "CONNECTION_DELETED", "c1");
+    }
+
+    @Test
+    void getSheetMetadataResolvesTokenAndDelegates() {
+        when(access.requireMember(workspaceId)).thenReturn(WorkspaceRole.ADMIN);
+        when(catalog.findState(workspaceId, "c1")).thenReturn(Optional.of("ACTIVE"));
+        when(catalog.findGoogleConnectionId(workspaceId, "c1")).thenReturn(Optional.of("g-1"));
+        when(credentials.resolveAccessToken("g-1")).thenReturn("token-123");
+
+        SpreadsheetMetadataResponse expected = new SpreadsheetMetadataResponse("sheet-1", "Inventory", List.of());
+        when(googleSheetsService.getMetadata(any())).thenReturn(expected);
+
+        SpreadsheetMetadataResponse res = service.getSheetMetadata(workspaceId, "c1", "sheet-1");
+
+        assertEquals("Inventory", res.getTitle());
+    }
+
+    @Test
+    void readSheetSetsTokenAndReturnsData() {
+        when(access.requireMember(workspaceId)).thenReturn(WorkspaceRole.ADMIN);
+        when(catalog.findState(workspaceId, "c1")).thenReturn(Optional.of("ACTIVE"));
+        when(catalog.findGoogleConnectionId(workspaceId, "c1")).thenReturn(Optional.of("g-1"));
+        when(credentials.resolveAccessToken("g-1")).thenReturn("token-123");
+
+        ReadSheetRequest req = ReadSheetRequest.builder().spreadsheetId("sheet-1").sheetname("Tab1").build();
+        SheetDataResponse expected = SheetDataResponse.builder().spreadsheetId("sheet-1").totalRows(10).build();
+        when(googleSheetsService.readSheet(req)).thenReturn(expected);
+
+        SheetDataResponse res = service.readSheet(workspaceId, "c1", req);
+
+        assertEquals(10, res.getTotalRows());
+        assertEquals("token-123", req.getAccessToken());
+    }
+
+    @Test
+    void updateCellSetsTokenAndDelegates() {
+        when(access.requireMember(workspaceId)).thenReturn(WorkspaceRole.ADMIN);
+        when(catalog.findState(workspaceId, "c1")).thenReturn(Optional.of("ACTIVE"));
+        when(catalog.findGoogleConnectionId(workspaceId, "c1")).thenReturn(Optional.of("g-1"));
+        when(credentials.resolveAccessToken("g-1")).thenReturn("token-123");
+
+        UpdateCellRequest req = UpdateCellRequest.builder().spreadsheetId("sheet-1").range("A1").value("X").build();
+        UpdateCellResponse expected = UpdateCellResponse.builder().success(true).build();
+        when(googleSheetsService.updateCell(req)).thenReturn(expected);
+
+        UpdateCellResponse res = service.updateCell(workspaceId, "c1", req);
+
+        assertTrue(res.isSuccess());
+        assertEquals("token-123", req.getAccessToken());
+    }
+
+    @Test
+    void getTelegramInfoDecryptsTokenAndCallsGetMe() throws Exception {
+        when(access.requireMember(workspaceId)).thenReturn(WorkspaceRole.ADMIN);
+        when(catalog.findEncryptedTelegramToken(workspaceId, "t1")).thenReturn(Optional.of("enc-tok"));
+        when(cipher.decrypt("enc-tok")).thenReturn("raw-bot-token");
+        when(telegramClient.callWithToken("raw-bot-token", "getMe", null))
+                .thenReturn(mapper.readTree("{\"username\":\"alerts_bot\",\"first_name\":\"Alerts\"}"));
+
+        Map<String, Object> info = service.getTelegramInfo(workspaceId, "t1");
+
+        assertEquals(true, info.get("configured"));
+        assertEquals("alerts_bot", info.get("botUsername"));
+        assertEquals("Alerts", info.get("firstName"));
+    }
+
+    @Test
+    void editorWithoutGrantCannotAccessConnection() {
+        when(access.requireMember(workspaceId)).thenReturn(WorkspaceRole.EDITOR);
+        when(catalog.hasEditorGrant(workspaceId, "c1")).thenReturn(false);
+
+        ApplicationException ex = assertThrows(ApplicationException.class,
+                () -> service.getSheetMetadata(workspaceId, "c1", "sheet-1"));
+        assertEquals(ErrorCode.ACCESS_DENIED, ex.getErrorCode());
     }
 }

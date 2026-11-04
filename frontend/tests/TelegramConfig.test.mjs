@@ -16,7 +16,7 @@ const bundle = await build({
   bundle: true, write: false, platform: 'node', format: 'esm', jsx: 'automatic',
   plugins: [{ name: 'test-boundaries', setup(builder) {
     builder.onResolve({ filter: /services\/api$/ }, () => ({ path: 'api', namespace: 'test-api' }));
-    builder.onLoad({ filter: /.*/, namespace: 'test-api' }, () => ({ contents: 'export const telegramService = globalThis.__telegramApi;' }));
+    builder.onLoad({ filter: /.*/, namespace: 'test-api' }, () => ({ contents: 'export const telegramService = globalThis.__telegramApi; export const workspaceConnectionService = globalThis.__workspaceConnectionApi || { list: async () => [] };' }));
     builder.onResolve({ filter: /^(?:react(?:\/.*)?|lucide-react)$/ }, args => ({ path: import.meta.resolve(args.path), external: true }));
   } }],
 });

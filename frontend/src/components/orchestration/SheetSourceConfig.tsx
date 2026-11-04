@@ -2,15 +2,17 @@ import { errorMessage } from '../../services/errors';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink, Link, Play, RefreshCw, Save, X } from 'lucide-react';
 import { ExcelIcon } from '../icons/BrandIcons';
-import { googleService } from '../../services/api';
+import { googleService, workspaceConnectionService } from '../../services/api';
 import { chooseSheetTab, parseSheetSource } from '../../services/sheetSource';
 import type {
   OrchestrationNodeData,
   SheetDataResponse,
   SpreadsheetMetadataResponse,
+  WorkspaceConnectionResponse,
 } from '../../types';
 
 interface Props {
+  workspaceId?: string;
   data: OrchestrationNodeData;
   disabled: boolean;
   connected: boolean;
@@ -27,6 +29,7 @@ interface Props {
 
 
 export function SheetSourceConfig({
+  workspaceId,
   data,
   disabled,
   connected,
@@ -36,6 +39,10 @@ export function SheetSourceConfig({
   onSave,
   onReadSource,
 }: Props) {
+  const [workspaceConnections, setWorkspaceConnections] = useState<WorkspaceConnectionResponse[]>([]);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string>(
+    () => (typeof data.connectionId === 'string' ? data.connectionId : '')
+  );
   const [link, setLink] = useState(
     () =>
       data.spreadsheetUrl ||
@@ -63,6 +70,23 @@ export function SheetSourceConfig({
   }, [link]);
 
   useEffect(() => {
+    if (!workspaceId) return;
+    const controller = new AbortController();
+    workspaceConnectionService.list(workspaceId, controller.signal)
+      .then((items) => {
+        if (controller.signal.aborted) return;
+        const googleConns = items.filter((c) => c.provider === 'GOOGLE' && c.state === 'ACTIVE');
+        setWorkspaceConnections(googleConns);
+        setSelectedConnectionId((prev) => {
+          if (prev && googleConns.some((c) => c.id === prev)) return prev;
+          return googleConns[0]?.id || '';
+        });
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [workspaceId, connectionVersion]);
+
+  useEffect(() => {
     const controller = new AbortController();
     setMetadata(null);
     setSelectedTab('');
@@ -71,21 +95,31 @@ export function SheetSourceConfig({
     setNotice('');
     previewRequest.current?.abort();
     setPreviewing(false);
-    if (!parsed.source || !connected) {
+    const hasConnection = workspaceId
+      ? !!selectedConnectionId && workspaceConnections.some((c) => c.id === selectedConnectionId)
+      : connected;
+    if (!parsed.source || !hasConnection) {
       setLoading(false);
       return () => controller.abort();
     }
     const source = parsed.source;
     setLoading(true);
     const timer = setTimeout(() => {
-      const accessToken = localStorage.getItem('google_access_token');
-      if (!accessToken) {
-        setError('Kết nối Google để tải danh sách trang tính.');
-        setLoading(false);
-        return;
-      }
-      void googleService
-        .getMetadata(accessToken, source.spreadsheetId, controller.signal)
+      const fetchMetadata = workspaceId && selectedConnectionId
+        ? workspaceConnectionService.getSheetMetadata(workspaceId, selectedConnectionId, source.spreadsheetId, controller.signal)
+        : (() => {
+            const accessToken = localStorage.getItem('google_access_token');
+            if (!accessToken) {
+              setError('Kết nối Google để tải danh sách trang tính.');
+              setLoading(false);
+              return null;
+            }
+            return googleService.getMetadata(accessToken, source.spreadsheetId, controller.signal);
+          })();
+
+      if (!fetchMetadata) return;
+
+      void fetchMetadata
         .then((result) => {
           if (controller.signal.aborted) return;
           if (result.spreadsheetId !== source.spreadsheetId)
@@ -109,7 +143,7 @@ export function SheetSourceConfig({
       clearTimeout(timer);
       controller.abort();
     };
-  }, [parsed.source, connected, connectionVersion, retry, data.spreadsheetId, data.sheetName]);
+  }, [parsed.source, connected, connectionVersion, retry, data.spreadsheetId, data.sheetName, workspaceId, selectedConnectionId, workspaceConnections]);
   useEffect(() => () => previewRequest.current?.abort(), []);
 
   const selected =
@@ -117,7 +151,10 @@ export function SheetSourceConfig({
       ? metadata?.sheets.find((tab) => tab.title === selectedTab)
       : undefined;
   const busy = disabled || saving || previewing;
-  const ready = connected && !!selected && !loading && !busy;
+  const connectionActive = workspaceId
+    ? !!selectedConnectionId && workspaceConnections.some((c) => c.id === selectedConnectionId)
+    : connected;
+  const ready = connectionActive && !!selected && !loading && !busy;
   const readPreview = async () => {
     if (!ready || !parsed.source) return;
     const controller = new AbortController();
@@ -127,16 +164,26 @@ export function SheetSourceConfig({
     setPreview(null);
     setError('');
     try {
-      const accessToken = localStorage.getItem('google_access_token');
-      if (!accessToken) throw new Error('Kết nối Google trước khi xem trước dữ liệu.');
-      const result = await (onReadSource
-        ? onReadSource(parsed.source.spreadsheetId, selectedTab, controller.signal)
-        : googleService.readSheet(
-            accessToken,
+      const result = await (workspaceId && selectedConnectionId
+        ? workspaceConnectionService.readSheet(
+            workspaceId,
+            selectedConnectionId,
             parsed.source.spreadsheetId,
             selectedTab,
             controller.signal,
-          ));
+          )
+        : (() => {
+            const accessToken = localStorage.getItem('google_access_token');
+            if (!accessToken) throw new Error('Kết nối Google trước khi xem trước dữ liệu.');
+            return onReadSource
+              ? onReadSource(parsed.source.spreadsheetId, selectedTab, controller.signal)
+              : googleService.readSheet(
+                  accessToken,
+                  parsed.source.spreadsheetId,
+                  selectedTab,
+                  controller.signal,
+                );
+          })());
       if (!controller.signal.aborted) setPreview(result);
     } catch (error) {
       if (!controller.signal.aborted) setError(errorMessage(error));
@@ -150,6 +197,7 @@ export function SheetSourceConfig({
     setError('');
     try {
       await onSave({
+        ...(workspaceId && selectedConnectionId ? { connectionId: selectedConnectionId } : {}),
         spreadsheetId: parsed.source.spreadsheetId,
         spreadsheetTitle: metadata?.title,
         sheetName: selected.title,
@@ -202,22 +250,65 @@ export function SheetSourceConfig({
         </div>
         <div className="hf-modal-body">
           <div className="p-4 space-y-4 text-sm">
-            <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-700 px-3 py-2.5">
-              <span className="text-xs text-gray-400">
-                Google: {connected ? 'Đã kết nối' : 'Chưa kết nối'}
-              </span>
-              <button
-                disabled={busy || connecting}
-                onClick={() => void connect()}
-                className="text-xs text-blue-300 font-medium disabled:opacity-40"
-              >
-                {connecting
-                  ? 'Đang mở Google...'
-                  : connected
-                    ? 'Kết nối tài khoản khác'
-                    : 'Kết nối Google'}
-              </button>
-            </div>
+            {workspaceId ? (
+              <div className="space-y-2 rounded-lg border border-gray-700 p-3 bg-[#11141c]">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs text-gray-300 font-medium">
+                    Kết nối Google trong Workspace
+                  </span>
+                  <button
+                    type="button"
+                    disabled={busy || connecting}
+                    onClick={() => void connect()}
+                    className="text-xs text-blue-300 font-medium disabled:opacity-40"
+                  >
+                    {connecting ? 'Đang mở Google...' : '+ Thêm kết nối'}
+                  </button>
+                </div>
+                {workspaceConnections.length === 0 ? (
+                  <p className="text-xs text-amber-300">
+                    Chưa có kết nối Google trong workspace. Bấm "+ Thêm kết nối" để cấp quyền.
+                  </p>
+                ) : (
+                  <select
+                    disabled={busy}
+                    value={selectedConnectionId}
+                    onChange={(event) => {
+                      previewRequest.current?.abort();
+                      setSelectedConnectionId(event.target.value);
+                      setMetadata(null);
+                      setSelectedTab('');
+                      setPreview(null);
+                      setError('');
+                    }}
+                    className="w-full p-2 rounded bg-[#0b0e14] border border-gray-700 text-xs text-gray-200"
+                  >
+                    {workspaceConnections.map((conn) => (
+                      <option key={conn.id} value={conn.id}>
+                        {conn.name} ({conn.id})
+                      </option>
+                    ))}
+                  </select>
+                )}
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-700 px-3 py-2.5">
+                <span className="text-xs text-gray-400">
+                  Google: {connected ? 'Đã kết nối' : 'Chưa kết nối'}
+                </span>
+                <button
+                  disabled={busy || connecting}
+                  onClick={() => void connect()}
+                  className="text-xs text-blue-300 font-medium disabled:opacity-40"
+                >
+                  {connecting
+                    ? 'Đang mở Google...'
+                    : connected
+                      ? 'Kết nối tài khoản khác'
+                      : 'Kết nối Google'}
+                </button>
+              </div>
+            )}
             <label className="block space-y-2">
               <span className="flex items-center gap-2">
                 <Link size={14} />

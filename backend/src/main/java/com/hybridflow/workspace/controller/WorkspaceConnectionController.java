@@ -1,5 +1,10 @@
 package com.hybridflow.workspace.controller;
 
+import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
+import com.hybridflow.connector.google.dto.request.UpdateCellRequest;
+import com.hybridflow.connector.google.dto.response.SheetDataResponse;
+import com.hybridflow.connector.google.dto.response.SpreadsheetMetadataResponse;
+import com.hybridflow.connector.google.dto.response.UpdateCellResponse;
 import com.hybridflow.workspace.dto.request.CreateTelegramConnectionRequest;
 import com.hybridflow.workspace.dto.response.WorkspaceConnectionResponse;
 import com.hybridflow.workspace.service.WorkspaceConnectionService;
@@ -71,5 +76,32 @@ public class WorkspaceConnectionController {
     public void delete(@PathVariable UUID workspaceId,
                        @PathVariable String connectionId) {
         service.delete(workspaceId, connectionId);
+    }
+
+    @GetMapping("/{workspaceId}/connections/{connectionId}/sheets/metadata")
+    public SpreadsheetMetadataResponse getSheetMetadata(@PathVariable UUID workspaceId,
+                                                         @PathVariable String connectionId,
+                                                         @RequestParam String spreadsheetId) {
+        return service.getSheetMetadata(workspaceId, connectionId, spreadsheetId);
+    }
+
+    @PostMapping("/{workspaceId}/connections/{connectionId}/sheets/read")
+    public SheetDataResponse readSheet(@PathVariable UUID workspaceId,
+                                       @PathVariable String connectionId,
+                                       @RequestBody ReadSheetRequest request) {
+        return service.readSheet(workspaceId, connectionId, request);
+    }
+
+    @PostMapping("/{workspaceId}/connections/{connectionId}/sheets/update")
+    public UpdateCellResponse updateCell(@PathVariable UUID workspaceId,
+                                         @PathVariable String connectionId,
+                                         @RequestBody UpdateCellRequest request) {
+        return service.updateCell(workspaceId, connectionId, request);
+    }
+
+    @GetMapping("/{workspaceId}/connections/{connectionId}/telegram/info")
+    public Map<String, Object> getTelegramInfo(@PathVariable UUID workspaceId,
+                                               @PathVariable String connectionId) {
+        return service.getTelegramInfo(workspaceId, connectionId);
     }
 }

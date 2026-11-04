@@ -2,6 +2,11 @@ package com.hybridflow.workspace.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hybridflow.common.exception.GlobalExceptionHandler;
+import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
+import com.hybridflow.connector.google.dto.request.UpdateCellRequest;
+import com.hybridflow.connector.google.dto.response.SheetDataResponse;
+import com.hybridflow.connector.google.dto.response.SpreadsheetMetadataResponse;
+import com.hybridflow.connector.google.dto.response.UpdateCellResponse;
 import com.hybridflow.workspace.dto.request.CreateTelegramConnectionRequest;
 import com.hybridflow.workspace.dto.response.WorkspaceConnectionResponse;
 import com.hybridflow.workspace.service.WorkspaceConnectionService;
@@ -15,6 +20,7 @@ import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 
 import static org.mockito.ArgumentMatchers.any;
@@ -115,5 +121,52 @@ class WorkspaceConnectionControllerTest {
                 .andExpect(status().isOk());
 
         verify(service).delete(workspaceId, "c1");
+    }
+
+    @Test
+    void getSheetMetadataReturnsMetadata() throws Exception {
+        SpreadsheetMetadataResponse res = new SpreadsheetMetadataResponse("sheet-1", "Inventory", List.of());
+        when(service.getSheetMetadata(workspaceId, "c1", "sheet-1")).thenReturn(res);
+
+        mvc.perform(get("/api/v1/workspaces/" + workspaceId + "/connections/c1/sheets/metadata")
+                        .param("spreadsheetId", "sheet-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.title").value("Inventory"));
+    }
+
+    @Test
+    void readSheetReturnsData() throws Exception {
+        ReadSheetRequest req = ReadSheetRequest.builder().spreadsheetId("sheet-1").sheetname("Tab1").build();
+        SheetDataResponse res = SheetDataResponse.builder().spreadsheetId("sheet-1").totalRows(5).build();
+        when(service.readSheet(eq(workspaceId), eq("c1"), any())).thenReturn(res);
+
+        mvc.perform(post("/api/v1/workspaces/" + workspaceId + "/connections/c1/sheets/read")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalRows").value(5));
+    }
+
+    @Test
+    void updateCellReturnsResponse() throws Exception {
+        UpdateCellRequest req = UpdateCellRequest.builder().spreadsheetId("sheet-1").range("A1").value("V").build();
+        UpdateCellResponse res = UpdateCellResponse.builder().success(true).build();
+        when(service.updateCell(eq(workspaceId), eq("c1"), any())).thenReturn(res);
+
+        mvc.perform(post("/api/v1/workspaces/" + workspaceId + "/connections/c1/sheets/update")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(req)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.success").value(true));
+    }
+
+    @Test
+    void getTelegramInfoReturnsInfo() throws Exception {
+        when(service.getTelegramInfo(workspaceId, "t1"))
+                .thenReturn(Map.of("configured", true, "botUsername", "my_bot"));
+
+        mvc.perform(get("/api/v1/workspaces/" + workspaceId + "/connections/t1/telegram/info"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.botUsername").value("my_bot"));
     }
 }

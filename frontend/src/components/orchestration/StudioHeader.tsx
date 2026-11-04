@@ -1,6 +1,6 @@
 import React from 'react';
 import { ExcelIcon } from '../icons/BrandIcons';
-import { Play, RotateCcw, Clock, Layers, MoreHorizontal } from 'lucide-react';
+import { Play, RotateCcw, Clock, Layers, MoreHorizontal, Shield } from 'lucide-react';
 
 interface StudioHeaderProps {
   isRunning: boolean;
@@ -8,6 +8,7 @@ interface StudioHeaderProps {
   onResetLayout: () => void;
   onOpenTable: () => void;
   onConnectGoogle: () => void;
+  onManageConnections?: () => void;
   connected: boolean;
   autoActive: boolean;
   onAutoChange: (active: boolean) => void;
@@ -17,7 +18,7 @@ interface StudioHeaderProps {
 }
 
 export const StudioHeader: React.FC<StudioHeaderProps> = ({
-  isRunning, onRunWorkflow, onResetLayout, onOpenTable, onConnectGoogle,
+  isRunning, onRunWorkflow, onResetLayout, onOpenTable, onConnectGoogle, onManageConnections,
   connected, autoActive: isAutoActive, onAutoChange, intervalMs, onIntervalChange, onSaveWorkflow,
 }) => {
 
@@ -36,6 +37,18 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
             Đồng bộ dữ liệu 2 chiều <span className="font-normal text-gray-400">(Google Sheets ↔ Vault)</span>
           </h1>
         </div>
+        {onManageConnections && (
+          <button
+            type="button"
+            onClick={onManageConnections}
+            aria-label="Quản lý kết nối"
+            title="Quản lý kết nối Workspace"
+            className="flex h-9 items-center gap-1.5 rounded-lg border border-[#2d3748] bg-[#171b24] px-3 text-xs font-semibold text-gray-300 transition hover:bg-[#202532] hover:text-white"
+          >
+            <Shield size={14} className="text-blue-400" />
+            <span className="hidden sm:inline">Quản lý kết nối</span>
+          </button>
+        )}
         <button type="button" onClick={onConnectGoogle} aria-label="Kết nối tài khoản Google" title="Kết nối tài khoản Google" className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full border border-emerald-700 bg-emerald-950/40 text-xs font-bold text-emerald-300 transition hover:bg-emerald-900/50">
           {connected ? 'G' : '+'}
         </button>
@@ -68,7 +81,20 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
             <summary aria-label="Thao tác khác" title="Thao tác khác" className="flex h-9 w-9 cursor-pointer list-none items-center justify-center rounded-lg border border-[#2d3748] text-gray-400 hover:bg-[#202532] hover:text-white [&::-webkit-details-marker]:hidden">
               <MoreHorizontal size={18} />
             </summary>
-            <div className="absolute right-0 top-full z-50 mt-2 w-52 rounded-xl border border-[#2d3748] bg-[#171b24] p-1.5">
+            <div className="absolute right-0 top-full z-50 mt-2 w-52 rounded-xl border border-[#2d3748] bg-[#171b24] p-1.5 space-y-1">
+              {onManageConnections && (
+                <button
+                  type="button"
+                  disabled={isRunning}
+                  onClick={(event) => {
+                    onManageConnections();
+                    event.currentTarget.closest('details')?.removeAttribute('open');
+                  }}
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs text-gray-300 hover:bg-[#252d3b] hover:text-white"
+                >
+                  <Shield size={14} className="text-blue-400" /> Quản lý kết nối
+                </button>
+              )}
               <button type="button" disabled={isRunning} onClick={(event) => { onResetLayout(); event.currentTarget.closest('details')?.removeAttribute('open'); }} className="flex w-full items-center gap-2 rounded-lg px-3 py-2.5 text-left text-xs text-gray-300 hover:bg-[#252d3b] hover:text-white">
                 <RotateCcw size={14} /> Sắp xếp bố cục
               </button>

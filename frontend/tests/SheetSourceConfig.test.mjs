@@ -32,7 +32,7 @@ const bundle = await build({
           namespace: 'test-api',
         }));
         builder.onLoad({ filter: /.*/, namespace: 'test-api' }, () => ({
-          contents: 'export const googleService = globalThis.__sheetSourceApi;',
+          contents: 'export const googleService = globalThis.__sheetSourceApi; export const workspaceConnectionService = globalThis.__workspaceConnectionApi || { list: async () => [] };',
         }));
         builder.onResolve({ filter: /^(?:react(?:\/.*)?|lucide-react)$/ }, (args) => ({
           path: import.meta.resolve(args.path),

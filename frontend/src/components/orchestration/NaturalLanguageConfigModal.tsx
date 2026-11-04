@@ -46,13 +46,13 @@ export function NaturalLanguageConfigModal(props: Props) {
     disabled={disabled} onClose={onClose} onSave={settings => props.onSaveSource(node.id, settings)}
     onReadSource={props.onReadComparisonSource || (async () => { throw new Error('Chưa có bảng tính để đọc.'); })}
   />;
-  if (node.type === 'sheetsTrigger') return <SheetSourceConfig data={node.data} disabled={disabled}
+  if (node.type === 'sheetsTrigger') return <SheetSourceConfig workspaceId={props.workspaceId} data={node.data} disabled={disabled}
     connected={props.connected} connectionVersion={props.connectionVersion} onClose={onClose}
     onConnectGoogle={props.onConnectGoogle} onReadSource={(file, tab, signal) => props.onReadSource(node.id, file, tab, signal)}
     onSave={settings => props.onSaveSource(node.id, settings)} />;
   if (node.type === 'scheduleTrigger') return <ScheduleConfig workspaceId={props.workspaceId} workflowId={props.workflowId} data={node.data}
     disabled={disabled} onClose={onClose} onSave={settings => props.onSaveSource(node.id, settings)} />;
-  if (node.type === 'telegramAction') return <TelegramConfig data={node.data} disabled={disabled}
+  if (node.type === 'telegramAction') return <TelegramConfig workspaceId={props.workspaceId} data={node.data} disabled={disabled}
     notificationConnected={props.notificationConnected} availableColumns={props.availableColumns}
     previewRow={props.previewRow} previewConflict={props.previewConflict} onRetryNotification={props.onRetryNotification}
     onClose={onClose} onSave={settings => props.onSaveTelegram(node.id, settings)} />;

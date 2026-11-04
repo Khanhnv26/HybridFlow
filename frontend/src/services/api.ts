@@ -17,6 +17,7 @@ import type {
   Workspace,
   BusinessModule,
   TenantWorkflowSummary,
+  WorkspaceConnectionResponse,
 } from '../types';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '');
@@ -127,6 +128,67 @@ export const tenantWorkflowService = {
     (await apiClient.get<TenantWorkflowSummary[]>(`/workspaces/${encodeURIComponent(workspaceId)}/workflows`, { signal })).data,
   create: async (workspaceId: string, moduleId: string, name: string) =>
     (await apiClient.post<TenantWorkflowSummary>(`/workspaces/${encodeURIComponent(workspaceId)}/workflows`, { moduleId, name })).data,
+};
+
+export const workspaceConnectionService = {
+  list: async (workspaceId: string, signal?: AbortSignal) =>
+    (await apiClient.get<WorkspaceConnectionResponse[]>(`/workspaces/${encodeURIComponent(workspaceId)}/connections`, { signal })).data,
+  startGoogleOAuth: async (workspaceId: string, connectionName = 'Google Sheets') =>
+    (await apiClient.post<{ url: string }>(`/workspaces/${encodeURIComponent(workspaceId)}/connections/google/start`, null, { params: { connectionName } })).data,
+  completeGoogleOAuth: async (code: string, state: string) =>
+    (await apiClient.get<WorkspaceConnectionResponse>('/workspaces/connections/google/callback', { params: { code, state } })).data,
+  createTelegram: async (workspaceId: string, name: string, botToken: string) =>
+    (await apiClient.post<WorkspaceConnectionResponse>(`/workspaces/${encodeURIComponent(workspaceId)}/connections/telegram`, { name, botToken })).data,
+  grantRole: async (workspaceId: string, connectionId: string, role = 'EDITOR') => {
+    await apiClient.post(`/workspaces/${encodeURIComponent(workspaceId)}/connections/${encodeURIComponent(connectionId)}/grants`, null, { params: { role } });
+  },
+  revoke: async (workspaceId: string, connectionId: string) => {
+    await apiClient.post(`/workspaces/${encodeURIComponent(workspaceId)}/connections/${encodeURIComponent(connectionId)}/revoke`);
+  },
+  delete: async (workspaceId: string, connectionId: string) => {
+    await apiClient.delete(`/workspaces/${encodeURIComponent(workspaceId)}/connections/${encodeURIComponent(connectionId)}`);
+  },
+  getSheetMetadata: async (workspaceId: string, connectionId: string, spreadsheetId: string, signal?: AbortSignal) =>
+    (await apiClient.get<SpreadsheetMetadataResponse>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/connections/${encodeURIComponent(connectionId)}/sheets/metadata`,
+      { params: { spreadsheetId }, signal }
+    )).data,
+  readSheet: async (
+    workspaceId: string,
+    connectionId: string,
+    spreadsheetId: string,
+    sheetname?: string,
+    signal?: AbortSignal,
+    columnTypes?: Record<string, 'TEXT' | 'NUMBER'>,
+  ) =>
+    (await apiClient.post<SheetDataResponse>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/connections/${encodeURIComponent(connectionId)}/sheets/read`,
+      {
+        spreadsheetId,
+        sheetname,
+        ...(columnTypes && Object.keys(columnTypes).length ? { columnTypes } : {}),
+      },
+      { signal }
+    )).data,
+  updateCell: async (
+    workspaceId: string,
+    connectionId: string,
+    payload: {
+      spreadsheetId: string;
+      range: string;
+      value: string;
+      valueType?: 'TEXT' | 'NUMBER';
+    }
+  ) =>
+    (await apiClient.post<UpdateCellResponse>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/connections/${encodeURIComponent(connectionId)}/sheets/update`,
+      payload
+    )).data,
+  getTelegramInfo: async (workspaceId: string, connectionId: string, signal?: AbortSignal) =>
+    (await apiClient.get<{ configured: boolean; botUsername: string; firstName?: string }>(
+      `/workspaces/${encodeURIComponent(workspaceId)}/connections/${encodeURIComponent(connectionId)}/telegram/info`,
+      { signal }
+    )).data,
 };
 
 export const googleService = {

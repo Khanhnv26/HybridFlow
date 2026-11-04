@@ -20,7 +20,15 @@ export function createTenantEditorApi(client: Pick<AxiosInstance, 'get' | 'post'
     const { data } = await client.get(base);
     version = data.definitionVersion;
     bindings = data.connectionBindings || [];
-    return data.definition;
+    const def = (data.definition || {}) as { nodes?: unknown[]; edges?: unknown[] };
+    if (Array.isArray(def.nodes) && Array.isArray(bindings) && bindings.length > 0) {
+      def.nodes = def.nodes.map((node: unknown) => {
+        const n = node as { id: string; data?: Record<string, unknown> };
+        const found = bindings.find(b => b.nodeId === n.id);
+        return found ? { ...n, data: { ...n.data, connectionId: found.connectionId } } : n;
+      });
+    }
+    return def;
   };
   const notifications = async (executionId: string, offset: number, limit: number, signal?: AbortSignal) => {
     const context = contextFor(executionId);
@@ -35,10 +43,17 @@ export function createTenantEditorApi(client: Pick<AxiosInstance, 'get' | 'post'
       load: async (_id: string) => load(),
       save: async (_id: string, definition: unknown) => {
         if (version === undefined) await load();
-        // Keep credentials outside the graph. Only persisted workspace bindings are reused.
         const graph = definition as { nodes: unknown[]; edges: unknown[] };
+        const extractedBindings = Array.isArray(graph.nodes)
+          ? (graph.nodes as Array<{ id?: string; data?: { connectionId?: string } }>)
+              .filter(n => n?.id && n?.data?.connectionId)
+              .map(n => ({ nodeId: n.id as string, connectionId: n.data!.connectionId as string }))
+          : [];
+        const payloadBindings = extractedBindings.length > 0 ? extractedBindings : bindings;
         const { data } = await client.put(base, {
-          expectedVersion: version, definition: { nodes: graph.nodes, edges: graph.edges }, connectionBindings: bindings,
+          expectedVersion: version,
+          definition: { nodes: graph.nodes, edges: graph.edges },
+          connectionBindings: payloadBindings,
         });
         version = data.definitionVersion;
         bindings = data.connectionBindings || [];

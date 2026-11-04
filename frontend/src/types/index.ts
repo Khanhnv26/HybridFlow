@@ -61,6 +61,7 @@ export interface ActivityEvent {
 }
 
 export interface WorkflowNodeData extends Record<string, unknown> {
+  connectionId?: string;
   label: string;
   status?: string;
   sheetName?: string;
@@ -144,6 +145,7 @@ export interface DataTransformNodeData extends OrchestrationNodeData {
 }
 
 export interface OrchestrationNodeData extends Record<string, unknown> {
+  connectionId?: string;
   columnTypes?: Record<string, 'TEXT' | 'NUMBER'>;
   writeBackBySource?: Record<string, boolean>;
   transformSourceCount?: number;
@@ -363,4 +365,12 @@ export interface TenantWorkflowSummary {
   name: string;
   enabled: boolean;
   definitionVersion: number;
+}
+
+export interface WorkspaceConnectionResponse {
+  id: string;
+  name: string;
+  provider: 'GOOGLE' | 'TELEGRAM';
+  state: string;
+  usageCount: number;
 }

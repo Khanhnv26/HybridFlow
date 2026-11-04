@@ -11,16 +11,18 @@ import {
   X,
 } from 'lucide-react';
 import { TelegramIcon } from '../icons/BrandIcons';
-import { telegramService } from '../../services/api';
+import { telegramService, workspaceConnectionService } from '../../services/api';
 import { conflictVariables, invalidTemplateVariables, renderTemplatePreview } from '../../services/notificationPreview';
 import type {
   OrchestrationNodeData,
   TelegramBotInfo,
   TelegramLink,
   TelegramRecipient,
+  WorkspaceConnectionResponse,
 } from '../../types';
 
 interface Props {
+  workspaceId?: string;
   data: OrchestrationNodeData;
   disabled: boolean;
   notificationConnected: boolean;
@@ -34,6 +36,7 @@ interface Props {
 
 
 export function TelegramConfig({
+  workspaceId,
   data,
   disabled,
   notificationConnected,
@@ -44,6 +47,10 @@ export function TelegramConfig({
   onClose,
   onSave,
 }: Props) {
+  const [workspaceConnections, setWorkspaceConnections] = useState<WorkspaceConnectionResponse[]>([]);
+  const [selectedConnectionId, setSelectedConnectionId] = useState<string>(
+    () => (typeof data.connectionId === 'string' ? data.connectionId : '')
+  );
   const [type, setType] = useState<TelegramRecipient['recipientType']>(
     data.telegramRecipientType || (data.chatId?.startsWith('-') ? 'GROUP' : 'PRIVATE'),
   );
@@ -60,6 +67,42 @@ export function TelegramConfig({
   const [busy, setBusy] = useState(false);
   const [saving, setSaving] = useState(false);
   const [waitingError, setWaitingError] = useState('');
+
+  useEffect(() => {
+    if (!workspaceId) return;
+    const controller = new AbortController();
+    workspaceConnectionService.list(workspaceId, controller.signal)
+      .then((items) => {
+        if (controller.signal.aborted) return;
+        const teleConns = items.filter((c) => c.provider === 'TELEGRAM' && c.state === 'ACTIVE');
+        setWorkspaceConnections(teleConns);
+        setSelectedConnectionId((prev) => {
+          if (prev && teleConns.some((c) => c.id === prev)) return prev;
+          return teleConns[0]?.id || '';
+        });
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [workspaceId]);
+
+  useEffect(() => {
+    if (!workspaceId || !selectedConnectionId) return;
+    const controller = new AbortController();
+    workspaceConnectionService.getTelegramInfo(workspaceId, selectedConnectionId, controller.signal)
+      .then((info) => {
+        if (!controller.signal.aborted && info.botUsername) {
+          setBot({
+            configured: info.configured,
+            username: info.botUsername,
+            displayName: info.firstName || info.botUsername,
+            canJoinGroups: true,
+            message: '',
+          });
+        }
+      })
+      .catch(() => {});
+    return () => controller.abort();
+  }, [workspaceId, selectedConnectionId]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -193,6 +236,7 @@ export function TelegramConfig({
     setError('');
     try {
       await onSave({
+        ...(workspaceId && selectedConnectionId ? { connectionId: selectedConnectionId } : {}),
         chatId: recipient.chatId,
         telegramRecipientType: type,
         telegramRecipientName: recipient.name,
@@ -235,6 +279,38 @@ export function TelegramConfig({
           </button>
         </div>
         <div className="hf-modal-body p-4 space-y-4 text-sm">
+          {workspaceId && (
+            <div className="space-y-2 rounded-lg border border-gray-700 p-3 bg-[#11141c]">
+              <div className="flex items-center justify-between">
+                <span className="text-xs text-gray-300 font-medium">
+                  Bot Telegram trong Workspace
+                </span>
+                {bot?.username && (
+                  <span className="text-xs text-blue-400 font-medium">
+                    @{bot.username}
+                  </span>
+                )}
+              </div>
+              {workspaceConnections.length === 0 ? (
+                <p className="text-xs text-amber-300">
+                  Chưa có bot Telegram trong workspace. Hãy cấu hình kết nối Telegram trong mục Quản lý kết nối.
+                </p>
+              ) : (
+                <select
+                  disabled={disabled || busy || saving}
+                  value={selectedConnectionId}
+                  onChange={(e) => setSelectedConnectionId(e.target.value)}
+                  className="w-full p-2 rounded bg-[#0b0e14] border border-gray-700 text-xs text-gray-200"
+                >
+                  {workspaceConnections.map((conn) => (
+                    <option key={conn.id} value={conn.id}>
+                      {conn.name} ({conn.id})
+                    </option>
+                  ))}
+                </select>
+              )}
+            </div>
+          )}
           {loading ? (
             <p role="status" className="text-gray-400 text-xs flex items-center gap-2">
               <RefreshCw size={14} className="animate-spin" />

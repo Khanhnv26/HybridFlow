@@ -20,6 +20,7 @@ import { NodePalette } from './components/orchestration/NodePalette';
 import { DataTransformConfigModal } from './components/orchestration/DataTransformConfigModal';
 import { RouterConditionConfigModal } from './components/orchestration/RouterConditionConfigModal';
 import { NaturalLanguageConfigModal } from './components/orchestration/NaturalLanguageConfigModal';
+import { WorkspaceConnectionsModal } from './components/workspace/WorkspaceConnectionsModal';
 import { RunHistoryDrawer } from './components/orchestration/RunHistoryDrawer';
 import { ConflictModal } from './components/nocode/ConflictModal';
 import { DataTableModal } from './components/nocode/DataTableModal';
@@ -175,6 +176,7 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [connected, setConnected] = useState(() => !!localStorage.getItem('google_access_token')?.startsWith('gconn-'));
   const [connectionVersion, setConnectionVersion] = useState(0);
+  const [isConnectionsModalOpen, setIsConnectionsModalOpen] = useState(false);
   const [autoActive, setAutoActive] = useState(false);
   const [intervalMs, setIntervalMs] = useState(300000);
   const popup = useRef<Window | null>(null);
@@ -803,6 +805,7 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
         onConnectGoogle={() => {
           void connectGoogle().catch((error) => showToast(message(error)));
         }}
+        onManageConnections={workspaceId ? () => setIsConnectionsModalOpen(true) : undefined}
       />
       {bootstrapRequired && (
         <div
@@ -1033,6 +1036,15 @@ export default function App({ userId, workspaceId, workflowId: propWorkflowId }:
         }}
         onUpdateCell={updateCell}
       />
+      {isConnectionsModalOpen && workspaceId && (
+        <WorkspaceConnectionsModal
+          workspaceId={workspaceId}
+          onClose={() => setIsConnectionsModalOpen(false)}
+          onConnectionsChanged={() => {
+            setConnectionVersion((v) => v + 1);
+          }}
+        />
+      )}
     </div>
   );
 }
