@@ -21,7 +21,10 @@ Controller gọi service interface; SQL nằm trong repository. DTO request/resp
 - Session cookie HttpOnly; mọi request ghi có CSRF. Restart backend hiện yêu cầu đăng nhập lại.
 - `workflowId` ổn định do server tạo. `contextId` phụ thuộc workspace, workflow và cấu hình nguồn; đổi cấu hình không dùng nhầm checkpoint.
 - Lịch sử theo workflow gồm nhiều context. Xem Outbox hoặc resolve conflict phải dùng context của chính bản ghi đó.
-- API cũ `/workflows`, `/sync`, `/conflicts`, `/sync-conflicts`, `/notifications` không có workspace bị chặn ở Security Filter. Không mở lại để sửa lỗi giao diện.
+- API cũ `/workflows`, `/sync`, `/conflicts`, `/sync-conflicts`, `/notifications`, `/connections` không có workspace bị chặn ở Security Filter. Không mở lại để sửa lỗi giao diện.
+- Đọc/ghi Sheet, chạy workflow và thiết lập Telegram dùng connection đã lưu trong workspace; không dùng token Google trong localStorage hoặc bot toàn cục. Viewer không được gọi thao tác trực tiếp qua connection. Editor cần grant connection ngoài quyền workflow.
+- OAuth Sheets dùng callback workspace riêng, kiểm tra state một lần và đúng người khởi tạo. Popup chỉ gửi kết quả và connection ID về origin frontend; không gửi token. Lưu credential và catalog connection trong cùng transaction.
+- Mỗi workflow hiện dùng một connection Google cho các nguồn Sheet. Chọn nhiều connection khác nhau sẽ bị từ chối; mỗi khối Telegram có thể chọn bot riêng.
 - Chỉ đổi/xóa migration chưa áp dụng. Nâng schema đã dùng cần migration mới.
 
 ## API đang dùng
@@ -46,7 +49,7 @@ Lưu workflow gửi `expectedVersion`, `definition`, `connectionBindings`. Versi
 
 ## Những việc còn phải hoàn thiện trước khi đóng chặng
 
-1. Hoàn tất UI quản lý connection theo workspace và chuyển các thao tác preview/Google/Telegram còn dùng luồng kết nối cũ sang connection đã phân quyền. Không coi có màn hình đăng nhập là đã hoàn thành multi-tenant.
+1. Nghiệm thu Google consent/callback và gửi Telegram trên tài khoản thật; kiểm thử tự động dùng provider giả lập. UI quản lý connection, preview/ghi Sheet và thiết lập Telegram đã dùng kết nối workspace.
 2. Thống nhất quyền Editor tạo workflow, quyền xử lý conflict và quyền dùng connection; kiểm thử cả thiếu grant và thu hồi grant.
 3. Kiểm thử quota workspace dưới tải cạnh tranh; COUNT trước claim chưa đủ chống hai worker nhận vượt quota. Hoàn thiện rate limit theo connector.
 4. Kiểm kê dữ liệu cũ, lập mapping workspace/workflow/context/connection, reconcile journal PENDING, rồi mới thêm NOT NULL/FK bằng migration tiếp theo. Không tự gán mọi dữ liệu cho người đầu tiên đăng nhập.
@@ -56,6 +59,8 @@ Lưu workflow gửi `expectedVersion`, `definition`, `connectionBindings`. Versi
 
 Hai tài khoản ở hai workspace: thử thay workspace/workflow/context/execution/conflict/notification/connection ID; mọi đọc/ghi ngoài quyền phải bị từ chối. Kiểm thử PostgreSQL cho create → read → update → list workflow, không chỉ mock repository. Giữ các kiểm thử checkpoint, journal, Outbox, lease và chạy song song của lõi đồng bộ.
 
-Kiểm tra ngày 04/11/2026: 311 test backend đạt trên PostgreSQL tạm, 0 skipped; 139 test frontend đạt và production build thành công. Hai lỗi API legacy vượt quyền và query workflow sai cột đã có kiểm thử hồi quy. Google/Telegram được giả lập trong kiểm thử tự động.
+Các kiểm thử hồi quy gồm chặn API legacy, quyền Viewer, từ chối connection ngoài workspace, callback OAuth/state/rollback credential, chọn đúng bot và giữ binding khi chạy workflow/đưa thông báo vào Outbox. Google/Telegram được giả lập trong kiểm thử tự động.
+
+Kiểm tra ngày 04/11/2026: 335 test backend đạt trên PostgreSQL tạm, 0 skipped; 148 test frontend đạt và production build thành công. Build còn cảnh báo kích thước bundle lớn hơn 500 kB.
 
 Lệnh chạy và quy tắc vận hành xem [README](../README.md) và [Vận hành](VAN_HANH.md). SRS trong thư mục gốc là tài liệu yêu cầu; trạng thái ở đây không thay thế nghiệm thu SRS.

@@ -35,11 +35,13 @@ test('saving keeps workspace bindings and version without persisting browser cre
   const { editor, calls } = fixture((method) => method === 'get'
     ? { definitionVersion: 7, definition: { nodes: [], edges: [] }, connectionBindings: [{ nodeId: 'sheet', connectionId: 'owned' }] }
     : { definitionVersion: 8, connectionBindings: [{ nodeId: 'sheet', connectionId: 'owned' }] });
-  await editor.workflow.save('ignored-client-id', { nodes: [], edges: [], accessToken: 'must-not-save', flowId: 'untrusted' });
-  assert.deepEqual(calls[1][2], { expectedVersion: 7, definition: { nodes: [], edges: [] },
+  const nodes = [{ id: 'sheet', data: { connectionId: 'owned' } }];
+  await editor.workflow.save('ignored-client-id', { nodes, edges: [], accessToken: 'must-not-save', flowId: 'untrusted' });
+  assert.deepEqual(calls[1][2], { expectedVersion: 7, definition: { nodes, edges: [] },
     connectionBindings: [{ nodeId: 'sheet', connectionId: 'owned' }] });
   await editor.workflow.save('ignored-client-id', { nodes: [], edges: [] });
   assert.equal(calls[2][2].expectedVersion, 8);
+  assert.deepEqual(calls[2][2].connectionBindings, []);
 });
 
 test('version conflict is returned to the editor without retrying or overwriting', async () => {

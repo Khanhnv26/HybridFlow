@@ -2,6 +2,7 @@ package com.hybridflow.sync.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.hybridflow.common.exception.ApplicationException;
+import com.hybridflow.common.exception.ErrorCode;
 import com.hybridflow.connection.support.GoogleTokenCipher;
 import com.hybridflow.notification.client.TelegramApiClient;
 import com.hybridflow.notification.dto.response.TelegramDeliveryResult;
@@ -35,6 +36,10 @@ public class TelegramSenderServiceImpl implements NotificationSender {
 
     @Override
     public TelegramDeliveryResult send(NotificationOutboxItem item) {
+        if (item.getWorkspaceId() != null && item.getConnectionId() == null) {
+            return TelegramDeliveryResult.builder().success(false).retryable(false)
+                    .errorCode(ErrorCode.CONNECTION_REQUIRED.name()).error("Thông báo thiếu kết nối Telegram của workspace.").build();
+        }
         if (item.getWorkspaceId() != null && item.getConnectionId() != null) {
             Optional<String> encrypted = workspaceConnections.findEncryptedTelegramToken(
                     item.getWorkspaceId(), item.getConnectionId());

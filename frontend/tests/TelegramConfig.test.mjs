@@ -56,6 +56,39 @@ test('test sends to the draft destination without saving it or requiring a confl
   assert.equal(saves[0].chatId, '456'); assert.equal(saves[0].telegramRecipientName, 'Alex');
 });
 
+test('workspace recipient checks and test messages never use the global bot', async () => {
+  defaults();
+  let globalCalls = 0;
+  api.getBot = async () => { globalCalls++; throw new Error('Global bot forbidden'); };
+  api.sendTest = async () => { globalCalls++; throw new Error('Global bot forbidden'); };
+  const calls = [];
+  globalThis.__workspaceConnectionApi = { list: async () => [
+    { id: 'selected', provider: 'TELEGRAM', state: 'ACTIVE', name: 'Selected bot' },
+  ] };
+  globalThis.__workspaceTelegramClients = { selected: {
+    getBot: async () => ({ configured: true, username: 'SelectedBot', canJoinGroups: true, message: '' }),
+    checkRecipient: async (id, type) => { calls.push(['check', id]); return recipient(id, type); },
+    sendTest: async (id, type) => { calls.push(['send', id]); return { success: true, message: 'Selected bot sent', recipient: recipient(id, type) }; },
+  } };
+  await mount(props({ workspaceId: 'ws', data: { ...data, connectionId: 'selected' } }));
+  await act(async () => button('Gửi tin nhắn thử').props.onClick());
+  assert.deepEqual(calls, [['check', '123'], ['send', '123']]);
+  assert.equal(globalCalls, 0);
+  assert.match(text(renderer.root), /Selected bot sent/);
+});
+
+test('changing workspace bot clears the old recipient before allowing a test', async () => {
+  defaults();
+  globalThis.__workspaceConnectionApi = { list: async () => ['one', 'two'].map(id => ({ id, provider: 'TELEGRAM', state: 'ACTIVE', name: id })) };
+  const setup = { getBot: async () => ({ configured: true, username: 'Bot', canJoinGroups: true, message: '' }),
+    checkRecipient: async (id, type) => recipient(id, type) };
+  globalThis.__workspaceTelegramClients = { one: setup, two: setup };
+  await mount(props({ workspaceId: 'ws', data: { ...data, connectionId: 'one' } }));
+  assert.equal(button('Gửi tin nhắn thử').props.disabled, false);
+  await act(async () => renderer.root.findByType('select').props.onChange({ target: { value: 'two' } }));
+  assert.equal(button('Gửi tin nhắn thử').props.disabled, true);
+});
+
 test('group connection auto-selects only the confirmed destination', async () => {
   defaults(); const types = [];
   api.startLink = async type => { types.push(type); return { ...link(), url: 'https://t.me/TestBot?startgroup=hf_session' }; };

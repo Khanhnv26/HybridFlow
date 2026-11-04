@@ -15,13 +15,13 @@ Cấu hình môi trường hoặc `backend/application-local.properties` (không
 - `DB_URL`, `DB_USER`, `DB_PASSWORD`: PostgreSQL; mặc định database `hybridflow` tại localhost:5432.
 - `GOOGLE_LOGIN_CLIENT_ID`, `GOOGLE_LOGIN_CLIENT_SECRET`: Google Login/OIDC.
 - `APP_LOGIN_CALLBACK`: mặc định `http://localhost:3000/login/oauth2/code/google`.
-- `GOOGLE_REDIRECT_URI`: callback cấp quyền Google Sheets; phải khớp luồng kết nối và Google Cloud.
+- `GOOGLE_WORKSPACE_REDIRECT_URI`: callback cấp quyền Sheets cho workspace, mặc định `http://localhost:8080/api/v1/workspaces/connections/google/callback`; đăng ký chính xác URI này trong Google Cloud.
 - `GOOGLE_CREDENTIAL_ENCRYPTION_KEY`: Base64 của 32 byte ngẫu nhiên; giữ ổn định khi còn connection đã lưu.
 - `FRONTEND_ORIGIN`: mặc định `http://localhost:3000`.
 - `SCHEDULER_ENABLED`, `SCHEDULER_WORKERS`: mặc định true và 5. Tắt scheduler trong lúc chuyển dữ liệu sang workspace.
 - `SESSION_COOKIE_SECURE`: true khi production dùng HTTPS.
 
-Google Sheets OAuth hiện đọc `backend/src/main/resources/client_secret.json` (được Git bỏ qua). Telegram dùng connection workspace; một số công cụ kết nối cũ còn phụ thuộc `TELEGRAM_BOT_TOKEN` trong giai đoạn chuyển đổi.
+Google Sheets OAuth đọc `backend/src/main/resources/client_secret.json` (được Git bỏ qua). Chọn connection Google cho nguồn Sheet và bot Telegram cho từng khối gửi tin trong workspace. Editor dùng connection được cấp quyền; Viewer không được sửa Sheet hoặc gửi tin thử. Hiện các nguồn Sheet trong một workflow cần dùng cùng một connection Google.
 
 Mở hai terminal:
 

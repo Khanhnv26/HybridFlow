@@ -8,6 +8,10 @@ import com.hybridflow.common.exception.ErrorCode;
 import com.hybridflow.common.exception.ValidationException;
 import com.hybridflow.connection.service.GoogleCredentialService;
 import com.hybridflow.connection.service.GoogleOAuthService;
+import com.hybridflow.connection.view.GoogleOAuthCallbackRenderer;
+import com.hybridflow.notification.service.TelegramSetupService;
+import com.hybridflow.notification.dto.response.TelegramBotInfoResponse;
+import com.hybridflow.notification.dto.response.TelegramTestResponse;
 import com.hybridflow.connection.support.GoogleTokenCipher;
 import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
 import com.hybridflow.connector.google.dto.request.UpdateCellRequest;
@@ -68,6 +72,9 @@ class WorkspaceConnectionServiceTest {
     private GoogleTokenCipher cipher;
     @Mock
     private GoogleSheetsService googleSheetsService;
+    @Mock private TelegramSetupService telegramSetup;
+    @Mock private GoogleOAuthCallbackRenderer callbackRenderer;
+    @Mock private GoogleConnectionRegistrationService googleRegistration;
     @Mock
     private HttpSession session;
 
@@ -81,7 +88,7 @@ class WorkspaceConnectionServiceTest {
     void setup() {
         service = new WorkspaceConnectionServiceImpl(
                 catalog, access, currentUser, audit, oauth, credentials,
-                pendingStore, telegramClient, cipher, googleSheetsService);
+                pendingStore, telegramClient, cipher, googleSheetsService, telegramSetup, callbackRenderer, googleRegistration);
     }
 
     @Test
@@ -95,9 +102,35 @@ class WorkspaceConnectionServiceTest {
     }
 
     @Test
+    void viewerCannotSendTelegramTest() {
+        when(access.requireMember(workspaceId)).thenReturn(WorkspaceRole.VIEWER);
+        ApplicationException error = assertThrows(ApplicationException.class,
+                () -> service.sendTelegramTest(workspaceId, "bot", "123", "PRIVATE"));
+        assertEquals(ErrorCode.ACCESS_DENIED, error.getErrorCode());
+        verify(telegramSetup, never()).sendTest(any(), any(), any());
+    }
+
+    @Test
+    void telegramTestResolvesWorkspaceBotAndLinkUsesCurrentUserScope() {
+        when(access.requireMember(workspaceId)).thenReturn(WorkspaceRole.EDITOR);
+        when(catalog.hasEditorGrant(workspaceId, "bot")).thenReturn(true);
+        when(catalog.findState(workspaceId, "bot")).thenReturn(Optional.of("ACTIVE"));
+        when(catalog.findEncryptedTelegramToken(workspaceId, "bot")).thenReturn(Optional.of("encrypted"));
+        when(cipher.decrypt("encrypted")).thenReturn("selected-token");
+        when(currentUser.requireUserId()).thenReturn(userId);
+        when(telegramSetup.sendTest("selected-token", "123", "PRIVATE")).thenReturn(new TelegramTestResponse());
+        service.sendTelegramTest(workspaceId, "bot", "123", "PRIVATE");
+        service.startTelegramLink(workspaceId, "bot", "PRIVATE");
+        verify(telegramSetup).sendTest("selected-token", "123", "PRIVATE");
+        verify(telegramSetup).startLink(workspaceId + ":bot:" + userId, "selected-token", "PRIVATE");
+        verify(telegramClient, never()).call(any(), any());
+    }
+
+    @Test
     void startGoogleOAuthSavesPendingAndReturnsUrl() {
         when(currentUser.requireUserId()).thenReturn(userId);
-        when(oauth.buildAuthorizationUrl(any())).thenReturn("https://accounts.google.com/o/oauth2/v2/auth?state=123");
+        when(oauth.buildAuthorizationUrl(any(), eq("http://localhost:8080/api/v1/workspaces/connections/google/callback")))
+                .thenReturn("https://accounts.google.com/o/oauth2/v2/auth?state=123");
 
         String url = service.startGoogleOAuth(workspaceId, "My Sheets", session);
 
@@ -126,8 +159,9 @@ class WorkspaceConnectionServiceTest {
         when(pendingStore.consume(session, "state-1")).thenReturn(pending);
         when(currentUser.requireUserId()).thenReturn(userId);
         GoogleTokenResponse tokenResponse = new GoogleTokenResponse();
-        when(oauth.exChangeCode("code-1")).thenReturn(tokenResponse);
-        when(credentials.store(tokenResponse)).thenReturn("gconn-123");
+        when(oauth.exChangeCode("code-1", "http://localhost:8080/api/v1/workspaces/connections/google/callback")).thenReturn(tokenResponse);
+        when(googleRegistration.register(workspaceId, userId, "My Sheets", tokenResponse))
+                .thenReturn(new WorkspaceConnectionResponse("gconn-123", "My Sheets", "GOOGLE", "ACTIVE", 0));
 
         WorkspaceConnectionResponse response = service.completeGoogleOAuth("code-1", "state-1", session);
 
@@ -135,8 +169,7 @@ class WorkspaceConnectionServiceTest {
         assertEquals("gconn-123", response.getId());
         assertEquals("My Sheets", response.getName());
         assertEquals("GOOGLE", response.getProvider());
-        verify(catalog).insertCatalog("gconn-123", workspaceId, "GOOGLE", "My Sheets", "ACTIVE");
-        verify(audit).append(workspaceId, userId, "CONNECTION_CREATED", "gconn-123");
+        verify(googleRegistration).register(workspaceId, userId, "My Sheets", tokenResponse);
     }
 
     @Test
@@ -255,10 +288,11 @@ class WorkspaceConnectionServiceTest {
     @Test
     void getTelegramInfoDecryptsTokenAndCallsGetMe() throws Exception {
         when(access.requireMember(workspaceId)).thenReturn(WorkspaceRole.ADMIN);
+        when(catalog.findState(workspaceId, "t1")).thenReturn(Optional.of("ACTIVE"));
         when(catalog.findEncryptedTelegramToken(workspaceId, "t1")).thenReturn(Optional.of("enc-tok"));
         when(cipher.decrypt("enc-tok")).thenReturn("raw-bot-token");
-        when(telegramClient.callWithToken("raw-bot-token", "getMe", null))
-                .thenReturn(mapper.readTree("{\"username\":\"alerts_bot\",\"first_name\":\"Alerts\"}"));
+        when(telegramSetup.botInfo("raw-bot-token"))
+                .thenReturn(new TelegramBotInfoResponse(true, "alerts_bot", "Alerts", true, "Ready"));
 
         Map<String, Object> info = service.getTelegramInfo(workspaceId, "t1");
 

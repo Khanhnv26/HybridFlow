@@ -56,7 +56,7 @@ public class WorkspaceConnectionRepository {
     public List<WorkspaceConnectionResponse> listConnections(UUID workspaceId) {
         return jdbc.query("""
                 SELECT c.id, c.name, c.provider, c.state,
-                       COUNT(b.node_id)::int AS usage_count
+                       COUNT(DISTINCT b.workflow_id)::int AS usage_count
                 FROM workspace_connections c
                 LEFT JOIN workflow_connection_bindings b ON b.workspace_id = c.workspace_id AND b.connection_id = c.id
                 WHERE c.workspace_id = ?

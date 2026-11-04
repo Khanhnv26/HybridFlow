@@ -49,11 +49,10 @@ export function createTenantEditorApi(client: Pick<AxiosInstance, 'get' | 'post'
               .filter(n => n?.id && n?.data?.connectionId)
               .map(n => ({ nodeId: n.id as string, connectionId: n.data!.connectionId as string }))
           : [];
-        const payloadBindings = extractedBindings.length > 0 ? extractedBindings : bindings;
         const { data } = await client.put(base, {
           expectedVersion: version,
           definition: { nodes: graph.nodes, edges: graph.edges },
-          connectionBindings: payloadBindings,
+          connectionBindings: extractedBindings,
         });
         version = data.definitionVersion;
         bindings = data.connectionBindings || [];

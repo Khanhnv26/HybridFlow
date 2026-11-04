@@ -5,6 +5,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.hybridflow.auth.service.CurrentUserService;
 import com.hybridflow.common.exception.ApplicationException;
 import com.hybridflow.common.exception.ErrorCode;
+import com.hybridflow.common.exception.ValidationException;
 import com.hybridflow.connection.service.GoogleCredentialService;
 import com.hybridflow.sync.dto.request.ResolveConflictRequest;
 import com.hybridflow.sync.dto.request.RunSyncRequest;
@@ -254,15 +255,7 @@ public class TenantWorkflowServiceImpl implements TenantWorkflowService {
         access.requireRun(workspaceId, workflowId);
         TenantWorkflowRow row = workflows.findWorkflow(workspaceId, workflowId)
                 .orElseThrow(() -> new ApplicationException(ErrorCode.RESOURCE_NOT_FOUND));
-        List<ConnectionBindingItem> bindings = workflows.findBindings(workspaceId, workflowId);
-        String accessToken = null;
-        for (ConnectionBindingItem b : bindings) {
-            Optional<String> googleConnId = connections.findGoogleConnectionId(workspaceId, b.getConnectionId());
-            if (googleConnId.isPresent()) {
-                accessToken = credentials.resolveAccessToken(googleConnId.get());
-                break;
-            }
-        }
+        String accessToken = googleAccessForWorkflow(workspaceId, workflowId);
         RunSyncRequest plan = planService.createPlan(workspaceId, workflowId, row.getDefinitionJson(), accessToken);
         plan.setBootstrapConfirmed(bootstrapConfirmed);
         RunSyncResponse response = syncExecutionService.executeSync(plan);
@@ -348,19 +341,28 @@ public class TenantWorkflowServiceImpl implements TenantWorkflowService {
         access.requireEdit(workspaceId, workflowId);
         workflows.findConflict(workspaceId, workflowId, contextId, conflictId)
                 .orElseThrow(() -> new ApplicationException(ErrorCode.RESOURCE_NOT_FOUND));
-        String accessToken = request.getAccessToken();
-        if (accessToken == null || accessToken.isBlank()) {
-            List<ConnectionBindingItem> bindings = workflows.findBindings(workspaceId, workflowId);
-            for (ConnectionBindingItem b : bindings) {
-                Optional<String> googleConnId = connections.findGoogleConnectionId(workspaceId, b.getConnectionId());
-                if (googleConnId.isPresent()) {
-                    accessToken = credentials.resolveAccessToken(googleConnId.get());
-                    break;
-                }
-            }
-        }
+        String accessToken = googleAccessForWorkflow(workspaceId, workflowId);
         SyncConflict resolved = syncConflictService.resolveConflict(conflictId, request.getResolvedValue(), accessToken);
         audit.append(workspaceId, currentUser.requireUserId(), "CONFLICT_RESOLVED", conflictId.toString());
         return resolved;
+    }
+
+    private String googleAccessForWorkflow(UUID workspaceId, String workflowId) {
+        WorkspaceRole role = workspaces.requireMember(workspaceId);
+        String reference = null;
+        for (ConnectionBindingItem binding : workflows.findBindings(workspaceId, workflowId)) {
+            if (role == WorkspaceRole.EDITOR && !connections.hasEditorGrant(workspaceId, binding.getConnectionId())) {
+                throw new ApplicationException(ErrorCode.ACCESS_DENIED);
+            }
+            Optional<String> google = connections.findGoogleConnectionId(workspaceId, binding.getConnectionId());
+            if (google.isPresent()) {
+                if (reference != null && !reference.equals(google.get())) {
+                    throw new ValidationException("Các nguồn trong một luồng cần dùng cùng kết nối Google.");
+                }
+                reference = google.get();
+            }
+        }
+        if (reference == null) throw new ApplicationException(ErrorCode.CONNECTION_REQUIRED);
+        return credentials.resolveAccessToken(reference);
     }
 }

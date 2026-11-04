@@ -10,6 +10,7 @@ import com.hybridflow.connector.google.dto.response.UpdateCellResponse;
 import com.hybridflow.workspace.dto.request.CreateTelegramConnectionRequest;
 import com.hybridflow.workspace.dto.response.WorkspaceConnectionResponse;
 import com.hybridflow.workspace.service.WorkspaceConnectionService;
+import com.hybridflow.connection.dto.GoogleOAuthCallbackResponse;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -53,6 +54,7 @@ class WorkspaceConnectionControllerTest {
     void startGoogleOAuthReturnsUrl() throws Exception {
         when(service.startGoogleOAuth(eq(workspaceId), eq("Google Sheets"), any()))
                 .thenReturn("https://auth.google.com");
+        when(service.googleCallbackOrigin()).thenReturn("http://localhost:8080");
 
         mvc.perform(post("/api/v1/workspaces/" + workspaceId + "/connections/google/start"))
                 .andExpect(status().isOk())
@@ -61,15 +63,15 @@ class WorkspaceConnectionControllerTest {
 
     @Test
     void completeGoogleOAuthReturnsConnection() throws Exception {
-        when(service.completeGoogleOAuth(eq("code-1"), eq("state-1"), any()))
-                .thenReturn(new WorkspaceConnectionResponse("c1", "Sheets", "GOOGLE", "ACTIVE", 0));
+        when(service.completeGoogleOAuthPage(eq("code-1"), eq("state-1"), org.mockito.ArgumentMatchers.isNull(), any()))
+                .thenReturn(new GoogleOAuthCallbackResponse(200, "<html>WORKSPACE_GOOGLE_CONNECTED</html>"));
 
         mvc.perform(get("/api/v1/workspaces/connections/google/callback")
                         .param("code", "code-1")
                         .param("state", "state-1"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value("c1"))
-                .andExpect(jsonPath("$.name").value("Sheets"));
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().contentTypeCompatibleWith(MediaType.TEXT_HTML))
+                .andExpect(org.springframework.test.web.servlet.result.MockMvcResultMatchers.content().string("<html>WORKSPACE_GOOGLE_CONNECTED</html>"));
     }
 
     @Test

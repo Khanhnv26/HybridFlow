@@ -327,6 +327,9 @@ class TenantWorkflowServiceTest {
         when(currentUser.requireUserId()).thenReturn(userId);
         SyncConflict conflict = SyncConflict.builder().id(99L).flowId("ctx-1").build();
         when(workflows.findConflict(workspaceId, workflowId, "ctx-1", 99L)).thenReturn(Optional.of(conflict));
+        when(workflows.findBindings(workspaceId, workflowId)).thenReturn(List.of(new ConnectionBindingItem("sheet", "owned")));
+        when(connections.findGoogleConnectionId(workspaceId, "owned")).thenReturn(Optional.of("owned"));
+        when(credentials.resolveAccessToken("owned")).thenReturn("workspace-token");
 
         ResolveConflictRequest request = new ResolveConflictRequest();
         request.setResolvedValue("val-1");
@@ -335,7 +338,7 @@ class TenantWorkflowServiceTest {
 
         verify(access).requireContext(workspaceId, workflowId, "ctx-1");
         verify(access).requireEdit(workspaceId, workflowId);
-        verify(syncConflictService).resolveConflict(99L, "val-1", "token-1");
+        verify(syncConflictService).resolveConflict(99L, "val-1", "workspace-token");
         verify(audit).append(workspaceId, userId, "CONFLICT_RESOLVED", "99");
     }
 }

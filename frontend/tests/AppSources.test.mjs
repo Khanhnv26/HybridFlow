@@ -104,6 +104,7 @@ async function mount(options = {}) {
       }),
     ],
   ]);
+  if (options.noLegacyToken) storage.delete('google_access_token');
   if (options.editorProps) {
     const { userId, workspaceId, workflowId } = options.editorProps;
     storage.set(`hybridflow:draft:${userId}:${workspaceId}:${workflowId}`, JSON.stringify(options.draft));
@@ -122,10 +123,44 @@ async function mount(options = {}) {
   api.syncService = { getNotifications: async () => [], ...options.syncService };
   api.telegramService = {};
   api.apiClient = options.apiClient || {};
+  api.workspaceConnectionService = options.workspaceConnectionService || {};
   await act(async () => {
     renderer = create(React.createElement(App, options.editorProps));
   });
 }
+
+test('fresh workspace runs and reads sources without a legacy Google token', async context => {
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  const calls = [], reads = [];
+  const first = source('a', 'file-a', 'Tab A');
+  first.data.connectionId = 'workspace-google';
+  const draft = { nodes: [first,
+    { id: 'diff', type: 'diffEngine', position: { x: 0, y: 0 }, data: { uniqueKey: 'id', conflictPolicy: 'SOURCE_WINS' } },
+    { id: 'vault', type: 'storageAction', position: { x: 0, y: 0 }, data: { tableName: 'vault' } }],
+    edges: [{ source: 'a', sourceHandle: 'out', target: 'diff', targetHandle: 'in' },
+      { source: 'diff', sourceHandle: 'clean', target: 'vault', targetHandle: 'in' }] };
+  api.googleService = { readSheet: async () => { throw new Error('Legacy reader must not be used'); } };
+  await mount({ noLegacyToken: true, editorProps: { userId: 'user', workspaceId: 'workspace', workflowId: 'workflow', workspaceRole: 'OWNER' }, draft,
+    workspaceConnectionService: {
+      getSheetMetadata: async () => ({ spreadsheetId: 'file-a', title: 'Workspace file', sheets: [] }),
+      readSheet: async (...args) => { reads.push(args); return rows('file-a', 'Tab A', 1); },
+    },
+    apiClient: {
+      get: async url => ({ data: url.endsWith('/history') || url.endsWith('/conflicts') ? []
+        : { definition: draft, definitionVersion: 1, connectionBindings: [{ nodeId: 'a', connectionId: 'workspace-google' }] } }),
+      put: async (url, body) => { calls.push(['save', url, body]); return { data: { definitionVersion: 2, connectionBindings: body.connectionBindings } }; },
+      post: async url => { calls.push(['run', url]); return { data: { flowId: 'context', executionId: 'run', status: 'SUCCESS', cleanRecordIds: [], conflicts: [], notificationsQueued: 0 } }; },
+    },
+  });
+  for (let attempt = 0; attempt < 6; attempt++) await act(async () => new Promise(setImmediate));
+  const run = renderer.root.findAllByType('button').find(node => text(node).includes('Chạy thử luồng'));
+  await act(async () => run.props.onClick());
+  assert.ok(calls.some(call => call[0] === 'run'), text(renderer.root));
+  assert.ok(reads.length > 0);
+  assert.ok(reads.every(args => args[0] === 'workspace' && args[1] === 'workspace-google'));
+  assert.equal(localStorage.getItem('google_access_token'), null);
+  assert.equal(JSON.stringify(calls[0][2]).includes('accessToken'), false);
+});
 
 test('workspace editor opens historical outbox through the execution context and never calls legacy workflow APIs', async context => {
   context.mock.timers.enable({ apis: ['setTimeout'] });

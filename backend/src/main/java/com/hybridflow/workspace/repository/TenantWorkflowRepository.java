@@ -158,6 +158,15 @@ public class TenantWorkflowRepository {
                         """, workspaceId, workflowId, binding.getNodeId(), binding.getConnectionId());
             }
         }
+        jdbc.update("""
+                UPDATE workflow_definitions d SET google_connection_id=(
+                    SELECT b.connection_id FROM workflow_connection_bindings b
+                    JOIN workspace_connections c ON c.workspace_id=b.workspace_id AND c.id=b.connection_id
+                    JOIN google_connections g ON g.id=c.id
+                    WHERE b.workspace_id=d.workspace_id AND b.workflow_id=d.flow_id AND c.state='ACTIVE'
+                    ORDER BY b.node_id LIMIT 1)
+                WHERE d.workspace_id=? AND d.flow_id=?
+                """, workspaceId, workflowId);
     }
 
     public List<ConnectionBindingItem> findBindings(UUID workspaceId, String workflowId) {

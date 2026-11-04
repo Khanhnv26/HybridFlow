@@ -112,12 +112,6 @@ public class WorkflowJobServiceImpl implements WorkflowJobService {
                     break;
                 }
             }
-            if (accessToken == null) {
-                String legacyConnection = definitions.findConnection(job.getWorkflowId()).orElse(null);
-                if (legacyConnection != null) {
-                    accessToken = credentials.resolveAccessToken(legacyConnection);
-                }
-            }
             request = tenantRunPlanService.createPlan(job.getWorkspaceId(), job.getWorkflowId(), job.getDefinition(), accessToken);
         } else {
             String connection = definitions.findConnection(job.getWorkflowId()).orElseThrow(GoogleReconnectRequiredException::new);

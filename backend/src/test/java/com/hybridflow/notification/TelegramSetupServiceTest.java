@@ -21,6 +21,41 @@ import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
 class TelegramSetupServiceTest {
+    @Test void scopedTestUsesOnlyTheSelectedBot() throws Exception {
+        when(client.callWithToken("selected-token", "getChat", Map.of("chat_id", "123")))
+                .thenReturn(json("{\"id\":123,\"type\":\"private\",\"first_name\":\"Selected\"}"));
+        when(client.callWithToken(eq("selected-token"), eq("sendMessage"), anyMap()))
+                .thenReturn(json("{\"message_id\":1}"));
+        assertTrue(service.sendTest("selected-token", "123", "PRIVATE").isSuccess());
+        verify(client, never()).call(any(), any());
+        verify(client).callWithToken(eq("selected-token"), eq("sendMessage"), anyMap());
+    }
+
+    @Test void scopedLinksRejectOtherUsersAndKeepBotUpdateCachesSeparate() throws Exception {
+        when(client.callWithToken(eq("bot-a"), eq("getMe"), anyMap())).thenReturn(json("{\"username\":\"BotA\"}"));
+        when(client.callWithToken(eq("bot-b"), eq("getMe"), anyMap())).thenReturn(json("{\"username\":\"BotB\"}"));
+        when(client.callWithToken(any(), eq("getWebhookInfo"), anyMap())).thenReturn(json("{\"url\":\"\"}"));
+        TelegramLinkResponse first = service.startLink("workspace-a:bot-a:user-a", "bot-a", "PRIVATE");
+        TelegramLinkResponse second = service.startLink("workspace-b:bot-b:user-b", "bot-b", "PRIVATE");
+        when(client.callWithToken(eq("bot-a"), eq("getUpdates"), anyMap())).thenReturn(update(first, "private", first.getCommand()));
+        when(client.callWithToken(eq("bot-b"), eq("getUpdates"), anyMap())).thenReturn(json("[]"));
+        assertEquals("CONNECTED", service.poll("workspace-a:bot-a:user-a", "bot-a", first.getId()).getStatus());
+        assertThrows(com.hybridflow.common.exception.ApplicationException.class,
+                () -> service.poll("workspace-a:bot-a:another-user", "bot-a", first.getId()));
+        assertThrows(com.hybridflow.common.exception.ApplicationException.class,
+                () -> service.poll("workspace-b:bot-b:user-b", "bot-b", first.getId()));
+        assertEquals("WAITING", service.poll("workspace-b:bot-b:user-b", "bot-b", second.getId()).getStatus());
+        verify(client).callWithToken(eq("bot-a"), eq("getUpdates"), anyMap());
+        verify(client).callWithToken(eq("bot-b"), eq("getUpdates"), anyMap());
+        verify(client, never()).call(any(), any());
+    }
+
+    @Test void missingWorkspaceTokenNeverFallsBackToGlobalBot() {
+        assertThrows(com.hybridflow.common.exception.ApplicationException.class,
+                () -> service.sendTest("", "123", "PRIVATE"));
+        verify(client, never()).call(any(), any());
+        verify(client, never()).callWithToken(any(), any(), any());
+    }
     @Mock TelegramApiClient client;
     @InjectMocks TelegramSetupServiceImpl service;
     private final ObjectMapper mapper = new ObjectMapper();

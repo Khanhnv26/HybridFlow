@@ -30,9 +30,57 @@ const { WorkspaceConnectionsModal } = await import(pathToFileURL(file).href);
 await unlink(file); await rmdir(directory);
 
 let renderer;
+const originalWindow = globalThis.window;
 afterEach(async () => {
   if (renderer) await act(async () => renderer.unmount());
   renderer = null;
+  globalThis.window = originalWindow;
+});
+
+test('Google popup opens before authorization request and accepts only its expected callback origin', async context => {
+  context.mock.timers.enable({ apis: ['setInterval'] });
+  const browser = new EventTarget();
+  const popup = { closed: false, location: { href: '' }, close() { this.closed = true; } };
+  const order = [];
+  browser.open = () => { order.push('open'); return popup; };
+  globalThis.window = browser;
+  let loads = 0, changed = 0;
+  api.list = async () => { loads++; return []; };
+  api.startGoogleOAuth = async () => { order.push('request'); return { url: 'https://accounts.example/authorize', callbackOrigin: 'http://localhost:8080' }; };
+  await act(async () => { renderer = create(React.createElement(WorkspaceConnectionsModal,
+    { workspaceId: 'ws', userRole: 'OWNER', onClose() {}, onConnectionsChanged() { changed++; } })); });
+  await act(async () => button('Kết nối Google Account').props.onClick());
+  assert.deepEqual(order, ['open', 'request']);
+  assert.equal(popup.location.href, 'https://accounts.example/authorize');
+  const dispatch = (origin, source, data) => browser.dispatchEvent(Object.assign(new Event('message'), { origin, source, data }));
+  await act(async () => dispatch('https://wrong.example', popup, { type: 'WORKSPACE_GOOGLE_CONNECTED', connectionId: 'foreign' }));
+  assert.equal(changed, 0);
+  await act(async () => dispatch('http://localhost:8080', {}, { type: 'WORKSPACE_GOOGLE_CONNECTED', connectionId: 'foreign' }));
+  assert.equal(changed, 0);
+  await act(async () => dispatch('http://localhost:8080', popup, { type: 'WORKSPACE_GOOGLE_CONNECTED', connectionId: 'gconn-selected' }));
+  assert.equal(changed, 1);
+  assert.ok(loads >= 2);
+  assert.equal(popup.closed, true);
+  assert.match(text(renderer.root), /Đã thêm kết nối Google vào workspace/);
+});
+
+test('unmount cancels Google popup polling and closes the pending popup', async context => {
+  context.mock.timers.enable({ apis: ['setInterval'] });
+  const browser = new EventTarget();
+  const popup = { closed: false, location: { href: '' }, close() { this.closed = true; } };
+  browser.open = () => popup;
+  globalThis.window = browser;
+  let loads = 0;
+  api.list = async () => { loads++; return []; };
+  api.startGoogleOAuth = async () => ({ url: 'https://accounts.example/authorize', callbackOrigin: 'http://localhost:8080' });
+  await act(async () => { renderer = create(React.createElement(WorkspaceConnectionsModal,
+    { workspaceId: 'ws', userRole: 'OWNER', onClose() {} })); });
+  await act(async () => button('Kết nối Google Account').props.onClick());
+  await act(async () => renderer.unmount()); renderer = null;
+  const count = loads;
+  await act(async () => context.mock.timers.tick(3000));
+  assert.equal(loads, count);
+  assert.equal(popup.closed, true);
 });
 
 function text(node) {

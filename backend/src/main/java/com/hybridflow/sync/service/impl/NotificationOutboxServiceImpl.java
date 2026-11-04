@@ -108,6 +108,7 @@ public class NotificationOutboxServiceImpl implements NotificationOutboxService 
         String truncated = message.codePointCount(0, message.length()) <= 4000 ? message
                 : message.substring(0, message.offsetByCodePoints(0, 3997)) + "...";
         return NotificationOutboxItem.builder().flowId(flowId).executionId(executionId)
+                .workspaceId(action.getWorkspaceId()).connectionId(action.getConnectionId())
                 .actionNodeId(action.getNodeId()).channel(action.getChannel() == null ? "TELEGRAM" : action.getChannel())
                 .destination(action.getChatId()).sourceType(sourceType).sourceKey(sourceKey)
                 .message(truncated).correlationId(ErrorContext.currentId()).state("PENDING").availableAt(Instant.now()).build();

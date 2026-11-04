@@ -22,6 +22,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
+import java.util.UUID;
 import java.util.stream.IntStream;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
@@ -69,6 +70,18 @@ class NotificationOutboxServiceTest {
             items.add(item); return true;
         });
         return items;
+    }
+
+    @Test void queuedNotificationsRetainWorkspaceAndSelectedBot() {
+        List<NotificationOutboxItem> items = captureEnqueues();
+        UUID workspace = UUID.randomUUID();
+        ActionPlan selected = action();
+        selected.setWorkspaceId(workspace);
+        selected.setConnectionId("selected-bot");
+        assertEquals(1, service.enqueue("flow", "run", List.of(router("r")), List.of(selected),
+                events(1), Set.of("id", "status"), List.of(), List.of()));
+        assertEquals(workspace, items.getFirst().getWorkspaceId());
+        assertEquals("selected-bot", items.getFirst().getConnectionId());
     }
 
     @Test void revisionsDeduplicateAcrossExecutionsButAllowLaterChangesAndOtherFlows() {

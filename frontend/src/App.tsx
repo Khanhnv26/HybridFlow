@@ -995,7 +995,8 @@ export default function App({ userId, workspaceId, workspaceRole, workflowId: pr
         onConnectGoogle={connectGoogle}
         onSaveSource={saveSource}
         onReadSource={(nodeId, spreadsheetId, sheetName, signal) =>
-          readSheetSource({ nodeId, spreadsheetId, sheetName, columnTypes }, signal)
+          readSheetSource({ nodeId, spreadsheetId, sheetName, columnTypes,
+            connectionId: nodes.find(node => node.id === nodeId)?.data.connectionId }, signal)
         }
         onSaveTelegram={saveTelegram}
         notificationConnected={edges.some(
