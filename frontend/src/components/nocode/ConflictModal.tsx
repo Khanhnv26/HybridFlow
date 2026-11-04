@@ -1,3 +1,4 @@
+import { useExitMotion } from '../../hooks/useExitMotion';
 import { errorMessage } from '../../services/errors';
 import React, { useEffect, useId, useMemo, useRef, useState } from 'react';
 import { X, AlertTriangle, Check, RefreshCw } from 'lucide-react';
@@ -27,6 +28,7 @@ export const ConflictModal: React.FC<Props> = ({
   const titleId = useId();
   const radioGroup = useId();
   const busy = useRef(false);
+  const motionRef = useExitMotion(isOpen);
   const [pending, setPending] = useState<'resolve' | 'telegram' | null>(null);
   const [error, setError] = useState('');
   const [selection, setSelection] = useState<{ context: string; key: string } | null>(null);
@@ -112,7 +114,7 @@ export const ConflictModal: React.FC<Props> = ({
     value === '' ? '(trống)' : (value ?? '(chưa có)');
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 sm:p-4">
+    <div ref={motionRef} className="hf-motion-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 sm:p-4">
       <section
         role="dialog"
         aria-modal="true"

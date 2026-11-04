@@ -44,7 +44,7 @@ import { useWorkflowPolling } from './hooks/useWorkflowPolling';
 import { useExecutionCompletion } from './hooks/useExecutionCompletion';
 import { executionVisuals } from './services/executionVisuals';
 import { ExecutionEdge } from './components/orchestration/ExecutionEdge';
-import type { RunHistoryItem, OrchestrationNodeData, SyncConflictDto, ExecutionHistoryDto, NotificationOutboxItem, WorkspaceRole } from './types';
+import type { RunHistoryItem, OrchestrationNodeData, SyncConflictDto, ExecutionHistoryDto, NotificationOutboxItem, WorkspaceRole, StudioNavigation } from './types';
 
 const initialNodes: Node<OrchestrationNodeData>[] = [
   {
@@ -119,6 +119,7 @@ interface EditorProps {
   userId?: string;
   workspaceId?: string;
   workflowId?: string;
+  navigation?: StudioNavigation;
 }
 
 function readDraft(key: string): { nodes: Node<OrchestrationNodeData>[]; edges: Edge[] } {
@@ -130,7 +131,7 @@ function readDraft(key: string): { nodes: Node<OrchestrationNodeData>[]; edges: 
   return { nodes: initialNodes, edges: initialEdges };
 }
 
-export default function App({ userId, workspaceId, workspaceRole, workflowId: propWorkflowId }: EditorProps = {}) {
+export default function App({ userId, workspaceId, workspaceRole, workflowId: propWorkflowId, navigation }: EditorProps = {}) {
   const effectiveDraftKey = userId && workspaceId && propWorkflowId
     ? `hybridflow:draft:${userId}:${workspaceId}:${propWorkflowId}`
     : 'hybridflow-workflow-v2';
@@ -808,6 +809,7 @@ export default function App({ userId, workspaceId, workspaceRole, workflowId: pr
   return (
     <div className="h-full min-h-0 w-full flex flex-col bg-canvas text-primary overflow-hidden font-sans">
       <StudioHeader
+        navigation={navigation}
         isRunning={isRunning}
         autoActive={autoActive}
         onAutoChange={setAutoActive}
@@ -844,8 +846,8 @@ export default function App({ userId, workspaceId, workspaceRole, workflowId: pr
         </div>
       )}
       <div className="min-h-0 flex-1 flex overflow-hidden relative">
-        {isPaletteOpen && (
-          <NodePalette
+        <NodePalette
+            open={isPaletteOpen}
             disabled={isRunning}
             onAddNode={(item) => {
               setNodes((items) => [
@@ -875,7 +877,6 @@ export default function App({ userId, workspaceId, workspaceRole, workflowId: pr
               ]);
             }}
           />
-        )}
         <div className="min-w-0 flex-1 relative h-full">
           <ReactFlow
             onInit={instance => { fitCanvas.current = () => { void instance.fitView({ padding: 0.18, maxZoom: 1, duration: 250 }); }; }}
@@ -908,6 +909,7 @@ export default function App({ userId, workspaceId, workspaceRole, workflowId: pr
             <Panel position="top-left" className="flex gap-2">
               <button
                 onClick={() => setIsPaletteOpen(!isPaletteOpen)}
+                aria-expanded={isPaletteOpen}
                 className="flex items-center gap-2 rounded border border-line bg-surface px-3 py-2 text-xs"
               >
                 {isPaletteOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />} Thư

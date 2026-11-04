@@ -2,13 +2,13 @@ import React, { useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import { ReactFlow, Background, BackgroundVariant, Controls, MiniMap, Panel, useNodesState, useEdgesState, addEdge, type Node } from '@xyflow/react';
 import { PanelLeftClose, PanelLeftOpen, Map, X } from 'lucide-react';
-import { ThemeToggle } from './components/ThemeToggle';
 import { StudioHeader } from './components/orchestration/StudioHeader';
 import { NodePalette } from './components/orchestration/NodePalette';
 import { SheetsTriggerNode, DiffEngineNode, StorageActionNode, TelegramActionNode, ScheduleTriggerNode, DataTransformNode, RouterConditionNode, GenericOrchestrationNode } from './components/nodes/OrchestrationNodes';
 import { ExecutionEdge } from './components/orchestration/ExecutionEdge';
 import { RunHistoryDrawer } from './components/orchestration/RunHistoryDrawer';
-import type { OrchestrationNodeData } from './types';
+import { DataTableModal } from './components/nocode/DataTableModal';
+import type { OrchestrationNodeData, StudioNavigation, SheetDataResponse } from './types';
 import { connectedSheetSources } from './services/workflow';
 import './index.css';
 
@@ -35,16 +35,51 @@ function StudioPreview() {
   const [auto, setAuto] = useState(false);
   const [interval, setInterval] = useState(300000);
   const [notice, setNotice] = useState('');
+  const [tableOpen, setTableOpen] = useState(false);
+  const [tableData, setTableData] = useState<SheetDataResponse>({ spreadsheetId: 'demo-orders', spreadsheetTitle: 'Đơn hàng · Kinh doanh', sheetName: 'Tháng 11', headers: ['id', 'status', 'price'], rows: [{ id: 'ORD-001', status: 'CANCELLED', price: '20000' }, { id: 'ORD-002', status: 'SHIPPING', price: '250' }, { id: 'ORD-003', status: 'SHIPPING', price: '350' }], totalRows: 3 });
   const [selected, setSelected] = useState<Node<OrchestrationNodeData> | null>(null);
   const explain = () => setNotice('Đây là bản xem trước với dữ liệu minh họa. Mở ứng dụng chính để kết nối và chạy đồng bộ.');
+
+  const mockNavigation: StudioNavigation = {
+    loadWorkspaceContent: async () => [mockNavigation.modules, mockNavigation.workflows],
+    createModuleInWorkspace: async (workspaceId, name) => ({ id: crypto.randomUUID(), workspaceId, name, enabled: true, description: '', createdAt: '' }),
+    createWorkflowInModule: async (workspaceId, moduleId, name) => { explain(); return { flowId: crypto.randomUUID(), workspaceId, moduleId, name, enabled: true, definitionVersion: 1 }; },
+    workspaces: [{ id: 'demo-ws', name: 'Demo Workspace', role: 'OWNER' }],
+    selectedWorkspaceId: 'demo-ws',
+    onSelectWorkspace: () => {},
+    onCreateWorkspace: async () => {},
+    onLogout: explain,
+    workspaceRole: 'OWNER',
+    modules: [{ id: 'demo-mod', workspaceId: 'demo-ws', name: 'Vận hành', description: '', enabled: true, createdAt: '' }],
+    selectedModuleId: 'demo-mod',
+    onSelectModule: () => {},
+    onCreateModule: async () => {},
+    workflows: [{ flowId: 'demo-wf', workspaceId: 'demo-ws', moduleId: 'demo-mod', name: 'Đồng bộ đơn hàng', enabled: true, definitionVersion: 1 }],
+    selectedWorkflowId: 'demo-wf',
+    onSelectWorkflow: () => {},
+    onCreateWorkflow: async () => {},
+    activeWorkflowName: 'Đồng bộ đơn hàng',
+    activeWorkflowVersion: 1,
+  };
+
   return <div className="h-dvh flex flex-col min-h-0 bg-canvas text-primary">
-    <ThemeToggle />
-    <header className="shrink-0 border-b border-line bg-surface pl-4 pr-16 py-4 flex flex-wrap gap-2 items-center text-sm">
-      <strong className="mr-4">HybridFlow</strong><span className="text-secondary">Demo Workspace</span><span className="text-muted">/</span><span className="text-secondary">Vận hành</span><span className="text-muted">/</span><span className="font-medium">Đồng bộ đơn hàng</span><span className="text-xs text-muted ml-auto">Xem trước · Dữ liệu minh họa</span>
-    </header>
-    <StudioHeader isRunning={false} connected={true} autoActive={auto} onAutoChange={setAuto} intervalMs={interval} onIntervalChange={setInterval} onRunWorkflow={explain} onSaveWorkflow={explain} onResetLayout={() => { setNodes(previewNodes); setEdges(previewEdges); }} onOpenTable={explain} onConnectGoogle={explain} onManageConnections={explain} />
+    <StudioHeader
+      navigation={mockNavigation}
+      isRunning={false}
+      connected={true}
+      autoActive={auto}
+      onAutoChange={setAuto}
+      intervalMs={interval}
+      onIntervalChange={setInterval}
+      onRunWorkflow={explain}
+      onSaveWorkflow={explain}
+      onResetLayout={() => { setNodes(previewNodes); setEdges(previewEdges); }}
+      onOpenTable={() => setTableOpen(true)}
+      onConnectGoogle={explain}
+      onManageConnections={explain}
+    />
     <div className="relative flex flex-1 min-h-0 overflow-hidden">
-      {palette && <NodePalette onAddNode={item => setNodes(current => [...current, { id: crypto.randomUUID(), type: item.type, position: { x: 250, y: 400 }, data: { subtitle: 'Dữ liệu minh họa', label: item.label, type: item.type, category: item.category } }])} />}
+      <NodePalette open={palette} onAddNode={item => setNodes(current => [...current, { id: crypto.randomUUID(), type: item.type, position: { x: 250, y: 400 }, data: { subtitle: 'Dữ liệu minh họa', label: item.label, type: item.type, category: item.category } }])} />
       <main className="relative flex-1 min-w-0">
         <ReactFlow nodes={nodes.map(node => ({ ...node, data: { ...node.data, incomingSourcesCount: edges.filter(edge => edge.target === node.id).length, connectedSheets: connectedSheetSources(nodes, edges, node.id), onOpenData: explain } }))} edges={edges} nodeTypes={nodeTypes} edgeTypes={edgeTypes} onNodesChange={onNodesChange} onEdgesChange={onEdgesChange} onConnect={connection => setEdges(current => addEdge({ ...connection, type: 'execution' }, current))} onNodeClick={(_, node) => setSelected(node)} fitView fitViewOptions={{ padding: .2, maxZoom: .9 }} minZoom={.2}>
           <Background variant={BackgroundVariant.Dots} gap={24} size={1.2} color="var(--grid-dot)" />
@@ -60,6 +95,13 @@ function StudioPreview() {
       </aside>}
     </div>
     {notice && <div role="status" className="fixed z-50 bottom-14 right-4 left-4 sm:left-auto sm:max-w-md rounded-xl border border-line bg-surface p-4 text-sm flex gap-3">{notice}<button aria-label="Đóng thông báo" className="shrink-0" onClick={() => setNotice('')}><X size={16} /></button></div>}
+    <DataTableModal isOpen={tableOpen} onClose={() => setTableOpen(false)} data={tableData} isLoading={false} sources={[{ id: 'sheet', number: 1, spreadsheetId: tableData.spreadsheetId, spreadsheetTitle: tableData.spreadsheetTitle, sheetName: tableData.sheetName }]} selectedSourceId="sheet" onSelectSource={() => {}} onRefresh={() => {}} onUpdateCell={async (range, value) => {
+      const match = range.match(/!([A-Z]+)(\d+)$/);
+      if (!match) return;
+      const col = [...match[1]].reduce((index, letter) => index * 26 + letter.charCodeAt(0) - 64, 0) - 1;
+      const row = Number(match[2]) - 2;
+      setTableData(current => ({ ...current, rows: current.rows.map((item, index) => index === row ? { ...item, [current.headers[col]]: value } : item) }));
+    }} />
   </div>;
 }
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Clock, Webhook, Sparkles, Split, Wand2, Database, FileEdit, Plus, Search } from 'lucide-react';
 import { ExcelIcon, TelegramIcon } from '../icons/BrandIcons';
 import { OrchestrationNodeType } from '../../types';
@@ -97,11 +97,14 @@ const PALETTE_ITEMS: PaletteItem[] = [
 ];
 
 interface NodePaletteProps {
+  open?: boolean;
   onAddNode: (item: PaletteItem) => void;
   disabled?: boolean;
 }
 
-export const NodePalette: React.FC<NodePaletteProps> = ({ onAddNode, disabled }) => {
+export const NodePalette: React.FC<NodePaletteProps> = ({ onAddNode, disabled, open = true }) => {
+  const palette = useRef<HTMLElement>(null);
+  useEffect(() => { if (palette.current) palette.current.inert = !open; }, [open]);
   const [query, setQuery] = useState('');
   const normalize = (value: string) => value.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/đ/g, 'd');
   const matching = PALETTE_ITEMS.filter(item => normalize(`${item.label} ${item.subtitle} ${item.type}`).includes(normalize(query.trim())));
@@ -156,7 +159,7 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ onAddNode, disabled })
   );
 
   return (
-    <aside aria-label="Thư viện khối" className="node-palette min-h-0 w-72 overflow-hidden bg-surface border-r border-line p-3 flex flex-col z-20 shrink-0 select-none">
+    <aside ref={palette} data-open={open} aria-hidden={!open} aria-label="Thư viện khối" className="node-palette min-h-0 w-72 overflow-hidden bg-surface border-r border-line p-3 flex flex-col z-20 shrink-0 select-none">
       <div className="shrink-0 pb-2 border-b border-line mb-3">
         <h3 className="text-xs font-bold text-primary uppercase tracking-wider">Thư Viện Khối Điều Phối</h3>
         <p className="text-xs text-secondary mt-0.5">Bấm để thêm khối vào luồng</p>

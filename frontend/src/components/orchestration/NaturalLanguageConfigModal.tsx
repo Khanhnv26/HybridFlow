@@ -1,3 +1,4 @@
+import { useExitMotion } from '../../hooks/useExitMotion';
 import { errorMessage } from '../../services/errors';
 import { useState } from 'react';
 import { Database, Eye, RefreshCw, Save, X } from 'lucide-react';
@@ -34,6 +35,7 @@ interface Props {
 
 export function NaturalLanguageConfigModal(props: Props) {
   const { node, onClose, disabled } = props;
+  const motionRef = useExitMotion(!!node);
   const [tableName, setTableName] = useState(node?.data.tableName || '');
   const [saving, setSaving] = useState(false);
   const [reading, setReading] = useState(false);
@@ -72,7 +74,7 @@ export function NaturalLanguageConfigModal(props: Props) {
       setError(errorMessage(error, 'Không đọc được dữ liệu.'));
     } finally { setReading(false); }
   };
-  return <div role="dialog" aria-modal="true" aria-label="Kho lưu trữ" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+  return <div role="dialog" aria-modal="true" aria-label="Kho lưu trữ" ref={motionRef} className="hf-motion-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
     <div className="flex  w-full hf-modal hf-modal--simple flex-col rounded-2xl border border-line bg-surface text-primary">
       <header className="hf-modal-header flex items-center justify-between border-b border-line p-4"><h2 className="flex items-center gap-2 font-semibold"><Database size={20} />Kho lưu trữ</h2>
         <button type="button" aria-label="Đóng" disabled={saving} onClick={onClose}><X size={20} /></button>

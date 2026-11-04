@@ -26,7 +26,7 @@ const bundle = await build({
           namespace: 'test-api',
         }));
         builder.onLoad({ filter: /.*/, namespace: 'test-api' }, () => ({
-          contents: ['apiClient', 'googleService', 'syncService', 'workflowService', 'telegramService', 'workspaceConnectionService']
+          contents: ['apiClient', 'googleService', 'syncService', 'workflowService', 'telegramService', 'workspaceConnectionService', 'moduleService', 'tenantWorkflowService']
             .map(
               (name) =>
                 'export const ' +
@@ -422,10 +422,12 @@ test('selecting the second source reads and edits its own file and tab while cou
   assert.deepEqual(calls[1], ['file-b', 'Tab B']);
   assert.match(text(renderer.root), /Đã đọc 3 dòng/);
   assert.match(text(renderer.root), /Đã đọc 8 dòng/);
-  globalThis.prompt = () => 'UPDATED';
   await act(async () =>
     renderer.root.findByProps({ 'aria-label': 'Sửa status dòng 2' }).props.onClick(),
   );
+  assert.equal(writes.length, 0);
+  await act(async () => renderer.root.findByType('textarea').props.onChange({ target: { value: 'UPDATED' } }));
+  await act(async () => renderer.root.findByProps({ 'aria-label': 'Lưu status dòng 2' }).props.onClick());
   assert.equal(writes.length, 1);
   assert.equal(writes[0].spreadsheetId, 'file-b');
   assert.equal(writes[0].range, "'Tab B'!A2");

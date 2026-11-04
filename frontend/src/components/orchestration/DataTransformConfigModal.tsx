@@ -1,3 +1,4 @@
+import { useExitMotion } from '../../hooks/useExitMotion';
 import { errorMessage } from '../../services/errors';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowUp, Check, RefreshCw, Save, Search, Wand2, X } from 'lucide-react';
@@ -43,6 +44,7 @@ export function DataTransformConfigModal({
 }: Props) {
   const inputs = sources || (onRead ? [{ nodeId: 'source', name: sourceName || 'Sheet nguồn', data: source, read: onRead }] : []);
   const inputKey = inputs.map(input => input.nodeId).join('|');
+  const motionRef = useExitMotion(true);
   const [configs, setConfigs] = useState(() => structuredClone(data.transforms || []));
   const [writeBack, setWriteBack] = useState(!!data.writeBackCleanData);
   const [writeBackBySource, setWriteBackBySource] = useState<Record<string, boolean>>(data.writeBackBySource || {});
@@ -163,7 +165,7 @@ export function DataTransformConfigModal({
 
   return (
     <div
-      className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
+      ref={motionRef} className="hf-motion-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4"
       onClick={close}
     >
       <section

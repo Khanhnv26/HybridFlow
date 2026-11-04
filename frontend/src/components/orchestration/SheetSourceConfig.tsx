@@ -1,3 +1,4 @@
+import { useExitMotion } from '../../hooks/useExitMotion';
 import { errorMessage } from '../../services/errors';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ExternalLink, Link, Play, RefreshCw, Save, X } from 'lucide-react';
@@ -39,6 +40,7 @@ export function SheetSourceConfig({
   onSave,
   onReadSource,
 }: Props) {
+  const motionRef = useExitMotion(true);
   const [workspaceConnections, setWorkspaceConnections] = useState<WorkspaceConnectionResponse[]>([]);
   const [selectedConnectionId, setSelectedConnectionId] = useState<string>(
     () => (typeof data.connectionId === 'string' ? data.connectionId : '')
@@ -229,7 +231,7 @@ export function SheetSourceConfig({
       role="dialog"
       aria-modal="true"
       aria-labelledby="sheet-source-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
+      ref={motionRef} className="hf-motion-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
     >
       <div className="bg-elevated border border-line rounded-2xl w-full hf-modal hf-modal--complex  flex flex-col overflow-hidden">
         <div className="hf-modal-header p-4 border-b border-line flex items-center justify-between gap-4">

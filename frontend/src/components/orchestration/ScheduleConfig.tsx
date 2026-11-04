@@ -1,3 +1,4 @@
+import { useExitMotion } from '../../hooks/useExitMotion';
 import { errorMessage } from '../../services/errors';
 import { useEffect, useState } from 'react';
 import { workflowService } from '../../services/api';
@@ -35,6 +36,7 @@ const JOB_STATES: Record<string, string> = {
 };
 
 export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId, workspaceId }: Props) {
+  const motionRef = useExitMotion(true);
   const [status, setStatus] = useState<Awaited<ReturnType<typeof workflowService.scheduleStatus>> | null>(null);
   const [statusError, setStatusError] = useState('');
   const [timezone, setTimezone] = useState(data.scheduleTimezone || 'Asia/Ho_Chi_Minh');
@@ -95,7 +97,7 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId, wo
         : `Hệ thống sẽ tự động kích hoạt luồng mỗi ${intervalMinutes} phút một lần.`;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm select-none">
+    <div ref={motionRef} className="hf-motion-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm select-none">
       <div className="bg-elevated border border-line rounded-2xl w-full hf-modal hf-modal--simple shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Header */}
         <div className="hf-modal-header p-4 border-b border-line flex items-center justify-between bg-surface">

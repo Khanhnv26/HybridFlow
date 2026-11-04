@@ -1,3 +1,4 @@
+import { useExitMotion } from '../../hooks/useExitMotion';
 import { useEffect, useRef, useState } from 'react';
 import { X, RefreshCw, Plus, Trash2, Shield } from 'lucide-react';
 import { ExcelIcon, TelegramIcon } from '../icons/BrandIcons';
@@ -18,6 +19,7 @@ export function WorkspaceConnectionsModal({
   onClose,
   onConnectionsChanged,
 }: WorkspaceConnectionsModalProps) {
+  const motionRef = useExitMotion(true);
   const [connections, setConnections] = useState<WorkspaceConnectionResponse[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
@@ -207,7 +209,7 @@ export function WorkspaceConnectionsModal({
       role="dialog"
       aria-modal="true"
       aria-labelledby="connections-modal-title"
-      className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
+      ref={motionRef} className="hf-motion-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
     >
       <div className="bg-elevated border border-line rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden text-primary">
         <div className="p-4 border-b border-line flex items-center justify-between">
