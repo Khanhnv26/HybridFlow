@@ -96,22 +96,22 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId, wo
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80 backdrop-blur-sm select-none">
-      <div className="bg-[#171b24] border border-[#2d3748] rounded-2xl w-full hf-modal hf-modal--simple shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+      <div className="bg-elevated border border-line rounded-2xl w-full hf-modal hf-modal--simple shadow-2xl flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* Header */}
-        <div className="hf-modal-header p-4 border-b border-[#2d3748] flex items-center justify-between bg-[#131720]">
+        <div className="hf-modal-header p-4 border-b border-line flex items-center justify-between bg-surface">
           <div className="flex items-center gap-2.5">
-            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+            <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-emerald-500/20 text-success border border-emerald-500/30">
               <Clock size={20} />
             </span>
             <div>
-              <h3 className="font-semibold text-sm text-gray-100">Cấu hình Hẹn Giờ Định Kỳ</h3>
-              <p className="text-[11px] text-gray-400">Thiết lập chu kỳ tự động đối soát và đồng bộ</p>
+              <h3 className="font-semibold text-sm text-primary">Cấu hình Hẹn Giờ Định Kỳ</h3>
+              <p className="text-xs text-secondary">Thiết lập chu kỳ tự động đối soát và đồng bộ</p>
             </div>
           </div>
           <button
             onClick={onClose}
             disabled={saving}
-            className="text-gray-400 hover:text-gray-200 p-1 rounded-lg hover:bg-gray-800 transition"
+            className="text-secondary hover:text-primary p-1 rounded-lg hover:bg-elevated transition"
             aria-label="Đóng"
           >
             <X size={18} />
@@ -123,8 +123,8 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId, wo
           <fieldset disabled={disabled || saving} className="min-w-0 space-y-4">
             {/* Status alerts / warnings */}
             {(statusError || status?.error) && (
-              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-amber-300 text-xs leading-relaxed">
-                <AlertTriangle size={15} className="shrink-0 mt-0.5 text-amber-400" />
+              <div className="flex items-start gap-2.5 p-3 rounded-xl bg-amber-500/10 border border-amber-500/30 text-warning text-xs leading-relaxed">
+                <AlertTriangle size={15} className="shrink-0 mt-0.5 text-warning" />
                 <div className="space-y-0.5">
                   {status?.error && <p role="status">{status.error}</p>}
                   {statusError && <p role="status">{statusError}</p>}
@@ -134,26 +134,26 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId, wo
 
             {/* Server run stats */}
             {(status?.state || status?.last_run_at || (status && !status.enabled) || (status?.enabled && !statusError && status.next_run_at && !['NEEDS_CONNECTION', 'NEEDS_BOOTSTRAP', 'DEAD'].includes(status.state || ''))) && (
-              <div className="p-3 rounded-xl bg-[#11151d] border border-[#262f3f] space-y-1.5 text-xs">
+              <div className="p-3 rounded-xl bg-surface border border-line space-y-1.5 text-xs">
                 {status?.state && (
-                  <div className="flex items-center justify-between text-gray-300">
+                  <div className="flex items-center justify-between text-secondary">
                     <span>Lượt gần nhất:</span>
-                    <span className="font-medium text-emerald-400">{JOB_STATES[status.state] || status.state}</span>
+                    <span className="font-medium text-success">{JOB_STATES[status.state] || status.state}</span>
                   </div>
                 )}
                 {status?.last_run_at && (
-                  <div className="flex items-center justify-between text-gray-400 text-[11px]">
+                  <div className="flex items-center justify-between text-secondary text-xs">
                     <span>Hoàn tất gần nhất:</span>
                     <span>{new Date(status.last_run_at).toLocaleString('vi-VN', { timeZone: timezone })} ({timezone})</span>
                   </div>
                 )}
                 {status && !status.enabled && (
-                  <p className="text-amber-400 text-[11px]">Lịch trên máy chủ đang tắt. Nối khối hẹn giờ vào cổng kích hoạt và lưu workflow để bật lịch.</p>
+                  <p className="text-warning text-xs">Lịch trên máy chủ đang tắt. Nối khối hẹn giờ vào cổng kích hoạt và lưu workflow để bật lịch.</p>
                 )}
                 {status?.enabled && !statusError && status.next_run_at && !['NEEDS_CONNECTION', 'NEEDS_BOOTSTRAP', 'DEAD'].includes(status.state || '') && (
-                  <div className="flex items-center justify-between text-gray-300">
+                  <div className="flex items-center justify-between text-secondary">
                     <span>Lượt kế tiếp:</span>
-                    <span className="font-medium text-emerald-400">{new Date(status.next_run_at).toLocaleString('vi-VN', { timeZone: timezone })} ({timezone})</span>
+                    <span className="font-medium text-success">{new Date(status.next_run_at).toLocaleString('vi-VN', { timeZone: timezone })} ({timezone})</span>
                   </div>
                 )}
               </div>
@@ -162,10 +162,10 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId, wo
             {/* Toggle Status & Timezone Grid */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
               {/* Status Toggle Card */}
-              <div className="flex items-center justify-between p-3 rounded-xl bg-[#11151d] border border-[#262f3f]">
+              <div className="flex items-center justify-between p-3 rounded-xl bg-surface border border-line">
                 <div>
-                  <p className="font-medium text-gray-200">Trạng thái hẹn giờ</p>
-                  <p className="text-[11px] text-gray-400">
+                  <p className="font-medium text-primary">Trạng thái hẹn giờ</p>
+                  <p className="text-xs text-secondary">
                     {enabled ? 'Đang kích hoạt tự động theo chu kỳ' : 'Tạm dừng tự động kích hoạt'}
                   </p>
                 </div>
@@ -174,7 +174,7 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId, wo
                   disabled={disabled || saving}
                   onClick={() => setEnabled(!enabled)}
                   className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full transition-colors focus:outline-none ${
-                    enabled ? 'bg-emerald-600' : 'bg-gray-700'
+                    enabled ? 'bg-emerald-600' : 'bg-subtle'
                   }`}
                 >
                   <span
@@ -186,9 +186,9 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId, wo
               </div>
 
               {/* Timezone Selector Card */}
-              <div className="flex flex-col justify-center p-3 rounded-xl bg-[#11151d] border border-[#262f3f] gap-1.5">
-                <div className="flex items-center gap-1.5 text-gray-300">
-                  <Globe size={13} className="text-gray-400 shrink-0" />
+              <div className="flex flex-col justify-center p-3 rounded-xl bg-surface border border-line gap-1.5">
+                <div className="flex items-center gap-1.5 text-secondary">
+                  <Globe size={13} className="text-secondary shrink-0" />
                   <label htmlFor="schedule-timezone" className="font-medium">Múi giờ</label>
                 </div>
                 <select
@@ -197,7 +197,7 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId, wo
                   disabled={disabled || saving}
                   value={timezone}
                   onChange={(event) => setTimezone(event.target.value)}
-                  className="w-full bg-[#141a24] border border-[#303b4b] rounded-lg px-2.5 py-1 text-gray-200 outline-none focus:border-emerald-500 text-xs"
+                  className="w-full bg-elevated border border-line rounded-lg px-2.5 py-1 text-primary outline-none focus:border-emerald-500 text-xs"
                 >
                   <option value="Asia/Ho_Chi_Minh">Việt Nam (UTC+7)</option>
                   <option value="UTC">UTC</option>
@@ -208,15 +208,15 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId, wo
 
             {/* Schedule Type Selection Tabs */}
             <div className="space-y-1.5">
-              <label className="font-medium text-gray-300 block">Kiểu chu kỳ</label>
-              <div className="grid grid-cols-2 gap-2 p-1 bg-[#11151d] rounded-xl border border-[#262f3f]">
+              <label className="font-medium text-secondary block">Kiểu chu kỳ</label>
+              <div className="grid grid-cols-2 gap-2 p-1 bg-surface rounded-xl border border-line">
                 <button
                   type="button"
                   onClick={() => setType('interval')}
                   className={`flex items-center justify-center gap-2 py-2 rounded-lg font-medium transition ${
                     type === 'interval'
-                      ? 'bg-emerald-600 text-white shadow'
-                      : 'text-gray-400 hover:text-gray-200'
+                      ? 'bg-emerald-600 text-on-accent shadow'
+                      : 'text-secondary hover:text-primary'
                   }`}
                 >
                   <Timer size={14} /> Lặp theo phút / giờ
@@ -226,8 +226,8 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId, wo
                   onClick={() => setType('daily')}
                   className={`flex items-center justify-center gap-2 py-2 rounded-lg font-medium transition ${
                     type === 'daily'
-                      ? 'bg-emerald-600 text-white shadow'
-                      : 'text-gray-400 hover:text-gray-200'
+                      ? 'bg-emerald-600 text-on-accent shadow'
+                      : 'text-secondary hover:text-primary'
                   }`}
                 >
                   <Calendar size={14} /> Cố định mỗi ngày
@@ -237,8 +237,8 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId, wo
 
             {/* Interval Settings */}
             {type === 'interval' && (
-              <div className="space-y-3 p-3.5 rounded-xl bg-[#11151d] border border-[#262f3f]">
-                <label className="font-medium text-gray-300 block">Chọn nhanh khoảng thời gian</label>
+              <div className="space-y-3 p-3.5 rounded-xl bg-surface border border-line">
+                <label className="font-medium text-secondary block">Chọn nhanh khoảng thời gian</label>
                 <div className="grid grid-cols-2 gap-2">
                   {INTERVAL_PRESETS.map((preset, index) => (
                     <button
@@ -247,18 +247,18 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId, wo
                       onClick={() => setIntervalMinutes(preset.value)}
                       className={`flex items-center justify-between px-3 py-2 rounded-lg border text-left transition ${
                         intervalMinutes === preset.value
-                          ? 'border-emerald-500/70 bg-emerald-950/40 text-emerald-200'
-                          : 'border-[#262f3f] bg-[#141a24] text-gray-300 hover:border-gray-600'
+                          ? 'border-emerald-500/70 bg-success-soft text-success'
+                          : 'border-line bg-elevated text-secondary hover:border-line'
                       } ${index === 4 ? 'col-span-2' : ''}`}
                     >
                       <span className="truncate">{preset.label}</span>
-                      {intervalMinutes === preset.value && <Check size={14} className="text-emerald-400 shrink-0 ml-1.5" />}
+                      {intervalMinutes === preset.value && <Check size={14} className="text-success shrink-0 ml-1.5" />}
                     </button>
                   ))}
                 </div>
 
-                <div className="pt-2 border-t border-[#262f3f] flex items-center justify-between gap-3">
-                  <span className="text-gray-400">Hoặc tùy chỉnh số phút:</span>
+                <div className="pt-2 border-t border-line flex items-center justify-between gap-3">
+                  <span className="text-secondary">Hoặc tùy chỉnh số phút:</span>
                   <div className="flex items-center gap-1.5">
                     <input
                       type="number"
@@ -266,9 +266,9 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId, wo
                       max={1440}
                       value={intervalMinutes}
                       onChange={(e) => setIntervalMinutes(Number(e.target.value))}
-                      className="w-20 rounded-lg border border-[#303b4b] bg-[#141a24] px-2.5 py-1 text-center font-mono text-emerald-300 outline-none focus:border-emerald-500"
+                      className="w-20 rounded-lg border border-line bg-elevated px-2.5 py-1 text-center font-mono text-success outline-none focus:border-emerald-500"
                     />
-                    <span className="text-gray-400">phút</span>
+                    <span className="text-secondary">phút</span>
                   </div>
                 </div>
               </div>
@@ -276,8 +276,8 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId, wo
 
             {/* Daily Settings */}
             {type === 'daily' && (
-              <div className="space-y-3 p-3.5 rounded-xl bg-[#11151d] border border-[#262f3f]">
-                <label className="font-medium text-gray-300 block">Khung giờ chạy mỗi ngày</label>
+              <div className="space-y-3 p-3.5 rounded-xl bg-surface border border-line">
+                <label className="font-medium text-secondary block">Khung giờ chạy mỗi ngày</label>
                 <div className="grid grid-cols-2 gap-2">
                   {DAILY_PRESETS.map((preset) => (
                     <button
@@ -286,23 +286,23 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId, wo
                       onClick={() => setDailyTime(preset.value)}
                       className={`flex items-center justify-between px-3 py-2 rounded-lg border text-left transition ${
                         dailyTime === preset.value
-                          ? 'border-emerald-500/70 bg-emerald-950/30 text-emerald-200'
-                          : 'border-[#262f3f] bg-[#141a24] text-gray-300 hover:border-gray-600'
+                          ? 'border-emerald-500/70 bg-success-soft text-success'
+                          : 'border-line bg-elevated text-secondary hover:border-line'
                       }`}
                     >
                       <span>{preset.label}</span>
-                      {dailyTime === preset.value && <Check size={14} className="text-emerald-400 shrink-0 ml-1.5" />}
+                      {dailyTime === preset.value && <Check size={14} className="text-success shrink-0 ml-1.5" />}
                     </button>
                   ))}
                 </div>
 
-                <div className="pt-2 border-t border-[#262f3f] flex items-center justify-between gap-3">
-                  <span className="text-gray-400">Giờ chính xác (24h):</span>
+                <div className="pt-2 border-t border-line flex items-center justify-between gap-3">
+                  <span className="text-secondary">Giờ chính xác (24h):</span>
                   <input
                     type="time"
                     value={dailyTime}
                     onChange={(e) => setDailyTime(e.target.value)}
-                    className="rounded-lg border border-[#303b4b] bg-[#141a24] px-2.5 py-1 text-center font-mono text-emerald-300 outline-none focus:border-emerald-500"
+                    className="rounded-lg border border-line bg-elevated px-2.5 py-1 text-center font-mono text-success outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
@@ -310,27 +310,27 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId, wo
 
             {/* Preview Banner */}
             <div
-              className={`flex items-center gap-2.5 p-3 rounded-xl border text-[11px] ${
+              className={`flex items-center gap-2.5 p-3 rounded-xl border text-xs ${
                 enabled
-                  ? 'border-emerald-500/30 bg-emerald-950/20 text-emerald-300'
-                  : 'border-gray-700 bg-gray-800/40 text-gray-400'
+                  ? 'border-emerald-500/30 bg-success-soft text-success'
+                  : 'border-line bg-elevated/40 text-secondary'
               }`}
             >
-              <Clock size={16} className="shrink-0 text-emerald-400" />
+              <Clock size={16} className="shrink-0 text-success" />
               <span>{previewText}</span>
             </div>
 
-            {error && <p className="text-red-400 text-[11px]">{error}</p>}
+            {error && <p className="text-danger text-xs">{error}</p>}
           </fieldset>
         </div>
 
         {/* Footer */}
-        <div className="hf-modal-footer p-3.5 border-b-0 border-t border-[#2d3748] bg-[#131720] flex items-center justify-end gap-2">
+        <div className="hf-modal-footer p-3.5 border-b-0 border-t border-line bg-surface flex items-center justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
             disabled={saving}
-            className="px-3.5 py-1.5 rounded-lg border border-gray-700 text-gray-300 hover:bg-gray-800 transition text-xs font-medium"
+            className="px-3.5 py-1.5 rounded-lg border border-line text-secondary hover:bg-elevated transition text-xs font-medium"
           >
             Hủy
           </button>
@@ -338,7 +338,7 @@ export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId, wo
             type="button"
             onClick={handleSave}
             disabled={saving || disabled}
-            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-600 text-white font-medium hover:bg-emerald-500 transition text-xs disabled:opacity-50"
+            className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-600 text-on-accent font-medium hover:bg-emerald-500 transition text-xs disabled:opacity-50"
           >
             <Save size={13} />
             {saving ? 'Đang lưu...' : 'Lưu cấu hình'}

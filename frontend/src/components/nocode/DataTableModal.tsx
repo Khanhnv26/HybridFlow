@@ -57,11 +57,11 @@ export const DataTableModal: React.FC<Props> = ({
   };
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70">
-      <div className="bg-[#161b22] border border-gray-700 rounded-2xl w-full hf-modal hf-modal--data flex flex-col ">
-        <div className="shrink-0 p-4 border-b border-gray-700 flex items-center justify-between gap-4">
+      <div className="bg-surface border border-line rounded-2xl w-full hf-modal hf-modal--data flex flex-col ">
+        <div className="shrink-0 p-4 border-b border-line flex items-center justify-between gap-4">
           <div>
             <h3 className="font-semibold">Dữ liệu Google Sheet</h3>
-            <p className="text-xs text-gray-400 mt-1">
+            <p className="text-xs text-secondary mt-1">
               {source
                 ? `${source.spreadsheetTitle || 'Chưa lấy được tên file'} → ${source.sheetName || 'Chưa chọn trang tính'}`
                 : 'Chưa có nguồn dữ liệu'}
@@ -80,14 +80,14 @@ export const DataTableModal: React.FC<Props> = ({
             </button>
           </div>
         </div>
-        <div className="p-4 border-b border-gray-700 flex flex-wrap items-center gap-3 text-sm">
+        <div className="p-4 border-b border-line flex flex-wrap items-center gap-3 text-sm">
           <label htmlFor="table-source">Nguồn đang xem</label>
           <select
             id="table-source"
             disabled={pending || sources.length === 0}
             value={selectedSourceId}
             onChange={(event) => onSelectSource(event.target.value)}
-            className="bg-gray-900 border border-gray-700 rounded px-3 py-2 min-w-0 max-w-full"
+            className="bg-surface border border-line rounded px-3 py-2 min-w-0 max-w-full"
           >
             {sources.map((item) => (
               <option key={item.id} value={item.id}>
@@ -97,41 +97,41 @@ export const DataTableModal: React.FC<Props> = ({
               </option>
             ))}
           </select>
-          {data && <span className="text-gray-400">Đã đọc {data.totalRows} dòng</span>}
+          {data && <span className="text-secondary">Đã đọc {data.totalRows} dòng</span>}
           {source?.spreadsheetId && (
-            <details className="text-xs text-gray-500">
+            <details className="text-xs text-muted">
               <summary className="cursor-pointer">Chi tiết nguồn</summary>
               <p className="break-all">ID file: {source.spreadsheetId}</p>
             </details>
           )}
         </div>
         {readError && (
-          <p role="alert" className="p-3 text-red-300 text-sm">
+          <p role="alert" className="p-3 text-danger text-sm">
             Đọc thất bại: {readError}
           </p>
         )}
         {error && (
-          <p role="alert" className="p-3 text-red-300 text-sm">
+          <p role="alert" className="p-3 text-danger text-sm">
             {error}
           </p>
         )}
         <div className="hf-modal-body overflow-auto p-4">
           {isLoading ? (
-            <p className="text-sm text-gray-400">Đang đọc dữ liệu từ Google Sheet...</p>
+            <p className="text-sm text-secondary">Đang đọc dữ liệu từ Google Sheet...</p>
           ) : readError ? (
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-secondary">
               Kiểm tra lỗi phía trên rồi bấm tải lại để thử lại nguồn này.
             </p>
           ) : !data ? (
-            <p className="text-sm text-gray-400">
+            <p className="text-sm text-secondary">
               Kết nối Google và kiểm tra cấu hình nguồn để tải dữ liệu.
             </p>
           ) : data.rows.length === 0 ? (
-            <p className="text-sm text-gray-400">Trang tính chưa có dòng dữ liệu.</p>
+            <p className="text-sm text-secondary">Trang tính chưa có dòng dữ liệu.</p>
           ) : (
             <table className="w-full text-left text-xs">
               <thead>
-                <tr className="border-b border-gray-700">
+                <tr className="border-b border-line">
                   <th className="p-3">Dòng</th>
                   {data.headers.map((header, col) => (
                     <th key={`${col}-${header}`} className="p-3">
@@ -142,8 +142,8 @@ export const DataTableModal: React.FC<Props> = ({
               </thead>
               <tbody>
                 {data.rows.map((row, rowIndex) => (
-                  <tr key={rowIndex} className="border-b border-gray-800">
-                    <td className="p-3 text-gray-500">{rowIndex + 2}</td>
+                  <tr key={rowIndex} className="border-b border-line">
+                    <td className="p-3 text-muted">{rowIndex + 2}</td>
                     {data.headers.map((header, colIndex) => (
                       <td key={colIndex} className="p-3">
                         <div className="flex items-center gap-3">
@@ -152,7 +152,7 @@ export const DataTableModal: React.FC<Props> = ({
                             disabled={pending || isLoading || !!readError}
                             onClick={() => void edit(rowIndex, colIndex)}
                             aria-label={`Sửa ${header} dòng ${rowIndex + 2}`}
-                            className="text-blue-400 disabled:opacity-40"
+                            className="text-info disabled:opacity-40"
                           >
                             <Edit2 size={12} />
                           </button>
@@ -165,7 +165,7 @@ export const DataTableModal: React.FC<Props> = ({
             </table>
           )}
         </div>
-        <p className="shrink-0 p-4 text-xs text-gray-500 border-t border-gray-700">
+        <p className="shrink-0 p-4 text-xs text-muted border-t border-line">
           Các thay đổi ô chỉ được ghi vào file và trang tính đang chọn. Chạy luồng để đồng bộ các
           nguồn.
         </p>

@@ -23,8 +23,8 @@ import {
 } from '../../types';
 
 const cardClass = (selected: boolean, accent: string, execution?: NodeExecutionState) =>
-  `workflow-node workflow-node--${execution?.state || 'idle'} w-[280px] rounded-xl border bg-[#1a1f29] shadow-lg select-none ${selected ? accent : 'border-[#303b4b] hover:border-gray-500'}`;
-const handleClass = '!h-3 !w-3 !border-2 !bg-[#111827] transition-colors hover:!bg-slate-700';
+  `workflow-node workflow-node--${execution?.state || 'idle'} w-[280px] rounded-xl border bg-elevated shadow-lg select-none ${selected ? accent : 'border-line hover:border-line'}`;
+const handleClass = '!h-3 !w-3 !border-2 !bg-[#111827] transition-colors hover:!bg-subtle';
 const stopNodeClick = (event: React.MouseEvent) => event.stopPropagation();
 
 function useHandleGeometry(id?: string, layoutKey?: string) {
@@ -40,9 +40,9 @@ function useHandleGeometry(id?: string, layoutKey?: string) {
 function NodeHeading({ icon, title, execution, hideIdle = false }: { icon: React.ReactNode; title: string; execution?: NodeExecutionState; hideIdle?: boolean }) {
   return (
     <>
-    <div className="flex items-center gap-2 rounded-t-xl border-b border-[#293241] bg-[#141922] px-3 py-2.5">
+    <div className="flex items-center gap-2 rounded-t-xl border-b border-line bg-surface px-3 py-2.5">
       <span className="flex h-6 w-6 shrink-0 items-center justify-center">{icon}</span>
-      <span className="min-w-0 truncate text-xs font-semibold text-gray-100" title={title}>
+      <span className="min-w-0 truncate text-xs font-semibold text-primary" title={title}>
         {title}
       </span>
     </div>
@@ -85,12 +85,12 @@ export const SheetsTriggerNode: React.FC<any> = ({ id, data, selected }) => {
         hideIdle
         execution={nodeData.executionState}
       />
-      <div className="space-y-1.5 px-3 py-2.5 text-[11px]">
-        <p className="truncate font-medium text-gray-100" title={fileTitle}>
+      <div className="space-y-1.5 px-3 py-2.5 text-xs">
+        <p className="truncate font-medium text-primary" title={fileTitle}>
           {fileTitle}
         </p>
         <p
-          className="truncate text-emerald-300"
+          className="truncate text-success"
           title={nodeData.sheetName || 'Chưa chọn trang tính'}
         >
           Trang tính: {nodeData.sheetName || 'Chưa chọn'}
@@ -99,18 +99,18 @@ export const SheetsTriggerNode: React.FC<any> = ({ id, data, selected }) => {
           <p
             role="alert"
             title={nodeData.readError}
-            className="line-clamp-2 break-words text-red-300"
+            className="line-clamp-2 break-words text-danger"
           >
             {nodeData.readError || 'Không đọc được dữ liệu. Vui lòng thử lại.'}
           </p>
         )}
         <details
-          className="nodrag nopan text-[10px] text-gray-500"
+          className="nodrag nopan text-xs text-muted"
           onClick={stopNodeClick}
           onToggle={refreshHandles}
         >
-          <summary className="w-fit cursor-pointer hover:text-gray-300">Chi tiết nguồn</summary>
-          <div className="nowheel node-scrollbar mt-2 max-h-32 space-y-1 overflow-y-auto break-words text-gray-400">
+          <summary className="w-fit cursor-pointer hover:text-secondary">Chi tiết nguồn</summary>
+          <div className="nowheel node-scrollbar mt-2 max-h-32 space-y-1 overflow-y-auto break-words text-secondary">
             <p>File: {fileTitle}</p>
             <p>Trang tính: {nodeData.sheetName || 'Chưa chọn'}</p>
             <p className="break-all">ID file: {nodeData.spreadsheetId || 'Chưa có'}</p>
@@ -118,14 +118,14 @@ export const SheetsTriggerNode: React.FC<any> = ({ id, data, selected }) => {
             {nodeData.readAt && (
               <p>Lần đọc thành công: {new Date(nodeData.readAt).toLocaleString('vi-VN')}</p>
             )}
-            {status === 'error' && <p className="text-red-300">{nodeData.readError}</p>}
+            {status === 'error' && <p className="text-danger">{nodeData.readError}</p>}
           </div>
         </details>
       </div>
-      <div className="flex items-center justify-between gap-2 border-t border-[#293241] px-3 py-2 text-[11px]">
+      <div className="flex items-center justify-between gap-2 border-t border-line px-3 py-2 text-xs">
         <span
           role="status"
-          className={`flex min-w-0 items-center gap-1 ${status === 'error' ? 'text-red-300' : status === 'success' ? 'text-emerald-300' : status === 'loading' ? 'text-blue-300' : 'text-gray-400'}`}
+          className={`flex min-w-0 items-center gap-1 ${status === 'error' ? 'text-danger' : status === 'success' ? 'text-success' : status === 'loading' ? 'text-info' : 'text-secondary'}`}
         >
           {status === 'success' && <CheckCircle2 size={12} className="shrink-0" />}
           {status === 'error' && <AlertTriangle size={12} className="shrink-0" />}
@@ -135,7 +135,7 @@ export const SheetsTriggerNode: React.FC<any> = ({ id, data, selected }) => {
           </span>
         </span>
         <button
-          className="nodrag nopan shrink-0 text-blue-300 hover:text-blue-200"
+          className="nodrag nopan shrink-0 text-info hover:text-info"
           onClick={(event) => {
             event.stopPropagation();
             nodeData.onOpenData?.();
@@ -180,32 +180,32 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
         className={`${handleClass} !border-emerald-400`}
       />
       <NodeHeading
-        icon={<Sparkles size={18} className="text-purple-300" />}
+        icon={<Sparkles size={18} className="text-violet" />}
         title="Điều phối & Đồng bộ"
         execution={nodeData.executionState}
       />
-      <div className="space-y-1.5 px-3 py-2.5 text-[11px]">
-        <div className="flex items-center justify-between gap-2 text-gray-400">
+      <div className="space-y-1.5 px-3 py-2.5 text-xs">
+        <div className="flex items-center justify-between gap-2 text-secondary">
           <span>Cột định danh (Khóa)</span>
           <code
-            className="max-w-[130px] truncate rounded border border-[#303b4b] bg-[#121620] px-1.5 py-0.5 text-purple-200"
+            className="max-w-[130px] truncate rounded border border-line bg-subtle px-1.5 py-0.5 text-violet"
             title={nodeData.uniqueKey}
           >
             {nodeData.uniqueKey || 'Chưa chọn khóa'}
           </code>
         </div>
         <details
-          className="nodrag nopan text-gray-400"
+          className="nodrag nopan text-secondary"
           onClick={stopNodeClick}
           onToggle={refreshHandles}
         >
-          <summary className="w-fit cursor-pointer hover:text-purple-300">
+          <summary className="w-fit cursor-pointer hover:text-violet">
             Đã nối {pageCount} trang tính
             {unconfigured > 0 ? ` · ${unconfigured} chưa cấu hình` : ''}
           </summary>
-          <div className="nowheel node-scrollbar mt-1.5 max-h-32 space-y-1 overflow-y-auto rounded-lg bg-[#121620] px-2.5 py-2">
+          <div className="nowheel node-scrollbar mt-1.5 max-h-32 space-y-1 overflow-y-auto rounded-lg bg-subtle px-2.5 py-2">
             {sheets.length === 0 ? (
-              <p className="text-gray-500">
+              <p className="text-muted">
                 {legacy
                   ? 'Nối Sheet vào cổng bên trái để bắt đầu.'
                   : 'Nối Sheet vào một trong hai cổng Sheet để bắt đầu.'}
@@ -221,26 +221,26 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
                 return (
                   <p
                     key={sheet.nodeId}
-                    className="truncate text-gray-200"
+                    className="truncate text-primary"
                     title={`Nguồn ${sheet.number} · ${sheetTitle} → ${tabTitle}`}
                   >
-                    <span className="text-gray-500">Nguồn {sheet.number} · </span>
-                    <span>{sheetTitle}</span> <span className="text-gray-500">→</span>{' '}
-                    <span className="text-emerald-300">{tabTitle}</span>
+                    <span className="text-muted">Nguồn {sheet.number} · </span>
+                    <span>{sheetTitle}</span> <span className="text-muted">→</span>{' '}
+                    <span className="text-success">{tabTitle}</span>
                   </p>
                 );
               })
             )}
           </div>
         </details>
-        {nodeData.hasLegacySheetConnection && <p className="text-xs text-amber-200">Chuyển dây Sheet sang cổng ⇄ Đầu vào</p>}
+        {nodeData.hasLegacySheetConnection && <p className="text-xs text-warning">Chuyển dây Sheet sang cổng ⇄ Đầu vào</p>}
         {nodeData.hasConflict && (
           <button
             onClick={(event) => {
               event.stopPropagation();
               nodeData.onOpenConflict?.();
             }}
-            className="nodrag nopan flex w-full items-center justify-between gap-2 rounded-lg border border-amber-700/60 bg-amber-950/30 px-2 py-1 text-amber-300 hover:bg-amber-950/60"
+            className="nodrag nopan flex w-full items-center justify-between gap-2 rounded-lg border border-amber-700/60 bg-warning-soft px-2 py-1 text-warning hover:bg-warning-soft"
           >
             <span className="flex items-center gap-1.5">
               <AlertTriangle size={12} /> {nodeData.conflictCount} xung đột
@@ -249,7 +249,7 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
           </button>
         )}
       </div>
-      <div className="relative flex h-8 items-center justify-between rounded-b-xl border-t border-[#293241] bg-[#151b25] px-2.5 text-[10px] font-medium">
+      <div className="relative flex h-8 items-center justify-between rounded-b-xl border-t border-line bg-elevated px-2.5 text-xs font-medium">
         <Handle
           type="target"
           position={Position.Left}
@@ -259,11 +259,11 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
           style={{ top: '50%' }}
           className={`${handleClass} !border-purple-400`}
         />
-        <span className="text-purple-200" title={sheetHint}>
+        <span className="text-violet" title={sheetHint}>
           ⇄ Đầu vào
         </span>
         <span
-          className="flex items-center gap-1 text-amber-200"
+          className="flex items-center gap-1 text-warning"
           title="Nối với Telegram để gửi cảnh báo khi có xung đột."
         >
           <Zap size={11} /> Có xung đột
@@ -276,7 +276,7 @@ export const DiffEngineNode: React.FC<any> = ({ id, data, selected }) => {
           aria-label="Cảnh báo xung đột tới Telegram"
           className={`${handleClass} !border-amber-400`}
         />
-        <span className="text-emerald-200" title={rightHint}>
+        <span className="text-success" title={rightHint}>
           Hành động ➔
         </span>
         <Handle
@@ -304,10 +304,10 @@ export const StorageActionNode: React.FC<any> = ({ data, selected }) => {
         title="Nhận dữ liệu từ khối So khớp."
         className={`${handleClass} !border-emerald-400`}
       />
-      <NodeHeading icon={<Database size={20} className="text-blue-300" />} title="Kho lưu trữ" execution={nodeData.executionState} />
-      <div className="space-y-1 px-3 py-2.5 text-[11px]">
-        <p className="text-gray-500">Vùng lưu trữ</p>
-        <p className="truncate font-medium text-blue-200" title={nodeData.tableName}>
+      <NodeHeading icon={<Database size={20} className="text-info" />} title="Kho lưu trữ" execution={nodeData.executionState} />
+      <div className="space-y-1 px-3 py-2.5 text-xs">
+        <p className="text-muted">Vùng lưu trữ</p>
+        <p className="truncate font-medium text-info" title={nodeData.tableName}>
           {nodeData.tableName || 'Chưa chọn vùng'}
         </p>
       </div>
@@ -337,30 +337,30 @@ export const RouterConditionNode: React.FC<any> = ({ id, data, selected }) => {
         className={`${handleClass} !border-purple-400`}
       />
       <NodeHeading
-        icon={<Split size={18} className="text-purple-300" />}
+        icon={<Split size={18} className="text-violet" />}
         title="Rẽ Nhánh Điều Kiện"
         execution={nodeData.executionState}
       />
-      <div className="space-y-1.5 px-3 py-2.5 text-[11px]">
+      <div className="space-y-1.5 px-3 py-2.5 text-xs">
         <div className="flex items-center justify-between gap-1.5">
-          <span className="rounded bg-purple-950/60 px-1.5 py-0.5 font-medium text-purple-300 border border-purple-800/50">
+          <span className="rounded bg-violet-soft px-1.5 py-0.5 font-medium text-violet border border-purple-800/50">
             {triggerLabel}
           </span>
-          <span className="rounded bg-gray-800/80 px-1.5 py-0.5 text-gray-300 border border-gray-700">
+          <span className="rounded bg-elevated/80 px-1.5 py-0.5 text-secondary border border-line">
             {modeLabel}
           </span>
         </div>
-        <p className="text-gray-400">
+        <p className="text-secondary">
           {conditions.length === 0 ? (
-            <span className="text-amber-300/80">Chưa thiết lập điều kiện</span>
+            <span className="text-warning/80">Chưa thiết lập điều kiện</span>
           ) : (
             <span>Đã cấu hình {conditions.length} điều kiện lọc</span>
           )}
         </p>
       </div>
-      <div className="relative flex h-7 items-center justify-between rounded-b-xl border-t border-[#293241] bg-[#151b25] px-2.5 text-[10px] font-medium">
-        <span className="text-purple-300">Đầu vào ➔</span>
-        <span className="text-emerald-300">Thỏa điều kiện ➔</span>
+      <div className="relative flex h-7 items-center justify-between rounded-b-xl border-t border-line bg-elevated px-2.5 text-xs font-medium">
+        <span className="text-violet">Đầu vào ➔</span>
+        <span className="text-success">Thỏa điều kiện ➔</span>
         <Handle
           type="source"
           position={Position.Right}
@@ -391,27 +391,27 @@ export const TelegramActionNode: React.FC<any> = ({ id, data, selected }) => {
         className={`${handleClass} !border-amber-400`}
       />
       <NodeHeading icon={<TelegramIcon size={24} />} title="Telegram" execution={nodeData.executionState} />
-      <div className="space-y-1.5 px-3 py-2.5 text-[11px]">
-        <p className="text-gray-500">Nơi nhận cảnh báo</p>
-        <p className="text-gray-400">Nhận từ {nodeData.incomingSourcesCount ?? 0} nhánh</p>
+      <div className="space-y-1.5 px-3 py-2.5 text-xs">
+        <p className="text-muted">Nơi nhận cảnh báo</p>
+        <p className="text-secondary">Nhận từ {nodeData.incomingSourcesCount ?? 0} nhánh</p>
         <p
-          className={`truncate font-medium ${nodeData.chatId ? 'text-sky-200' : 'text-amber-300'}`}
+          className={`truncate font-medium ${nodeData.chatId ? 'text-info' : 'text-warning'}`}
           title={recipient}
         >
           {recipient}
         </p>
         {nodeData.recordTemplate && (
-          <p className="text-[10px] text-gray-400 truncate" title={`Mẫu: ${nodeData.recordTemplate}`}>
+          <p className="text-xs text-secondary truncate" title={`Mẫu: ${nodeData.recordTemplate}`}>
             Mẫu: {nodeData.recordTemplate}
           </p>
         )}
         <details
-          className="nodrag nopan text-[10px] text-gray-500"
+          className="nodrag nopan text-xs text-muted"
           onClick={stopNodeClick}
           onToggle={refreshHandles}
         >
-          <summary className="w-fit cursor-pointer hover:text-gray-300">Chi tiết</summary>
-          <div className="nowheel node-scrollbar mt-2 max-h-24 space-y-1 overflow-y-auto break-words text-gray-400">
+          <summary className="w-fit cursor-pointer hover:text-secondary">Chi tiết</summary>
+          <div className="nowheel node-scrollbar mt-2 max-h-24 space-y-1 overflow-y-auto break-words text-secondary">
             <p>Nơi nhận: {recipient}</p>
             <p>Bot: {nodeData.botName || 'Chưa có thông tin bot'}</p>
             {nodeData.chatId && <p className="break-all">Chat ID: {nodeData.chatId}</p>}
@@ -442,25 +442,25 @@ export const ScheduleTriggerNode: React.FC<any> = ({ id, data, selected }) => {
   return (
     <div className={cardClass(selected, 'border-emerald-400 ring-2 ring-emerald-500/20', nodeData.executionState)}>
       <NodeHeading
-        icon={<Clock size={18} className="text-emerald-400" />}
+        icon={<Clock size={18} className="text-success" />}
         title={nodeData.label || 'Hẹn Giờ Định Kỳ'}
         execution={nodeData.executionState}
       />
-      <div className="space-y-1.5 px-3 py-2.5 text-[11px]">
-        <div className="flex items-center justify-between gap-2 text-gray-400">
+      <div className="space-y-1.5 px-3 py-2.5 text-xs">
+        <div className="flex items-center justify-between gap-2 text-secondary">
           <span>Chu kỳ kích hoạt</span>
           <code
-            className="truncate rounded border border-emerald-500/40 bg-emerald-950/40 px-2 py-0.5 text-xs font-semibold text-emerald-200"
+            className="truncate rounded border border-emerald-500/40 bg-success-soft px-2 py-0.5 text-xs font-semibold text-success"
             title={scheduleDescription}
           >
             {scheduleDescription}
           </code>
         </div>
         <div className="flex items-center justify-between gap-2">
-          <span className="text-gray-400">Trạng thái</span>
+          <span className="text-secondary">Trạng thái</span>
           <span
             className={`flex items-center gap-1 font-medium ${
-              isEnabled ? 'text-emerald-300' : 'text-gray-400'
+              isEnabled ? 'text-success' : 'text-secondary'
             }`}
           >
             <span
@@ -471,7 +471,7 @@ export const ScheduleTriggerNode: React.FC<any> = ({ id, data, selected }) => {
             {isEnabled ? 'Đang bật · chờ đến giờ' : 'Tạm dừng'}
           </span>
         </div>
-        <p className="text-[10px] text-gray-500">Bấm khối để đổi chu kỳ phút / giờ</p>
+        <p className="text-xs text-muted">Bấm khối để đổi chu kỳ phút / giờ</p>
       </div>
       <Handle
         type="source"
@@ -491,11 +491,11 @@ export const DataTransformNode: React.FC<any> = ({ id, data, selected }) => {
   useHandleGeometry(id, String(count));
   return <div className={cardClass(selected, 'border-purple-400 ring-2 ring-purple-500/20', nodeData.executionState)}>
     <Handle type="target" position={Position.Left} id="in" className={handleClass + ' !border-purple-400'} />
-    <NodeHeading icon={<Wand2 size={20} className="text-purple-300" />} title="Chuẩn Hóa Dữ Liệu" execution={nodeData.executionState} />
+    <NodeHeading icon={<Wand2 size={20} className="text-violet" />} title="Chuẩn Hóa Dữ Liệu" execution={nodeData.executionState} />
     <div className="space-y-2 px-3 py-3 text-xs">
-      <p className="w-fit rounded-full bg-purple-950 px-2 py-1 text-purple-200">{count} cột · {nodeData.transformSourceCount || 0} Sheet</p>
-      <p className="text-gray-400">{nodeData.transformWriteBackCount ? 'Ghi sạch về ' + nodeData.transformWriteBackCount + ' Sheet' : 'Làm sạch trước khi so khớp'}</p>
-      <p className="text-gray-500">Bấm để chọn cột và xem trước</p>
+      <p className="w-fit rounded-full bg-violet-soft px-2 py-1 text-violet">{count} cột · {nodeData.transformSourceCount || 0} Sheet</p>
+      <p className="text-secondary">{nodeData.transformWriteBackCount ? 'Ghi sạch về ' + nodeData.transformWriteBackCount + ' Sheet' : 'Làm sạch trước khi so khớp'}</p>
+      <p className="text-muted">Bấm để chọn cột và xem trước</p>
     </div>
     <Handle type="source" position={Position.Right} id="out" className={handleClass + ' !border-purple-400'} />
   </div>;
@@ -509,22 +509,22 @@ export const GenericOrchestrationNode: React.FC<any> = ({ data, selected }) => {
 
   const getIcon = () => {
     if (nodeData.type === 'scheduleTrigger')
-      return <Clock size={16} className="text-emerald-400" />;
+      return <Clock size={16} className="text-success" />;
     if (nodeData.type === 'webhookTrigger')
-      return <Webhook size={16} className="text-emerald-400" />;
-    if (nodeData.type === 'routerCondition') return <Split size={16} className="text-purple-400" />;
-    if (nodeData.type === 'dataTransform') return <Wand2 size={16} className="text-purple-400" />;
+      return <Webhook size={16} className="text-success" />;
+    if (nodeData.type === 'routerCondition') return <Split size={16} className="text-violet" />;
+    if (nodeData.type === 'dataTransform') return <Wand2 size={16} className="text-violet" />;
     if (nodeData.type === 'sheetWriteAction')
-      return <FileEdit size={16} className="text-blue-400" />;
-    return <Sparkles size={16} className="text-blue-400" />;
+      return <FileEdit size={16} className="text-info" />;
+    return <Sparkles size={16} className="text-info" />;
   };
 
   return (
     <div
-      className={`w-64 bg-[#1a1f29] rounded-2xl border-2 transition-all shadow-xl select-none ${
+      className={`w-64 bg-elevated rounded-2xl border-2 transition-all shadow-xl select-none ${
         selected
           ? 'border-blue-400 ring-4 ring-blue-500/20'
-          : 'border-[#2d3748] hover:border-gray-500'
+          : 'border-line hover:border-line'
       }`}
     >
       {!isTrigger && (
@@ -532,24 +532,24 @@ export const GenericOrchestrationNode: React.FC<any> = ({ data, selected }) => {
           type="target"
           position={Position.Left}
           id="in"
-          className="!w-3.5 !h-3.5 !bg-[#111827] !border-2 !border-blue-400 transition-colors hover:!bg-slate-700"
+          className="!w-3.5 !h-3.5 !bg-[#111827] !border-2 !border-blue-400 transition-colors hover:!bg-subtle"
         />
       )}
 
-      <div className="p-3 bg-[#131720] rounded-t-2xl border-b border-[#2d3748] flex items-center justify-between">
+      <div className="p-3 bg-surface rounded-t-2xl border-b border-line flex items-center justify-between">
         <div className="flex items-center gap-2.5">
-          <div className="w-8 h-8 rounded-xl bg-gray-800 border border-gray-700 flex items-center justify-center">
+          <div className="w-8 h-8 rounded-xl bg-elevated border border-line flex items-center justify-center">
             {getIcon()}
           </div>
           <div>
-            <span className="text-xs font-bold text-white block">{nodeData.label}</span>
-            <span className="text-[10px] text-gray-400">{nodeData.subtitle}</span>
+            <span className="text-xs font-bold text-primary block">{nodeData.label}</span>
+            <span className="text-xs text-secondary">{nodeData.subtitle}</span>
           </div>
         </div>
       </div>
 
-      <div className="p-3 text-xs text-gray-400 space-y-1">
-        <div className="text-[11px] text-gray-300">
+      <div className="p-3 text-xs text-secondary space-y-1">
+        <div className="text-xs text-secondary">
           Click để điền các câu nói cấu hình tự nhiên.
         </div>
       </div>
@@ -559,7 +559,7 @@ export const GenericOrchestrationNode: React.FC<any> = ({ data, selected }) => {
           type="source"
           position={Position.Right}
           id="out"
-          className="!w-3.5 !h-3.5 !bg-[#111827] !border-2 !border-blue-400 transition-colors hover:!bg-slate-700"
+          className="!w-3.5 !h-3.5 !bg-[#111827] !border-2 !border-blue-400 transition-colors hover:!bg-subtle"
         />
       )}
     </div>

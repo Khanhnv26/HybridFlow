@@ -44,15 +44,15 @@ export function ExecutionOutbox({ flowId, executionId, load, retry }: Props) {
   };
   const page = (next: number) => { setItems([]); setLoaded(false); setLoadError(''); setRetryError(''); setOffset(next); };
 
-  return <section aria-label="Chi tiết thông báo" className="mt-3 border-t border-gray-700 pt-3 space-y-3 font-sans select-text">
-    <h4 className="font-semibold text-gray-200">Thông báo của lượt chạy</h4>
-    <p className="text-gray-400 break-all">Mã lượt chạy: {executionId}</p>
-    <p className="text-gray-400">Trạng thái gửi được cập nhật riêng với kết quả đồng bộ. Gửi lại chỉ xử lý thông báo đã chọn.</p>
-    {loadError && <p role="alert" className="text-amber-200">Không tải được thông báo: {loadError}</p>}
-    {retryError && <p role="alert" className="text-amber-200">{retryError}</p>}
+  return <section aria-label="Chi tiết thông báo" className="mt-3 border-t border-line pt-3 space-y-3 font-sans select-text">
+    <h4 className="font-semibold text-primary">Thông báo của lượt chạy</h4>
+    <p className="text-secondary break-all">Mã lượt chạy: {executionId}</p>
+    <p className="text-secondary">Trạng thái gửi được cập nhật riêng với kết quả đồng bộ. Gửi lại chỉ xử lý thông báo đã chọn.</p>
+    {loadError && <p role="alert" className="text-warning">Không tải được thông báo: {loadError}</p>}
+    {retryError && <p role="alert" className="text-warning">{retryError}</p>}
     {!loaded && !loadError && <p role="status">Đang tải thông báo…</p>}
     {loaded && !loadError && items.length === 0 && <p>Không có thông báo trong trang này của lượt chạy.</p>}
-    {items.map(item => <article key={item.id} className="border border-gray-700 rounded p-3 space-y-2">
+    {items.map(item => <article key={item.id} className="border border-line rounded p-3 space-y-2">
       <div className="flex justify-between gap-3 flex-wrap">
         <strong>{states[item.state] || item.state}</strong>
         <span>Số lần thử trong đợt hiện tại: {item.attempts}</span>
@@ -62,13 +62,13 @@ export function ExecutionOutbox({ flowId, executionId, load, retry }: Props) {
       {item.sentAt && <p>Đã gửi: {date(item.sentAt)}</p>}
       {['PENDING', 'FAILED'].includes(item.state) && <p>Lần thử kế tiếp sớm nhất: {date(item.availableAt)}</p>}
       <pre className="whitespace-pre-wrap break-words font-sans">{item.message}</pre>
-      {item.errorCode && <p className="text-amber-200">Mã lỗi: {item.errorCode}</p>}
-      {(item.lastError || item.errorCode) && <p className="text-amber-200">{errorMessage({ response: { data: {
+      {item.errorCode && <p className="text-warning">Mã lỗi: {item.errorCode}</p>}
+      {(item.lastError || item.errorCode) && <p className="text-warning">{errorMessage({ response: { data: {
         message: item.lastError || 'Gửi thông báo thất bại.', code: item.errorCode, correlationId: item.correlationId,
       } } })}</p>}
-      {item.correlationId && <p className="text-gray-400 break-all">Mã tra cứu: {item.correlationId}</p>}
+      {item.correlationId && <p className="text-secondary break-all">Mã tra cứu: {item.correlationId}</p>}
       {['FAILED', 'DEAD'].includes(item.state) && <button type="button" disabled={busy !== null}
-        className="px-3 py-1 rounded border border-sky-700 text-sky-300 disabled:opacity-40"
+        className="px-3 py-1 rounded border border-sky-700 text-info disabled:opacity-40"
         onClick={() => void resend(item.id)}>{busy === item.id ? 'Đang yêu cầu…' : 'Thử gửi lại'}</button>}
     </article>)}
     <nav aria-label="Trang thông báo" className="flex items-center gap-3">

@@ -231,19 +231,19 @@ export function SheetSourceConfig({
       aria-labelledby="sheet-source-title"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
     >
-      <div className="bg-[#171b24] border border-gray-700 rounded-2xl w-full hf-modal hf-modal--complex  flex flex-col overflow-hidden">
-        <div className="hf-modal-header p-4 border-b border-gray-700 flex items-center justify-between gap-4">
+      <div className="bg-elevated border border-line rounded-2xl w-full hf-modal hf-modal--complex  flex flex-col overflow-hidden">
+        <div className="hf-modal-header p-4 border-b border-line flex items-center justify-between gap-4">
           <div>
             <h3 id="sheet-source-title" className="font-semibold flex items-center gap-2.5">
               <ExcelIcon size={28} /> Google Trang Tính
             </h3>
-            <p className="text-xs text-gray-400 mt-1">Chọn file và trang tính để đồng bộ</p>
+            <p className="text-xs text-secondary mt-1">Chọn file và trang tính để đồng bộ</p>
           </div>
           <button
             disabled={saving}
             onClick={onClose}
             aria-label="Đóng"
-            className="text-gray-400 hover:text-white disabled:opacity-40"
+            className="text-secondary hover:text-primary disabled:opacity-40"
           >
             <X size={20} />
           </button>
@@ -251,22 +251,22 @@ export function SheetSourceConfig({
         <div className="hf-modal-body">
           <div className="p-4 space-y-4 text-sm">
             {workspaceId ? (
-              <div className="space-y-2 rounded-lg border border-gray-700 p-3 bg-[#11141c]">
+              <div className="space-y-2 rounded-lg border border-line p-3 bg-surface">
                 <div className="flex items-center justify-between">
-                  <span className="text-xs text-gray-300 font-medium">
+                  <span className="text-xs text-secondary font-medium">
                     Kết nối Google trong Workspace
                   </span>
                   <button
                     type="button"
                     disabled={busy || connecting}
                     onClick={() => void connect()}
-                    className="text-xs text-blue-300 font-medium disabled:opacity-40"
+                    className="text-xs text-info font-medium disabled:opacity-40"
                   >
                     {connecting ? 'Đang mở Google...' : '+ Thêm kết nối'}
                   </button>
                 </div>
                 {workspaceConnections.length === 0 ? (
-                  <p className="text-xs text-amber-300">
+                  <p className="text-xs text-warning">
                     Chưa có kết nối Google trong workspace. Bấm "+ Thêm kết nối" để cấp quyền.
                   </p>
                 ) : (
@@ -281,7 +281,7 @@ export function SheetSourceConfig({
                       setPreview(null);
                       setError('');
                     }}
-                    className="w-full p-2 rounded bg-[#0b0e14] border border-gray-700 text-xs text-gray-200"
+                    className="w-full p-2 rounded bg-canvas border border-line text-xs text-primary"
                   >
                     {workspaceConnections.map((conn) => (
                       <option key={conn.id} value={conn.id}>
@@ -292,14 +292,14 @@ export function SheetSourceConfig({
                 )}
               </div>
             ) : (
-              <div className="flex items-center justify-between gap-3 rounded-lg border border-gray-700 px-3 py-2.5">
-                <span className="text-xs text-gray-400">
+              <div className="flex items-center justify-between gap-3 rounded-lg border border-line px-3 py-2.5">
+                <span className="text-xs text-secondary">
                   Google: {connected ? 'Đã kết nối' : 'Chưa kết nối'}
                 </span>
                 <button
                   disabled={busy || connecting}
                   onClick={() => void connect()}
-                  className="text-xs text-blue-300 font-medium disabled:opacity-40"
+                  className="text-xs text-info font-medium disabled:opacity-40"
                 >
                   {connecting
                     ? 'Đang mở Google...'
@@ -330,12 +330,12 @@ export function SheetSourceConfig({
                   setPreview(null);
                   setError('');
                 }}
-                className="w-full p-3 rounded-lg bg-[#0b0e14] border border-gray-700 focus:border-blue-500 outline-none text-xs text-gray-200"
+                className="w-full p-3 rounded-lg bg-canvas border border-line focus:border-blue-500 outline-none text-xs text-primary"
               />
-              <p className="text-xs text-gray-500">Dán link chia sẻ hoặc mã file Google Sheets.</p>
+              <p className="text-xs text-muted">Dán link chia sẻ hoặc mã file Google Sheets.</p>
             </label>
             {parsed.error && (
-              <p role="alert" className="text-xs text-red-300">
+              <p role="alert" className="text-xs text-danger">
                 {parsed.error}
               </p>
             )}
@@ -351,7 +351,7 @@ export function SheetSourceConfig({
                   setError('');
                   setNotice('');
                 }}
-                className="w-full p-3 rounded-lg bg-[#0b0e14] border border-gray-700 text-sm disabled:text-gray-500"
+                className="w-full p-3 rounded-lg bg-canvas border border-line text-sm disabled:text-muted"
               >
                 <option value="">
                   {loading
@@ -370,24 +370,24 @@ export function SheetSourceConfig({
               </select>
             </label>
             {metadata && (
-              <p className="text-xs text-gray-400 break-words">
-                File: <span className="text-gray-200">{metadata.title}</span> ·{' '}
+              <p className="text-xs text-secondary break-words">
+                File: <span className="text-primary">{metadata.title}</span> ·{' '}
                 {metadata.sheets.length} trang tính
               </p>
             )}
             {loading && (
-              <p role="status" className="text-xs text-gray-400 flex gap-2 items-center">
+              <p role="status" className="text-xs text-secondary flex gap-2 items-center">
                 <RefreshCw size={13} className="animate-spin" />
                 Đang lấy danh sách từ Google...
               </p>
             )}
             {notice && (
-              <p role="status" className="text-xs text-amber-200">
+              <p role="status" className="text-xs text-warning">
                 {notice}
               </p>
             )}
             {error && (
-              <div role="alert" className="text-xs text-red-300 space-y-2">
+              <div role="alert" className="text-xs text-danger space-y-2">
                 <p>{error}</p>
                 {!metadata && parsed.source && connected && (
                   <button
@@ -403,18 +403,18 @@ export function SheetSourceConfig({
             <button
               disabled={!ready}
               onClick={() => void readPreview()}
-              className="flex gap-2 items-center text-xs font-medium px-3 py-2 rounded-lg border border-gray-600 hover:bg-gray-800 disabled:opacity-40"
+              className="flex gap-2 items-center text-xs font-medium px-3 py-2 rounded-lg border border-line hover:bg-elevated disabled:opacity-40"
             >
               {previewing ? <RefreshCw size={14} className="animate-spin" /> : <Play size={14} />}
               {previewing ? 'Đang đọc dữ liệu...' : 'Xem trước dữ liệu'}
             </button>
           </div>
-          {preview && <div className="p-4 border-t border-gray-700 bg-[#13161f] text-sm space-y-4 min-w-0">
-            <h4 className="font-medium text-gray-300">Xem trước trang tính</h4>
+          {preview && <div className="p-4 border-t border-line bg-elevated text-sm space-y-4 min-w-0">
+            <h4 className="font-medium text-secondary">Xem trước trang tính</h4>
             {preview ? (
               <>
                 <div className="flex items-center justify-between gap-3">
-                  <p className="text-gray-400">
+                  <p className="text-secondary">
                     {preview.sheetName} · {preview.totalRows} dòng
                   </p>
                   {selected && parsed.source && (
@@ -422,7 +422,7 @@ export function SheetSourceConfig({
                       href={`https://docs.google.com/spreadsheets/d/${parsed.source.spreadsheetId}/edit#gid=${selected.sheetId}`}
                       target="_blank"
                       rel="noreferrer"
-                      className="text-blue-300 inline-flex gap-1 items-center"
+                      className="text-info inline-flex gap-1 items-center"
                     >
                       Mở Sheet
                       <ExternalLink size={12} />
@@ -435,7 +435,7 @@ export function SheetSourceConfig({
                       <thead>
                         <tr>
                           {preview.headers.map((header, i) => (
-                            <th key={i} className="p-2 border-b border-gray-700 font-medium">
+                            <th key={i} className="p-2 border-b border-line font-medium">
                               {header}
                             </th>
                           ))}
@@ -445,7 +445,7 @@ export function SheetSourceConfig({
                         {preview.rows.slice(0, 20).map((row, i) => (
                           <tr key={i}>
                             {preview.headers.map((header, j) => (
-                              <td key={j} className="p-2 border-b border-gray-800">
+                              <td key={j} className="p-2 border-b border-line">
                                 {row[header] ?? ''}
                               </td>
                             ))}
@@ -455,29 +455,29 @@ export function SheetSourceConfig({
                     </table>
                   </div>
                 ) : (
-                  <p className="text-gray-500">Trang tính chưa có hàng tiêu đề.</p>
+                  <p className="text-muted">Trang tính chưa có hàng tiêu đề.</p>
                 )}
                 {preview.rows.length === 0 && (
-                  <p className="text-gray-500">Trang tính chưa có dòng dữ liệu.</p>
+                  <p className="text-muted">Trang tính chưa có dòng dữ liệu.</p>
                 )}
                 {preview.rows.length > 20 && (
-                  <p className="text-gray-500">Đang hiển thị 20 dòng đầu tiên.</p>
+                  <p className="text-muted">Đang hiển thị 20 dòng đầu tiên.</p>
                 )}
               </>
             ) : (
-              <p className="text-gray-500 leading-relaxed">
+              <p className="text-muted leading-relaxed">
                 Chọn trang tính rồi bấm “Xem trước dữ liệu” để kiểm tra nội dung trước khi lưu.
               </p>
             )}
           </div>}
         </div>
-        <div className="hf-modal-footer p-4 border-t border-gray-700 flex flex-wrap justify-between items-center gap-4">
-          <p className="text-xs text-gray-500 max-w-md">
+        <div className="hf-modal-footer p-4 border-t border-line flex flex-wrap justify-between items-center gap-4">
+          <p className="text-xs text-muted max-w-md">
             Thay đổi chỉ áp dụng sau khi lưu. Nguồn mới sẽ cần xác nhận khởi tạo ở lần đồng bộ đầu
             tiên.
           </p>
           <div className="flex gap-3">
-            <button disabled={saving} onClick={onClose} className="px-3 py-2 text-xs text-gray-400">
+            <button disabled={saving} onClick={onClose} className="px-3 py-2 text-xs text-secondary">
               Hủy
             </button>
             <button

@@ -59,17 +59,17 @@ export function WorkspacePicker({ children }: { children: (workspace: Workspace)
 
   const active = items.find(item => item.id === selected);
   return (
-    <div className="min-h-screen flex flex-col bg-slate-950 text-slate-100">
-      <header className="border-b border-slate-800 bg-slate-900/80 px-6 py-3 flex items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <span className="font-bold text-lg text-blue-400">HybridFlow</span>
-          <label className="flex items-center gap-2 text-sm text-slate-300">
+    <div className="h-dvh min-h-0 flex flex-col bg-canvas text-primary">
+      <header className="relative z-50 shrink-0 border-b border-line bg-surface pl-4 pr-16 py-3 flex flex-wrap items-center justify-between gap-3">
+        <div className="min-w-0 flex flex-wrap items-center gap-3">
+          <span className="font-bold text-lg text-info">HybridFlow</span>
+          <label className="flex items-center gap-2 text-sm text-secondary">
             Workspace
             <select
               value={selected}
               disabled={loading || busy}
               onChange={event => setSelected(event.target.value)}
-              className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-sm text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="max-w-[min(40vw,260px)] bg-elevated border border-line rounded px-2 py-1 text-sm text-primary focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
               <option value="">Chọn workspace</option>
               {items.map(item => (
@@ -81,13 +81,16 @@ export function WorkspacePicker({ children }: { children: (workspace: Workspace)
           </label>
         </div>
         <div className="flex items-center gap-3">
-          <div className="flex items-center gap-2">
+          <details className="relative">
+            <summary className="toolbar-button cursor-pointer list-none [&::-webkit-details-marker]:hidden">+ Workspace</summary>
+            <div className="toolbar-popover flex flex-col gap-3">
             <input
+              aria-label="Tên workspace mới"
               placeholder="Tên workspace mới"
               value={name}
               maxLength={120}
               onChange={event => setName(event.target.value)}
-              className="bg-slate-800 border border-slate-700 rounded px-3 py-1 text-sm text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="bg-elevated border border-line rounded px-3 py-1 text-sm text-primary placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             <button
               disabled={loading || busy || !name.trim()}
@@ -96,19 +99,20 @@ export function WorkspacePicker({ children }: { children: (workspace: Workspace)
             >
               Tạo workspace
             </button>
-          </div>
+            </div>
+          </details>
           <button
             onClick={() => void handleLogout()}
-            className="text-slate-400 hover:text-red-400 text-sm px-2 py-1 transition-colors"
+            className="text-secondary hover:text-danger text-sm px-2 py-1 transition-colors"
           >
             Đăng xuất
           </button>
         </div>
       </header>
 
-      {loading && <p role="status" className="p-6 text-sm text-slate-400">Đang tải workspace…</p>}
+      {loading && <p role="status" className="p-6 text-sm text-secondary">Đang tải workspace…</p>}
       {error && (
-        <div role="alert" className="p-4 bg-red-950/50 border border-red-800 text-red-300 text-sm flex items-center justify-between">
+        <div role="alert" className="p-4 bg-danger-soft border border-red-800 text-danger text-sm flex items-center justify-between">
           <span>{error}</span>
           <button
             onClick={() => setRevision(value => value + 1)}
@@ -126,7 +130,7 @@ export function WorkspacePicker({ children }: { children: (workspace: Workspace)
       )}
 
       {!loading && !error && !active && items.length === 0 && (
-        <div className="p-12 text-center text-slate-400">
+        <div className="p-12 text-center text-secondary">
           <p>Chưa có workspace nào. Hãy nhập tên và bấm "Tạo workspace" ở trên để bắt đầu.</p>
         </div>
       )}

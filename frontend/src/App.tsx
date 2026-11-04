@@ -806,7 +806,7 @@ export default function App({ userId, workspaceId, workspaceRole, workflowId: pr
   };
 
   return (
-    <div className="h-screen w-screen flex flex-col bg-[#0f131a] text-[#f1f5f9] overflow-hidden font-sans">
+    <div className="h-full min-h-0 w-full flex flex-col bg-canvas text-primary overflow-hidden font-sans">
       <StudioHeader
         isRunning={isRunning}
         autoActive={autoActive}
@@ -830,14 +830,14 @@ export default function App({ userId, workspaceId, workspaceRole, workflowId: pr
       {bootstrapRequired && (
         <div
           role="alert"
-          className="px-5 py-3 bg-amber-950 text-amber-200 text-sm flex items-center gap-4"
+          className="px-5 py-3 bg-warning-soft text-warning text-sm flex items-center gap-4"
         >
           Luồng mới chưa có snapshot. Khởi tạo sẽ sao chép dữ liệu Sheet hiện tại vào vùng lưu trữ
           đã chọn.
           <button
             disabled={isRunning}
             onClick={() => void runWorkflow(true)}
-            className="px-3 py-2 bg-amber-600 rounded text-white disabled:opacity-50"
+            className="px-3 py-2 bg-amber-600 rounded text-on-accent disabled:opacity-50"
           >
             Xác nhận khởi tạo
           </button>
@@ -896,7 +896,7 @@ export default function App({ userId, workspaceId, workspaceRole, workflowId: pr
             maxZoom={2}
             defaultEdgeOptions={{ type: 'smoothstep' }}
           >
-            <Background variant={BackgroundVariant.Dots} gap={24} size={1.5} color="#2d3748" />
+            <Background variant={BackgroundVariant.Dots} gap={24} size={1.5} color="var(--grid-dot)" />
             {executionView.label && <Panel position="top-right">
               <div role="status" aria-live="polite" className={`workflow-run-summary workflow-run-summary--${executionView.running ? 'running' : latestExecution?.status === 'ERROR' ? 'error' : ['CONFLICT', 'AWAITING_CONFIRMATION'].includes(latestExecution?.status || '') ? 'warning' : 'success'}`}>
                 <span className="workflow-run-indicator" />
@@ -908,18 +908,18 @@ export default function App({ userId, workspaceId, workspaceRole, workflowId: pr
             <Panel position="top-left" className="flex gap-2">
               <button
                 onClick={() => setIsPaletteOpen(!isPaletteOpen)}
-                className="flex items-center gap-2 rounded border border-gray-700 bg-gray-900 px-3 py-2 text-xs"
+                className="flex items-center gap-2 rounded border border-line bg-surface px-3 py-2 text-xs"
               >
                 {isPaletteOpen ? <PanelLeftClose size={16} /> : <PanelLeftOpen size={16} />} Thư
                 viện
               </button>
               <button
                 onClick={() => setIsMinimapOpen(!isMinimapOpen)}
-                className="flex items-center gap-2 rounded border border-gray-700 bg-gray-900 px-3 py-2 text-xs"
+                className="flex items-center gap-2 rounded border border-line bg-surface px-3 py-2 text-xs"
               >
                 <Map size={16} /> Bản đồ
               </button>
-              <button aria-label="Sắp xếp canvas" disabled={isRunning} onClick={arrangeCanvas} className="flex items-center gap-2 rounded border border-gray-700 bg-gray-900 px-3 py-2 text-xs disabled:opacity-40"><LayoutGrid size={16} /> Sắp xếp</button>
+              <button aria-label="Sắp xếp canvas" disabled={isRunning} onClick={arrangeCanvas} className="flex items-center gap-2 rounded border border-line bg-surface px-3 py-2 text-xs disabled:opacity-40"><LayoutGrid size={16} /> Sắp xếp</button>
             </Panel>
             <Controls style={{ bottom: 52 }} />
             {isMinimapOpen && <MiniMap style={{ bottom: 52, width: 140, height: 90 }} />}
@@ -939,7 +939,7 @@ export default function App({ userId, workspaceId, workspaceRole, workflowId: pr
       {toastMessage && (
         <div
           role="status"
-          className="fixed bottom-16 right-4 max-w-xl px-4 py-3 rounded-xl bg-gray-900 border border-gray-700 text-white text-sm z-50"
+          className="fixed bottom-16 right-4 max-w-xl px-4 py-3 rounded-xl bg-surface border border-line text-primary text-sm z-50"
         >
           {toastMessage}
         </div>

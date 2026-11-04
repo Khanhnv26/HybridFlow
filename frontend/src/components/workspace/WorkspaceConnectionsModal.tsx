@@ -209,14 +209,14 @@ export function WorkspaceConnectionsModal({
       aria-labelledby="connections-modal-title"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
     >
-      <div className="bg-[#171b24] border border-gray-700 rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden text-gray-100">
-        <div className="p-4 border-b border-gray-700 flex items-center justify-between">
+      <div className="bg-elevated border border-line rounded-2xl w-full max-w-2xl max-h-[90vh] flex flex-col overflow-hidden text-primary">
+        <div className="p-4 border-b border-line flex items-center justify-between">
           <div>
             <h3 id="connections-modal-title" className="font-semibold text-base flex items-center gap-2">
-              <Shield size={20} className="text-blue-400" />
+              <Shield size={20} className="text-info" />
               Quản lý kết nối Workspace
             </h3>
-            <p className="text-xs text-gray-400 mt-0.5">
+            <p className="text-xs text-secondary mt-0.5">
               Kết nối Google Sheets và Telegram được lưu trữ và chia sẻ an toàn theo phân quyền
             </p>
           </div>
@@ -225,7 +225,7 @@ export function WorkspaceConnectionsModal({
             disabled={busy}
             onClick={onClose}
             aria-label="Đóng"
-            className="text-gray-400 hover:text-white disabled:opacity-40"
+            className="text-secondary hover:text-primary disabled:opacity-40"
           >
             <X size={20} />
           </button>
@@ -233,12 +233,12 @@ export function WorkspaceConnectionsModal({
 
         <div className="p-4 overflow-y-auto space-y-6 text-sm flex-1">
           {error && (
-            <div role="alert" className="p-3 bg-red-950/60 border border-red-800 text-red-200 text-xs rounded-lg flex items-center justify-between">
+            <div role="alert" className="p-3 bg-danger-soft border border-red-800 text-danger text-xs rounded-lg flex items-center justify-between">
               <span>{error}</span>
               <button
                 type="button"
                 onClick={() => setError('')}
-                className="text-red-400 hover:text-white"
+                className="text-danger hover:text-primary"
               >
                 <X size={14} />
               </button>
@@ -246,12 +246,12 @@ export function WorkspaceConnectionsModal({
           )}
 
           {success && (
-            <div role="status" className="p-3 bg-emerald-950/60 border border-emerald-800 text-emerald-200 text-xs rounded-lg flex items-center justify-between">
+            <div role="status" className="p-3 bg-success-soft border border-emerald-800 text-success text-xs rounded-lg flex items-center justify-between">
               <span>{success}</span>
               <button
                 type="button"
                 onClick={() => setSuccess('')}
-                className="text-emerald-400 hover:text-white"
+                className="text-success hover:text-primary"
               >
                 <X size={14} />
               </button>
@@ -260,14 +260,14 @@ export function WorkspaceConnectionsModal({
 
           <div className="space-y-3">
             <div className="flex items-center justify-between">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-secondary">
                 Danh sách kết nối hiện có ({connections.length})
               </h4>
               <button
                 type="button"
                 disabled={loading || busy}
                 onClick={() => void loadConnections()}
-                className="text-xs text-gray-400 hover:text-white flex items-center gap-1"
+                className="text-xs text-secondary hover:text-primary flex items-center gap-1"
               >
                 <RefreshCw size={12} className={loading ? 'animate-spin' : ''} />
                 Làm mới
@@ -275,9 +275,9 @@ export function WorkspaceConnectionsModal({
             </div>
 
             {loading && connections.length === 0 ? (
-              <p className="text-xs text-gray-500 py-4 text-center">Đang tải danh sách kết nối…</p>
+              <p className="text-xs text-muted py-4 text-center">Đang tải danh sách kết nối…</p>
             ) : connections.length === 0 ? (
-              <p className="text-xs text-gray-500 py-4 text-center bg-[#11141c] rounded-lg border border-gray-800">
+              <p className="text-xs text-muted py-4 text-center bg-surface rounded-lg border border-line">
                 Chưa có kết nối nào trong workspace này.
               </p>
             ) : (
@@ -285,10 +285,10 @@ export function WorkspaceConnectionsModal({
                 {connections.map((conn) => (
                   <div
                     key={conn.id}
-                    className="p-3 rounded-lg bg-[#11141c] border border-gray-800 flex flex-wrap items-center justify-between gap-3"
+                    className="p-3 rounded-lg bg-surface border border-line flex flex-wrap items-center justify-between gap-3"
                   >
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="p-2 rounded-lg bg-gray-800/80 shrink-0">
+                      <div className="p-2 rounded-lg bg-elevated/80 shrink-0">
                         {conn.provider === 'GOOGLE' ? (
                           <ExcelIcon size={20} />
                         ) : (
@@ -297,18 +297,18 @@ export function WorkspaceConnectionsModal({
                       </div>
                       <div className="min-w-0">
                         <div className="flex items-center gap-2">
-                          <span className="font-medium text-sm text-gray-200 truncate">{conn.name}</span>
+                          <span className="font-medium text-sm text-primary truncate">{conn.name}</span>
                           <span
-                            className={`text-[10px] px-2 py-0.5 rounded font-semibold ${
+                            className={`text-xs px-2 py-0.5 rounded font-semibold ${
                               conn.state === 'ACTIVE'
-                                ? 'bg-emerald-950/80 text-emerald-400 border border-emerald-800/60'
-                                : 'bg-red-950/80 text-red-400 border border-red-800/60'
+                                ? 'bg-success-soft text-success border border-emerald-800/60'
+                                : 'bg-danger-soft text-danger border border-red-800/60'
                             }`}
                           >
                             {conn.state}
                           </span>
                         </div>
-                        <p className="text-xs text-gray-500 truncate mt-0.5">
+                        <p className="text-xs text-muted truncate mt-0.5">
                           ID: {conn.id} · Đang dùng trong {conn.usageCount} workflow
                         </p>
                       </div>
@@ -320,7 +320,7 @@ export function WorkspaceConnectionsModal({
                           type="button"
                           disabled={busy}
                           onClick={() => void handleGrantEditor(conn.id)}
-                          className="px-2.5 py-1 text-xs rounded bg-slate-800 hover:bg-slate-700 text-blue-300 font-medium transition"
+                          className="px-2.5 py-1 text-xs rounded bg-elevated hover:bg-subtle text-info font-medium transition"
                           title="Cho phép Editor trong workspace sử dụng kết nối này"
                         >
                           Cấp Editor
@@ -332,7 +332,7 @@ export function WorkspaceConnectionsModal({
                           type="button"
                           disabled={busy}
                           onClick={() => void handleRevoke(conn.id)}
-                          className="px-2.5 py-1 text-xs rounded bg-amber-950/50 hover:bg-amber-900/60 text-amber-300 border border-amber-800/50 transition"
+                          className="px-2.5 py-1 text-xs rounded bg-warning-soft hover:bg-warning-soft text-warning border border-amber-800/50 transition"
                         >
                           Thu hồi
                         </button>
@@ -343,7 +343,7 @@ export function WorkspaceConnectionsModal({
                           type="button"
                           disabled={busy}
                           onClick={() => void handleDelete(conn.id)}
-                          className="p-1.5 text-gray-400 hover:text-red-400 rounded hover:bg-red-950/30 transition"
+                          className="p-1.5 text-secondary hover:text-danger rounded hover:bg-danger-soft transition"
                           title="Xóa kết nối"
                         >
                           <Trash2 size={15} />
@@ -357,16 +357,16 @@ export function WorkspaceConnectionsModal({
           </div>
 
           {isManager && (
-            <div className="pt-4 border-t border-gray-800 space-y-4">
-              <h4 className="text-xs font-semibold uppercase tracking-wider text-gray-400">
+            <div className="pt-4 border-t border-line space-y-4">
+              <h4 className="text-xs font-semibold uppercase tracking-wider text-secondary">
                 Thêm kết nối mới
               </h4>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-3 rounded-lg bg-[#11141c] border border-gray-800 space-y-3">
+                <div className="p-3 rounded-lg bg-surface border border-line space-y-3">
                   <div className="flex items-center gap-2">
                     <ExcelIcon size={20} />
-                    <span className="font-medium text-xs text-gray-200">Google Sheets OAuth</span>
+                    <span className="font-medium text-xs text-primary">Google Sheets OAuth</span>
                   </div>
                   <input
                     type="text"
@@ -374,23 +374,23 @@ export function WorkspaceConnectionsModal({
                     placeholder="Tên kết nối (vd: Kho Hàng Google)"
                     value={googleName}
                     onChange={(e) => setGoogleName(e.target.value)}
-                    className="w-full p-2 rounded bg-[#0b0e14] border border-gray-700 text-xs text-gray-200 outline-none"
+                    className="w-full p-2 rounded bg-canvas border border-line text-xs text-primary outline-none"
                   />
                   <button
                     type="button"
                     disabled={busy || !googleName.trim()}
                     onClick={() => void handleAddGoogle()}
-                    className="w-full py-2 px-3 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-medium text-xs flex items-center justify-center gap-1.5 transition"
+                    className="w-full py-2 px-3 rounded bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-on-accent font-medium text-xs flex items-center justify-center gap-1.5 transition"
                   >
                     <Plus size={14} />
                     Kết nối Google Account
                   </button>
                 </div>
 
-                <div className="p-3 rounded-lg bg-[#11141c] border border-gray-800 space-y-3">
+                <div className="p-3 rounded-lg bg-surface border border-line space-y-3">
                   <div className="flex items-center gap-2">
                     <TelegramIcon size={20} />
-                    <span className="font-medium text-xs text-gray-200">Telegram Bot</span>
+                    <span className="font-medium text-xs text-primary">Telegram Bot</span>
                   </div>
                   <input
                     type="text"
@@ -398,7 +398,7 @@ export function WorkspaceConnectionsModal({
                     placeholder="Tên bot (vd: Cảnh Báo Kho)"
                     value={telegramName}
                     onChange={(e) => setTelegramName(e.target.value)}
-                    className="w-full p-2 rounded bg-[#0b0e14] border border-gray-700 text-xs text-gray-200 outline-none"
+                    className="w-full p-2 rounded bg-canvas border border-line text-xs text-primary outline-none"
                   />
                   <input
                     type="password"
@@ -406,13 +406,13 @@ export function WorkspaceConnectionsModal({
                     placeholder="Bot Token (vd: 123456:ABC-DEF...)"
                     value={telegramToken}
                     onChange={(e) => setTelegramToken(e.target.value)}
-                    className="w-full p-2 rounded bg-[#0b0e14] border border-gray-700 text-xs text-gray-200 outline-none"
+                    className="w-full p-2 rounded bg-canvas border border-line text-xs text-primary outline-none"
                   />
                   <button
                     type="button"
                     disabled={busy || !telegramName.trim() || !telegramToken.trim()}
                     onClick={() => void handleAddTelegram()}
-                    className="w-full py-2 px-3 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-white font-medium text-xs flex items-center justify-center gap-1.5 transition"
+                    className="w-full py-2 px-3 rounded bg-blue-600 hover:bg-blue-500 disabled:opacity-50 text-on-accent font-medium text-xs flex items-center justify-center gap-1.5 transition"
                   >
                     <Plus size={14} />
                     Thêm Bot Telegram
@@ -423,12 +423,12 @@ export function WorkspaceConnectionsModal({
           )}
         </div>
 
-        <div className="p-4 border-t border-gray-700 flex justify-end">
+        <div className="p-4 border-t border-line flex justify-end">
           <button
             type="button"
             disabled={busy}
             onClick={onClose}
-            className="px-4 py-2 bg-gray-800 hover:bg-gray-700 rounded-lg text-xs font-medium text-gray-200 transition"
+            className="px-4 py-2 bg-elevated hover:bg-subtle rounded-lg text-xs font-medium text-primary transition"
           >
             Đóng
           </button>

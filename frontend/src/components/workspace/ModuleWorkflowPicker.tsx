@@ -103,15 +103,15 @@ export function ModuleWorkflowPicker({ workspace, children }: ModuleWorkflowPick
 
   return (
     <div className="flex-1 flex flex-col min-h-0">
-      <div className="bg-slate-900 border-b border-slate-800 px-6 py-2.5 flex flex-wrap items-center justify-between gap-4 text-xs">
-        <div className="flex items-center gap-4">
-          <label className="flex items-center gap-2 text-slate-300 font-medium">
+      <div className="relative z-40 shrink-0 bg-surface border-b border-line px-4 py-2 flex flex-wrap items-center justify-between gap-3 text-xs">
+        <div className="min-w-0 flex flex-wrap items-center gap-3">
+          <label className="flex items-center gap-2 text-secondary font-medium">
             Module
             <select
               value={selectedModuleId}
               disabled={loadingModules || busy}
               onChange={event => setSelectedModuleId(event.target.value)}
-              className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="max-w-[min(40vw,240px)] bg-elevated border border-line rounded px-2 py-1 text-xs text-primary focus:outline-none focus:ring-1 focus:ring-blue-500"
             >
               <option value="">Chọn module</option>
               {modules.map(module => (
@@ -123,13 +123,13 @@ export function ModuleWorkflowPicker({ workspace, children }: ModuleWorkflowPick
           </label>
 
           {selectedModuleId && (
-            <label className="flex items-center gap-2 text-slate-300 font-medium">
+            <label className="flex items-center gap-2 text-secondary font-medium">
               Workflow
               <select
                 value={selectedWorkflowId}
                 disabled={loadingWorkflows || busy}
                 onChange={event => setSelectedWorkflowId(event.target.value)}
-                className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="max-w-[min(40vw,280px)] bg-elevated border border-line rounded px-2 py-1 text-xs text-primary focus:outline-none focus:ring-1 focus:ring-blue-500"
               >
                 <option value="">Chọn workflow</option>
                 {workflows.map(wf => (
@@ -142,47 +142,52 @@ export function ModuleWorkflowPicker({ workspace, children }: ModuleWorkflowPick
           )}
         </div>
 
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5">
+        <details className="relative">
+          <summary className="toolbar-button cursor-pointer list-none [&::-webkit-details-marker]:hidden">+ Tạo mới</summary>
+          <div className="toolbar-popover space-y-3">
+          <div className="flex flex-col gap-2">
             <input
+              aria-label="Tên module mới"
               placeholder="Module mới"
               value={newModuleName}
               maxLength={120}
               onChange={event => setNewModuleName(event.target.value)}
-              className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              className="bg-elevated border border-line rounded px-2 py-1 text-xs text-primary placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
             />
             <button
               disabled={loadingModules || busy || !newModuleName.trim()}
               onClick={() => void handleCreateModule()}
-              className="bg-slate-700 hover:bg-slate-600 disabled:opacity-50 px-2 py-1 rounded text-xs text-white"
+              className="bg-subtle hover:bg-subtle disabled:opacity-50 px-2 py-1 rounded text-xs text-primary"
             >
               + Module
             </button>
           </div>
 
           {selectedModuleId && (
-            <div className="flex items-center gap-1.5">
+            <div className="flex flex-col gap-2">
               <input
+                aria-label="Tên workflow mới"
                 placeholder="Workflow mới"
                 value={newWorkflowName}
                 maxLength={120}
                 onChange={event => setNewWorkflowName(event.target.value)}
-                className="bg-slate-800 border border-slate-700 rounded px-2 py-1 text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                className="bg-elevated border border-line rounded px-2 py-1 text-xs text-primary placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               />
               <button
                 disabled={loadingWorkflows || busy || !newWorkflowName.trim()}
                 onClick={() => void handleCreateWorkflow()}
-                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-2 py-1 rounded text-xs text-white font-medium"
+                className="bg-blue-600 hover:bg-blue-500 disabled:opacity-50 px-2 py-1 rounded text-xs text-on-accent font-medium"
               >
                 + Workflow
               </button>
             </div>
           )}
-        </div>
+          </div>
+        </details>
       </div>
 
       {error && (
-        <div role="alert" className="p-3 bg-red-950/40 border-b border-red-800 text-red-300 text-xs flex items-center justify-between">
+        <div role="alert" className="p-3 bg-danger-soft border-b border-red-800 text-danger text-xs flex items-center justify-between">
           <span>{error}</span>
           <button
             onClick={() => {
@@ -197,17 +202,17 @@ export function ModuleWorkflowPicker({ workspace, children }: ModuleWorkflowPick
       )}
 
       {loadingModules && (
-        <div className="p-6 text-slate-400 text-sm">Đang tải modules…</div>
+        <div className="p-6 text-secondary text-sm">Đang tải modules…</div>
       )}
 
       {!loadingModules && modules.length === 0 && (
-        <div className="p-12 text-center text-slate-400">
+        <div className="p-12 text-center text-secondary">
           <p>Workspace này chưa có module nào. Hãy nhập tên và bấm "+ Module" ở trên để tạo module đầu tiên.</p>
         </div>
       )}
 
       {!loadingModules && modules.length > 0 && selectedModuleId && workflows.length === 0 && !loadingWorkflows && (
-        <div className="p-12 text-center text-slate-400">
+        <div className="p-12 text-center text-secondary">
           <p>Module này chưa có workflow nào. Hãy nhập tên và bấm "+ Workflow" ở trên để thiết kế luồng.</p>
         </div>
       )}

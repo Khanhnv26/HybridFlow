@@ -20,7 +20,7 @@ interface Props {
   onReadSource: (id: string, types: Record<string, 'TEXT' | 'NUMBER'>, signal: AbortSignal) => Promise<SheetDataResponse>;
 }
 
-const field = 'w-full rounded-lg border border-gray-700 bg-[#0d1118] px-3 py-2 text-sm text-gray-100 focus:border-purple-400 focus:outline-none disabled:opacity-50';
+const field = 'w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-primary focus:border-purple-400 focus:outline-none disabled:opacity-50';
 const splitColumns = (value?: string) => [...new Set((value || '').split(',').map(column => column.trim()).filter(Boolean))];
 
 export function DiffEngineConfigModal({ data, sources, availableColumns, disabled, onClose, onSave, onReadSource }: Props) {
@@ -103,39 +103,39 @@ export function DiffEngineConfigModal({ data, sources, availableColumns, disable
   };
 
   return <div role="dialog" aria-modal="true" aria-labelledby="sync-settings-title" className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 sm:p-6" onClick={event => { if (event.target === event.currentTarget) close(); }}>
-    <div className="flex  w-full hf-modal hf-modal--complex flex-col overflow-hidden rounded-2xl border border-gray-700 bg-[#141922] text-gray-100">
-      <header className="hf-modal-header flex shrink-0 items-start justify-between gap-4 border-b border-gray-700 px-5 py-4 sm:px-4">
-        <div className="flex gap-3"><Sparkles size={22} className="mt-1 text-purple-300" /><div>
+    <div className="flex  w-full hf-modal hf-modal--complex flex-col overflow-hidden rounded-2xl border border-line bg-surface text-primary">
+      <header className="hf-modal-header flex shrink-0 items-start justify-between gap-4 border-b border-line px-5 py-4 sm:px-4">
+        <div className="flex gap-3"><Sparkles size={22} className="mt-1 text-violet" /><div>
           <h2 id="sync-settings-title" className="text-base font-semibold">Điều phối & Đồng bộ</h2>
-          <p className="mt-1 text-sm text-gray-400">Giữ dữ liệu bạn chọn giống nhau giữa các bảng tính.</p>
-          <p className="mt-2 text-xs text-gray-400">{sources.length} bảng tính đã nối{sources.length === 1 ? ' với kho lưu trữ' : ''}</p>
+          <p className="mt-1 text-sm text-secondary">Giữ dữ liệu bạn chọn giống nhau giữa các bảng tính.</p>
+          <p className="mt-2 text-xs text-secondary">{sources.length} bảng tính đã nối{sources.length === 1 ? ' với kho lưu trữ' : ''}</p>
         </div></div>
-        <button type="button" aria-label="Đóng" disabled={saving} onClick={close} className="rounded-lg p-2 text-gray-400 hover:bg-gray-800 hover:text-white"><X size={20} /></button>
+        <button type="button" aria-label="Đóng" disabled={saving} onClick={close} className="rounded-lg p-2 text-secondary hover:bg-elevated hover:text-primary"><X size={20} /></button>
       </header>
       <div className="hf-modal-body min-h-0 flex-1 space-y-4 overflow-y-auto px-5 py-4 sm:px-4">
-        {error && <p role="alert" className="rounded-lg border border-red-900 bg-red-950/30 p-3 text-sm text-red-200">{error}</p>}
+        {error && <p role="alert" className="rounded-lg border border-red-900 bg-danger-soft p-3 text-sm text-danger">{error}</p>}
         <section className="space-y-3">
           <h3 className="font-semibold">1. Nhận biết cùng một dòng bằng cột nào?</h3>
-          <p className="text-sm text-gray-400">Ví dụ: mã đơn ORD-001 ở các bảng tính là cùng một đơn hàng. Mỗi dòng cần có mã riêng.</p>
+          <p className="text-sm text-secondary">Ví dụ: mã đơn ORD-001 ở các bảng tính là cùng một đơn hàng. Mỗi dòng cần có mã riêng.</p>
           <label className="block space-y-1.5 text-sm"><span>Cột nhận biết từng dòng</span>
             <select aria-label="Cột nhận biết từng dòng" className={field} disabled={locked} value={key} onChange={event => chooseKey(event.target.value)}>
               {known.map(column => <option key={column} value={column}>{column}</option>)}
             </select>
           </label>
-          <p className="text-xs text-gray-400">Mã dòng luôn giữ dạng văn bản, kể cả khi có số 0 ở đầu.</p>
+          <p className="text-xs text-secondary">Mã dòng luôn giữ dạng văn bản, kể cả khi có số 0 ở đầu.</p>
         </section>
-        <section className="space-y-3 border-t border-gray-700 pt-4">
+        <section className="space-y-3 border-t border-line pt-4">
           <div className="flex flex-wrap items-center justify-between gap-2"><h3 className="font-semibold">2. Giữ những cột nào giống nhau?</h3>
-            <button type="button" disabled={locked} className="text-xs text-purple-300" onClick={() => { setColumns(selected.length === choices.length ? [] : choices); setAllByDefault(false); }}>{selected.length === choices.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}</button>
+            <button type="button" disabled={locked} className="text-xs text-violet" onClick={() => { setColumns(selected.length === choices.length ? [] : choices); setAllByDefault(false); }}>{selected.length === choices.length ? 'Bỏ chọn tất cả' : 'Chọn tất cả'}</button>
           </div>
-          <p className="text-sm text-gray-400">Chọn cột và cách lưu ngay tại đây. Giá tiền, số lượng dùng Số; mã và số điện thoại dùng Văn bản.</p>
-          <div className="divide-y divide-gray-800 rounded-xl border border-gray-700 bg-[#10151d]">
+          <p className="text-sm text-secondary">Chọn cột và cách lưu ngay tại đây. Giá tiền, số lượng dùng Số; mã và số điện thoại dùng Văn bản.</p>
+          <div className="divide-y divide-gray-800 rounded-xl border border-line bg-surface">
             {choices.map(column => {
               const checked = selected.includes(column);
               const example = sources.map(item => item.data?.rows.find(row => row[column] !== undefined)?.[column]).find(value => value !== undefined && value !== '');
               return <div key={column} className="grid grid-cols-[minmax(0,1fr)_8rem] items-center gap-3 px-3 py-3">
                 <label className="flex min-w-0 cursor-pointer items-start gap-3"><input type="checkbox" disabled={locked} checked={checked} onChange={event => chooseColumn(column, event.target.checked)} className="mt-1 accent-purple-500" aria-label={'Đồng bộ cột ' + column} />
-                  <span className="min-w-0"><span className="block truncate text-sm font-medium">{column}</span>{example !== undefined && <span className="block truncate text-xs text-gray-500">Ví dụ: {example}</span>}</span>
+                  <span className="min-w-0"><span className="block truncate text-sm font-medium">{column}</span>{example !== undefined && <span className="block truncate text-xs text-muted">Ví dụ: {example}</span>}</span>
                 </label>
                 <select aria-label={'Kiểu cột ' + column} className={field} disabled={locked || !checked} value={types[column] || 'TEXT'} onChange={event => setTypes(previous => ({ ...previous, [column]: event.target.value as 'TEXT' | 'NUMBER' }))}>
                   <option value="TEXT">Văn bản</option><option value="NUMBER">Số</option>
@@ -143,39 +143,39 @@ export function DiffEngineConfigModal({ data, sources, availableColumns, disable
               </div>;
             })}
           </div>
-          <p className="text-xs text-gray-400">Đã chọn {selected.length} cột. Cột không chọn được giữ riêng ở mỗi bảng tính.</p>
-          <details className="text-xs text-gray-400"><summary className="flex cursor-pointer items-center gap-1"><ChevronDown size={13} />Thiết lập thêm</summary>
-            <div className="mt-3 space-y-3 rounded-lg border border-gray-800 p-3">
+          <p className="text-xs text-secondary">Đã chọn {selected.length} cột. Cột không chọn được giữ riêng ở mỗi bảng tính.</p>
+          <details className="text-xs text-secondary"><summary className="flex cursor-pointer items-center gap-1"><ChevronDown size={13} />Thiết lập thêm</summary>
+            <div className="mt-3 space-y-3 rounded-lg border border-line p-3">
               <label className="block space-y-1"><span>Nhập tên cột nhận biết dòng</span><input aria-label="Nhập tên cột nhận biết dòng" className={field} disabled={locked} value={key} onChange={event => chooseKey(event.target.value)} /></label>
               <div className="flex gap-2"><input aria-label="Thêm tên cột" className={field} placeholder="Tên cột chưa hiện trong danh sách" disabled={locked} value={customColumn} onChange={event => setCustomColumn(event.target.value)} />
-                <button type="button" disabled={locked || !customColumn.trim()} className="rounded-lg border border-gray-700 px-3 text-gray-200" onClick={() => { const name = customColumn.trim(); setExtraColumns(previous => [...previous, name]); if (name !== key && !selected.includes(name)) setColumns([...selected, name]); setAllByDefault(false); setCustomColumn(''); }}>Thêm</button>
+                <button type="button" disabled={locked || !customColumn.trim()} className="rounded-lg border border-line px-3 text-primary" onClick={() => { const name = customColumn.trim(); setExtraColumns(previous => [...previous, name]); if (name !== key && !selected.includes(name)) setColumns([...selected, name]); setAllByDefault(false); setCustomColumn(''); }}>Thêm</button>
               </div>
               <p>Với cột Số, dùng dấu chấm cho phần thập phân và bỏ dấu phân cách hàng nghìn.</p>
             </div>
           </details>
         </section>
-        <section className="space-y-3 border-t border-gray-700 pt-4">
+        <section className="space-y-3 border-t border-line pt-4">
           <h3 className="font-semibold">3. Khi cùng một dòng được sửa khác nhau?</h3>
           <select aria-label="Cách xử lý khi dữ liệu khác nhau" className={field} disabled={locked} value={policy} onChange={event => setPolicy(event.target.value)}>
             <option value="ASK_TELEGRAM">Để tôi chọn giá trị cần giữ</option>
             <option value="SOURCE_WINS">Giữ dữ liệu ở {sources[0]?.name || 'bảng tính đầu tiên'}</option>
             <option value="DESTINATION_WINS">Giữ dữ liệu ở {sources.length > 1 ? sources[sources.length - 1].name : 'kho lưu trữ'}</option>
           </select>
-          <p className="text-sm text-gray-400">{policy === 'ASK_TELEGRAM' ? 'Các cột còn lại vẫn đồng bộ. Những giá trị khác nhau được giữ lại để bạn chọn; Telegram sẽ báo nếu đã nối khối thông báo.' : 'Lựa chọn này áp dụng khi nhiều nơi cùng sửa một giá trị kể từ lần đồng bộ trước.'}</p>
+          <p className="text-sm text-secondary">{policy === 'ASK_TELEGRAM' ? 'Các cột còn lại vẫn đồng bộ. Những giá trị khác nhau được giữ lại để bạn chọn; Telegram sẽ báo nếu đã nối khối thông báo.' : 'Lựa chọn này áp dụng khi nhiều nơi cùng sửa một giá trị kể từ lần đồng bộ trước.'}</p>
         </section>
-        <section className="space-y-3 border-t border-gray-700 pt-4">
-          <button type="button" disabled={reading || !sources.length} onClick={() => void readPreview()} className="flex items-center gap-2 rounded-lg border border-gray-600 px-3 py-2 text-sm hover:bg-gray-800 disabled:opacity-50">{reading ? <RefreshCw size={16} className="animate-spin" /> : <Eye size={16} />}{reading ? 'Đang đọc bảng tính…' : 'Xem dữ liệu mẫu'}</button>
-          <p className="text-xs text-gray-400">Đọc mẫu để kiểm tra cột và giá trị. Dữ liệu chỉ được đồng bộ khi bạn chạy luồng.</p>
-          {previewOpen && source && <div className="space-y-3 rounded-xl border border-gray-700 bg-[#10151d] p-3">
-            <label className="block space-y-1 text-xs text-gray-400"><span>Bảng tính xem mẫu</span><select aria-label="Bảng tính xem mẫu" className={field} value={source.id} onChange={event => setSourceId(event.target.value)}>{sources.map(item => <option key={item.id} value={item.id}>{item.name} · {item.sheetName}</option>)}</select></label>
-            {preview?.error && <p role="alert" className="text-sm text-amber-200">{preview.error}</p>}
-            {preview?.data && <><p className="text-xs text-gray-400">{source.name}: đã đọc {preview.data.rows.length} dòng · hiển thị tối đa 5 dòng</p><div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead><tr>{sampleColumns.map(column => <th className="border-b border-gray-700 p-2 font-medium text-gray-400" key={column}>{column}</th>)}</tr></thead><tbody>{preview.data.rows.slice(0, 5).map((row, index) => <tr key={index}>{sampleColumns.map(column => <td key={column} className="max-w-48 truncate border-b border-gray-800 p-2">{row[column] || '—'}</td>)}</tr>)}</tbody></table></div></>}
+        <section className="space-y-3 border-t border-line pt-4">
+          <button type="button" disabled={reading || !sources.length} onClick={() => void readPreview()} className="flex items-center gap-2 rounded-lg border border-line px-3 py-2 text-sm hover:bg-elevated disabled:opacity-50">{reading ? <RefreshCw size={16} className="animate-spin" /> : <Eye size={16} />}{reading ? 'Đang đọc bảng tính…' : 'Xem dữ liệu mẫu'}</button>
+          <p className="text-xs text-secondary">Đọc mẫu để kiểm tra cột và giá trị. Dữ liệu chỉ được đồng bộ khi bạn chạy luồng.</p>
+          {previewOpen && source && <div className="space-y-3 rounded-xl border border-line bg-surface p-3">
+            <label className="block space-y-1 text-xs text-secondary"><span>Bảng tính xem mẫu</span><select aria-label="Bảng tính xem mẫu" className={field} value={source.id} onChange={event => setSourceId(event.target.value)}>{sources.map(item => <option key={item.id} value={item.id}>{item.name} · {item.sheetName}</option>)}</select></label>
+            {preview?.error && <p role="alert" className="text-sm text-warning">{preview.error}</p>}
+            {preview?.data && <><p className="text-xs text-secondary">{source.name}: đã đọc {preview.data.rows.length} dòng · hiển thị tối đa 5 dòng</p><div className="overflow-x-auto"><table className="w-full text-left text-xs"><thead><tr>{sampleColumns.map(column => <th className="border-b border-line p-2 font-medium text-secondary" key={column}>{column}</th>)}</tr></thead><tbody>{preview.data.rows.slice(0, 5).map((row, index) => <tr key={index}>{sampleColumns.map(column => <td key={column} className="max-w-48 truncate border-b border-line p-2">{row[column] || '—'}</td>)}</tr>)}</tbody></table></div></>}
           </div>}
         </section>
-        {changedScope && <p role="status" className="rounded-lg border border-amber-800/60 bg-amber-950/20 p-3 text-sm text-amber-200">Bạn đã đổi cột nhận biết, cột đồng bộ hoặc kiểu dữ liệu. Lần chạy tiếp theo sẽ yêu cầu xác nhận dữ liệu ban đầu; lịch chạy tiếp tục sau bước xác nhận này.</p>}
+        {changedScope && <p role="status" className="rounded-lg border border-amber-800/60 bg-warning-soft p-3 text-sm text-warning">Bạn đã đổi cột nhận biết, cột đồng bộ hoặc kiểu dữ liệu. Lần chạy tiếp theo sẽ yêu cầu xác nhận dữ liệu ban đầu; lịch chạy tiếp tục sau bước xác nhận này.</p>}
       </div>
-      <footer className="hf-modal-footer flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-gray-700 px-5 py-4 sm:px-4"><p className="text-xs text-gray-400">Chỉ áp dụng thay đổi sau khi lưu.</p><div className="ml-auto flex gap-2">
-        <button type="button" disabled={saving} onClick={close} className="rounded-lg border border-gray-700 px-4 py-2 text-sm hover:bg-gray-800">Hủy</button>
+      <footer className="hf-modal-footer flex shrink-0 flex-wrap items-center justify-between gap-3 border-t border-line px-5 py-4 sm:px-4"><p className="text-xs text-secondary">Chỉ áp dụng thay đổi sau khi lưu.</p><div className="ml-auto flex gap-2">
+        <button type="button" disabled={saving} onClick={close} className="rounded-lg border border-line px-4 py-2 text-sm hover:bg-elevated">Hủy</button>
         <button type="button" disabled={locked || reading} onClick={() => void save()} className="flex items-center gap-2 rounded-lg bg-purple-600 px-4 py-2 text-sm font-medium hover:bg-purple-500 disabled:opacity-50">{saving ? <RefreshCw size={16} className="animate-spin" /> : <Save size={16} />}{saving ? 'Đang lưu…' : 'Lưu cấu hình'}</button>
       </div></footer>
     </div>

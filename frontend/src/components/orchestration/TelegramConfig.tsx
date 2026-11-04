@@ -247,14 +247,14 @@ export function TelegramConfig({
       aria-labelledby="telegram-title"
       className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
     >
-      <div className="bg-[#171b24] border border-gray-700 rounded-2xl w-full hf-modal hf-modal--complex  flex flex-col overflow-hidden">
-        <div className="hf-modal-header p-4 border-b border-gray-700 flex items-start justify-between gap-4">
+      <div className="bg-elevated border border-line rounded-2xl w-full hf-modal hf-modal--complex  flex flex-col overflow-hidden">
+        <div className="hf-modal-header p-4 border-b border-line flex items-start justify-between gap-4">
           <div>
             <h3 id="telegram-title" className="font-semibold flex items-center gap-2">
               <TelegramIcon size={28} />
               Nhận cảnh báo qua Telegram
             </h3>
-            <p className="text-xs text-gray-400 mt-2">
+            <p className="text-xs text-secondary mt-2">
               Chọn nơi nhận để được báo khi dữ liệu cần bạn xử lý.
             </p>
           </div>
@@ -262,26 +262,26 @@ export function TelegramConfig({
             disabled={busy || saving}
             onClick={onClose}
             aria-label="Đóng"
-            className="text-gray-400 hover:text-white disabled:opacity-40"
+            className="text-secondary hover:text-primary disabled:opacity-40"
           >
             <X size={20} />
           </button>
         </div>
         <div className="hf-modal-body p-4 space-y-4 text-sm">
           {workspaceId && (
-            <div className="space-y-2 rounded-lg border border-gray-700 p-3 bg-[#11141c]">
+            <div className="space-y-2 rounded-lg border border-line p-3 bg-surface">
               <div className="flex items-center justify-between">
-                <span className="text-xs text-gray-300 font-medium">
+                <span className="text-xs text-secondary font-medium">
                   Bot Telegram trong Workspace
                 </span>
                 {bot?.username && (
-                  <span className="text-xs text-blue-400 font-medium">
+                  <span className="text-xs text-info font-medium">
                     @{bot.username}
                   </span>
                 )}
               </div>
               {workspaceConnections.length === 0 ? (
-                <p className="text-xs text-amber-300">
+                <p className="text-xs text-warning">
                   Chưa có bot Telegram trong workspace. Hãy cấu hình kết nối Telegram trong mục Quản lý kết nối.
                 </p>
               ) : (
@@ -289,7 +289,7 @@ export function TelegramConfig({
                   disabled={disabled || busy || saving}
                   value={selectedConnectionId}
                   onChange={(e) => { setSelectedConnectionId(e.target.value); setChatId(''); setRecipient(null); setSession(null); setSuccess(''); }}
-                  className="w-full p-2 rounded bg-[#0b0e14] border border-gray-700 text-xs text-gray-200"
+                  className="w-full p-2 rounded bg-canvas border border-line text-xs text-primary"
                 >
                   {workspaceConnections.map((conn) => (
                     <option key={conn.id} value={conn.id}>
@@ -301,23 +301,23 @@ export function TelegramConfig({
             </div>
           )}
           {loading ? (
-            <p role="status" className="text-gray-400 text-xs flex items-center gap-2">
+            <p role="status" className="text-secondary text-xs flex items-center gap-2">
               <RefreshCw size={14} className="animate-spin" />
               Đang kiểm tra bot Telegram...
             </p>
           ) : bot?.configured ? (
-            <p className="text-xs text-gray-400">
-              Bot gửi cảnh báo: <span className="text-sky-300">@{bot.username}</span>
+            <p className="text-xs text-secondary">
+              Bot gửi cảnh báo: <span className="text-info">@{bot.username}</span>
             </p>
           ) : (
-            <p className="text-xs text-amber-200">
+            <p className="text-xs text-warning">
               {bot?.message || 'Chưa kiểm tra được kết nối bot.'}
             </p>
           )}
           {!loading && !bot?.configured && (
             <button
               onClick={() => setRetry((value) => value + 1)}
-              className="text-xs text-blue-300 underline"
+              className="text-xs text-info underline"
             >
               Kiểm tra lại bot
             </button>
@@ -333,7 +333,7 @@ export function TelegramConfig({
               ).map(([value, label, detail, Icon]) => (
                 <label
                   key={value}
-                  className={`p-3 rounded-lg border cursor-pointer ${type === value ? 'border-sky-500 bg-sky-950/20' : 'border-gray-700'}`}
+                  className={`p-3 rounded-lg border cursor-pointer ${type === value ? 'border-sky-500 bg-info-soft' : 'border-line'}`}
                 >
                   <span className="flex items-center gap-2">
                     <input
@@ -349,14 +349,14 @@ export function TelegramConfig({
                     <Icon size={15} />
                     <span className="text-sm font-medium">{label}</span>
                   </span>
-                  <span className="block mt-2 text-xs text-gray-400">{detail}</span>
+                  <span className="block mt-2 text-xs text-secondary">{detail}</span>
                 </label>
               ))}
             </div>
           </fieldset>
           <section className="space-y-3">
             <h4 className="font-medium">2. Kết nối nơi nhận</h4>
-            <p className="text-xs text-gray-400 leading-relaxed">
+            <p className="text-xs text-secondary leading-relaxed">
               {type === 'PRIVATE'
                 ? 'Mở bot trên Telegram và bấm Start (Bắt đầu). Sau đó quay lại đây; ứng dụng sẽ tự nhận tài khoản của bạn.'
                 : 'Mở liên kết bên dưới, chọn nhóm và thêm bot. Bạn cần có quyền thêm bot vào nhóm; bot cần được phép gửi tin nhắn.'}
@@ -364,7 +364,7 @@ export function TelegramConfig({
             <button
               disabled={locked || !bot?.configured}
               onClick={() => void createLink()}
-              className="px-3 py-2 rounded-lg border border-gray-600 text-xs disabled:opacity-40"
+              className="px-3 py-2 rounded-lg border border-line text-xs disabled:opacity-40"
             >
               {session
                 ? 'Tạo liên kết mới'
@@ -373,7 +373,7 @@ export function TelegramConfig({
                   : 'Kết nối nhóm Telegram'}
             </button>
             {session?.status === 'WAITING' && (
-              <div className="space-y-3 rounded-lg border border-gray-700 p-3">
+              <div className="space-y-3 rounded-lg border border-line p-3">
                 <a
                   href={session.url}
                   target="_blank"
@@ -383,34 +383,34 @@ export function TelegramConfig({
                   <ExternalLink size={14} />
                   {type === 'PRIVATE' ? 'Mở bot trên Telegram' : 'Chọn nhóm trên Telegram'}
                 </a>
-                <p role="status" className="text-xs text-gray-400 flex items-center gap-2">
+                <p role="status" className="text-xs text-secondary flex items-center gap-2">
                   <RefreshCw size={13} className="animate-spin" />
                   Đang chờ bạn xác nhận trong Telegram. Liên kết có hiệu lực 10 phút.
                 </p>
-                <p className="text-xs text-gray-400">
+                <p className="text-xs text-secondary">
                   Nếu bot đã có trong cuộc trò chuyện, gửi lệnh này{' '}
                   {type === 'GROUP' ? 'vào nhóm đã chọn' : 'cho bot'}:
                 </p>
-                <code className="block text-xs text-gray-300 break-all select-all">
+                <code className="block text-xs text-secondary break-all select-all">
                   {session.command}
                 </code>
                 {waitingError && (
-                  <p role="alert" className="text-xs text-amber-200">
+                  <p role="alert" className="text-xs text-warning">
                     {waitingError}
                   </p>
                 )}
               </div>
             )}
             {session?.status === 'EXPIRED' && (
-              <p role="status" className="text-xs text-amber-200">
+              <p role="status" className="text-xs text-warning">
                 Liên kết đã hết hạn. Tạo liên kết mới để tiếp tục.
               </p>
             )}
             {recipient && (
-              <div className="rounded-lg border border-emerald-800 bg-emerald-950/20 p-3 flex items-center gap-3">
-                <CheckCircle2 size={18} className="text-emerald-400 shrink-0" />
+              <div className="rounded-lg border border-emerald-800 bg-success-soft p-3 flex items-center gap-3">
+                <CheckCircle2 size={18} className="text-success shrink-0" />
                 <div>
-                  <p className="text-xs text-gray-400">
+                  <p className="text-xs text-secondary">
                     Nơi nhận đã chọn · {recipient.recipientType === 'GROUP' ? 'Nhóm' : 'Cá nhân'}
                   </p>
                   <p className="font-medium mt-1">{recipient.name}</p>
@@ -420,33 +420,33 @@ export function TelegramConfig({
           </section>
           <section className="space-y-3">
             <h4 className="font-medium">3. Kiểm tra gửi tin</h4>
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-secondary">
               Gửi một tin nhắn thử đến nơi nhận đang chọn. Bạn không cần chờ có xung đột dữ liệu.
             </p>
             <button
               disabled={!canUseRecipient}
               onClick={() => void sendTest()}
-              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-600 text-xs disabled:opacity-40"
+              className="inline-flex items-center gap-2 px-3 py-2 rounded-lg border border-line text-xs disabled:opacity-40"
             >
               <Send size={14} />
               Gửi tin nhắn thử
             </button>
             {success && (
-              <p role="status" className="text-xs text-emerald-300">
+              <p role="status" className="text-xs text-success">
                 {success}
               </p>
             )}
           </section>
 
           {/* Section 4: Mẫu tin nhắn (Template) */}
-          <details className="space-y-3 border-t border-gray-700 pt-4">
-            <summary className="cursor-pointer text-sm font-medium text-gray-200">Tùy chỉnh mẫu nội dung thông báo</summary>
-            <p className="text-xs text-gray-400">
-              Tùy chỉnh nội dung tin nhắn gửi về Telegram. Dùng biến dạng <code className="text-sky-300">{`{tên_cột}`}</code> hoặc bấm nút bên dưới để chèn nhanh.
+          <details className="space-y-3 border-t border-line pt-4">
+            <summary className="cursor-pointer text-sm font-medium text-primary">Tùy chỉnh mẫu nội dung thông báo</summary>
+            <p className="text-xs text-secondary">
+              Tùy chỉnh nội dung tin nhắn gửi về Telegram. Dùng biến dạng <code className="text-info">{`{tên_cột}`}</code> hoặc bấm nút bên dưới để chèn nhanh.
             </p>
 
             <div className="space-y-1.5">
-              <label className="block text-xs font-medium text-gray-300">
+              <label className="block text-xs font-medium text-secondary">
                 Mẫu thông báo bản ghi (khi nhận từ Rẽ Nhánh Điều Kiện):
               </label>
               <textarea
@@ -454,17 +454,17 @@ export function TelegramConfig({
                 value={recordTemplate}
                 placeholder="Ví dụ: Đơn {id} chuyển sang trạng thái {status}."
                 onChange={(e) => setRecordTemplate(e.target.value)}
-                className="w-full rounded-lg border border-gray-700 bg-[#0b0e14] px-3 py-2 text-xs font-mono text-gray-100 placeholder-gray-500 focus:border-sky-400 focus:outline-none"
+                className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-xs font-mono text-primary placeholder-gray-500 focus:border-sky-400 focus:outline-none"
               />
               {availableColumns.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  <span className="text-[10px] text-gray-500">Chèn biến:</span>
+                  <span className="text-xs text-muted">Chèn biến:</span>
                   {availableColumns.map((col) => (
                     <button
                       key={col}
                       type="button"
                       onClick={() => setRecordTemplate((prev) => `${prev}{${col}}`)}
-                      className="px-1.5 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-[10px] font-mono text-sky-300 border border-gray-700 transition cursor-pointer"
+                      className="px-1.5 py-0.5 rounded bg-elevated hover:bg-subtle text-xs font-mono text-info border border-line transition cursor-pointer"
                     >
                       +{col}
                     </button>
@@ -474,7 +474,7 @@ export function TelegramConfig({
             </div>
 
             <div className="space-y-1.5">
-              <label className="block text-xs font-medium text-gray-300">
+              <label className="block text-xs font-medium text-secondary">
                 Mẫu cảnh báo xung đột (khi nhận từ nhánh Có xung đột):
               </label>
               <textarea
@@ -482,17 +482,17 @@ export function TelegramConfig({
                 value={conflictTemplate}
                 placeholder="Ví dụ: Bản ghi {recordId} xung đột trên cột {columnName}."
                 onChange={(e) => setConflictTemplate(e.target.value)}
-                className="w-full rounded-lg border border-gray-700 bg-[#0b0e14] px-3 py-2 text-xs font-mono text-gray-100 placeholder-gray-500 focus:border-sky-400 focus:outline-none"
+                className="w-full rounded-lg border border-line bg-canvas px-3 py-2 text-xs font-mono text-primary placeholder-gray-500 focus:border-sky-400 focus:outline-none"
               />
               {conflictVariables.length > 0 && (
                 <div className="flex flex-wrap items-center gap-1.5 pt-1">
-                  <span className="text-[10px] text-gray-500">Chèn biến:</span>
+                  <span className="text-xs text-muted">Chèn biến:</span>
                   {conflictVariables.map((col) => (
                     <button
                       key={col}
                       type="button"
                       onClick={() => setConflictTemplate((prev) => `${prev}{${col}}`)}
-                      className="px-1.5 py-0.5 rounded bg-gray-800 hover:bg-gray-700 text-[10px] font-mono text-amber-300 border border-gray-700 transition cursor-pointer"
+                      className="px-1.5 py-0.5 rounded bg-elevated hover:bg-subtle text-xs font-mono text-warning border border-line transition cursor-pointer"
                     >
                       +{col}
                     </button>
@@ -502,26 +502,26 @@ export function TelegramConfig({
             </div>
           </details>
 
-          {invalidVariables.length > 0 && <p role="alert" className="text-xs text-red-300">Biến template không hợp lệ: {[...new Set(invalidVariables)].join(', ')}</p>}
+          {invalidVariables.length > 0 && <p role="alert" className="text-xs text-danger">Biến template không hợp lệ: {[...new Set(invalidVariables)].join(', ')}</p>}
           {previewRow && recordTemplate && <details className="text-sm space-y-2"><summary className="cursor-pointer">Xem trước bản ghi đã đọc</summary><pre className="whitespace-pre-wrap">{renderTemplatePreview(recordTemplate, previewRow)}</pre></details>}
           {previewConflict && conflictTemplate && <details className="text-sm space-y-2"><summary className="cursor-pointer">Xem trước xung đột</summary><pre className="whitespace-pre-wrap">{renderTemplatePreview(conflictTemplate, previewConflict)}</pre></details>}
           {!!data.notificationItems?.length && <section className="space-y-2 text-xs">
             <h4>Thông báo của lượt chạy gần nhất</h4>
-            {data.notificationItems.filter(item => item.state !== 'SKIPPED').map(item => <div key={item.id} className="border-t border-gray-700 py-2">
+            {data.notificationItems.filter(item => item.state !== 'SKIPPED').map(item => <div key={item.id} className="border-t border-line py-2">
               <p>{item.state === 'SENT' ? 'Đã gửi' : item.state === 'SENDING' ? 'Đang gửi' : item.state === 'PENDING' ? 'Đang chờ' : 'Gửi lỗi'} · {item.message.slice(0, 100)}</p>
-              {item.lastError && <p className="text-amber-200">{errorMessage({ response: { data: { message: item.lastError, code: item.errorCode, correlationId: item.correlationId } } })}</p>}
-              {onRetryNotification && ['FAILED', 'DEAD'].includes(item.state) && <button disabled={busy} className="text-sky-300" onClick={async () => {
+              {item.lastError && <p className="text-warning">{errorMessage({ response: { data: { message: item.lastError, code: item.errorCode, correlationId: item.correlationId } } })}</p>}
+              {onRetryNotification && ['FAILED', 'DEAD'].includes(item.state) && <button disabled={busy} className="text-info" onClick={async () => {
                 setBusy(true); setError('');
                 try { await onRetryNotification(item.id); } catch (error) { setError(errorMessage(error)); } finally { setBusy(false); }
               }}>Thử gửi lại</button>}
             </div>)}
           </section>}
-          <details className="border-t border-gray-700 pt-3">
-            <summary className="cursor-pointer text-xs text-gray-400">
+          <details className="border-t border-line pt-3">
+            <summary className="cursor-pointer text-xs text-secondary">
               Thiết lập nâng cao · nhập Chat ID
             </summary>
             <div className="mt-3 space-y-3">
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-muted">
                 Dùng khi bạn đã biết mã cuộc trò chuyện. Bot vẫn cần được mở bằng Start hoặc được
                 thêm vào nhóm.
               </p>
@@ -542,44 +542,44 @@ export function TelegramConfig({
                     setSuccess('');
                     setError('');
                   }}
-                  className="w-full rounded-lg border border-gray-700 bg-[#0b0e14] px-3 py-2 font-mono text-sm"
+                  className="w-full rounded-lg border border-line bg-canvas px-3 py-2 font-mono text-sm"
                 />
               </label>
               <button
                 disabled={locked || !bot?.configured || !chatId.trim()}
                 onClick={() => void checkManual()}
-                className="text-xs text-sky-300 disabled:opacity-40"
+                className="text-xs text-info disabled:opacity-40"
               >
                 Kiểm tra nơi nhận
               </button>
             </div>
           </details>
           {error && (
-            <p role="alert" className="text-xs text-red-300">
+            <p role="alert" className="text-xs text-danger">
               {error}
             </p>
           )}
           {(busy || saving) && (
-            <p role="status" className="text-xs text-gray-400 flex items-center gap-2">
+            <p role="status" className="text-xs text-secondary flex items-center gap-2">
               <RefreshCw size={13} className="animate-spin" />
               {saving ? 'Đang lưu nơi nhận...' : 'Đang chờ phản hồi Telegram...'}
             </p>
           )}
           {!notificationConnected && (
-            <p className="text-xs text-amber-200">
+            <p className="text-xs text-warning">
               Khối Telegram chưa được nối với nhánh xung đột hoặc rẽ nhánh. Sau khi lưu, hãy nối dây để nhận thông báo tự động.
             </p>
           )}
         </div>
-        <div className="hf-modal-footer p-4 border-t border-gray-700 flex flex-wrap items-center justify-between gap-4">
-          <p className="text-xs text-gray-500 max-w-sm">
+        <div className="hf-modal-footer p-4 border-t border-line flex flex-wrap items-center justify-between gap-4">
+          <p className="text-xs text-muted max-w-sm">
             Gửi thử không thay đổi cấu hình. Chỉ áp dụng nơi nhận mới sau khi lưu.
           </p>
           <div className="flex gap-3">
             <button
               disabled={busy || saving}
               onClick={onClose}
-              className="text-xs text-gray-400 px-3 py-2"
+              className="text-xs text-secondary px-3 py-2"
             >
               Hủy
             </button>

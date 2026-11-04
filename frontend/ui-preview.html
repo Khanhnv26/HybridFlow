@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>HybridFlow · Xem trước Light / Dark</title>
+    <script>
+      (() => {
+        let theme;
+        try { theme = localStorage.getItem('hybridflow-theme'); } catch {}
+        document.documentElement.dataset.theme = theme === 'light' || theme === 'dark' ? theme : window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark';
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/StudioPreview.tsx"></script>
+  </body>
+</html>

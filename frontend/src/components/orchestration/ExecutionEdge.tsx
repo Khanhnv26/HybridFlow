@@ -7,7 +7,7 @@ export function ExecutionEdge(props: EdgeProps) {
   return <g className={`workflow-edge workflow-edge--${visual?.state || 'idle'}${visual?.recentlyCompleted ? ' workflow-edge--recent' : ''}`}>
     {moving && <path d={path} className="workflow-edge-halo" fill="none" pointerEvents="none" />}
     <BaseEdge path={path} markerEnd={props.markerEnd} style={props.style} interactionWidth={props.interactionWidth}
-      label={props.label} labelX={labelX} labelY={labelY} labelStyle={{ fill: '#fbbf24', fontSize: 11 }} labelBgStyle={{ fill: '#171b24' }} />
+      label={props.label} labelX={labelX} labelY={labelY} labelStyle={{ fill: 'var(--warning)', fontSize: 11 }} labelBgStyle={{ fill: 'var(--elevated-color)' }} />
     {moving && <>
       <path d={path} pathLength={100} fill="none" pointerEvents="none"
         className={`workflow-edge-stream${visual?.reverse ? ' workflow-edge-stream--reverse' : ''}`} />
