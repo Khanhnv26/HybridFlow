@@ -17,6 +17,8 @@ Phạm vi SRS: FR-001, FR-002, FR-003, FR-004, FR-005; bổ sung phạm vi works
 
 Các block có **File đầy đủ** chứa package/import/class để bạn tạo đúng file. Các block có **Đoạn ghép** cần đặt vào lớp sẵn có và bổ sung import. Các phần **Bài tự làm** là công việc bắt buộc còn phải thực hiện, không phải phần code đã hoàn chỉnh.
 
+Đã kiểm tra cú pháp 29 ví dụ Java đầy đủ, 2 component TSX và các liên kết nội bộ. Đây là kiểm tra parser, chưa phải kiểm tra kiểu, build hay kiểm thử end-to-end của Chặng 2. Những đoạn ghép chỉ có ý nghĩa sau khi bạn tạo DTO/repository/service được nêu cùng bài.
+
 ## 3. Quyết định thiết kế để bạn ít bị rối
 
 - Giữ Java 21 và Spring Boot 3.3.5 của repo trong nhánh học này; không đồng thời nâng framework. Trước phát hành thật, dành một đầu việc riêng nâng bản framework được hỗ trợ và kiểm tra tương thích.
