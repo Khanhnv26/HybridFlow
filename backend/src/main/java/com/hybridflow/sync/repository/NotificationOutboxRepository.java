@@ -27,6 +27,8 @@ public class NotificationOutboxRepository {
             Timestamp lease = rs.getTimestamp("lease_until");
             Timestamp created = rs.getTimestamp("created_at");
             Timestamp sent = rs.getTimestamp("sent_at");
+            UUID workspaceId = rs.getObject("workspace_id", UUID.class);
+            String connectionId = rs.getString("connection_id");
             return NotificationOutboxItem.builder()
                     .id(rs.getString("id"))
                     .flowId(rs.getString("flow_id"))
@@ -47,6 +49,8 @@ public class NotificationOutboxRepository {
                     .correlationId(rs.getString("correlation_id"))
                     .createdAt(created != null ? created.toInstant() : null)
                     .sentAt(sent != null ? sent.toInstant() : null)
+                    .workspaceId(workspaceId)
+                    .connectionId(connectionId)
                     .build();
         }
     };
@@ -55,8 +59,9 @@ public class NotificationOutboxRepository {
         return jdbc.update("""
                 INSERT INTO notification_outbox(
                     id, flow_id, execution_id, action_node_id, channel, destination,
-                    source_type, source_key, message, state, attempts, available_at, correlation_id
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+                    source_type, source_key, message, state, attempts, available_at, correlation_id,
+                    workspace_id, connection_id
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?, ?, ?)
                 ON CONFLICT (action_node_id, source_type, source_key) DO NOTHING
                 """,
                 item.getId() != null ? item.getId() : UUID.randomUUID().toString(),
@@ -69,7 +74,10 @@ public class NotificationOutboxRepository {
                 item.getSourceKey(),
                 item.getMessage(),
                 item.getState() == null ? "PENDING" : item.getState(),
-                Timestamp.from(item.getAvailableAt() != null ? item.getAvailableAt() : Instant.now()), item.getCorrelationId()
+                Timestamp.from(item.getAvailableAt() != null ? item.getAvailableAt() : Instant.now()),
+                item.getCorrelationId(),
+                item.getWorkspaceId(),
+                item.getConnectionId()
         ) == 1;
     }
 
@@ -84,10 +92,14 @@ public class NotificationOutboxRepository {
         String owner = UUID.randomUUID().toString();
         List<NotificationOutboxItem> claimed = jdbc.query("""
                 WITH candidate AS (
-                    SELECT id FROM notification_outbox
-                    WHERE ((attempts < ? AND state IN ('PENDING', 'FAILED') AND available_at <= ?)
-                        OR (state = 'SENDING' AND lease_until <= ?))
-                    ORDER BY available_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED
+                    SELECT o.id FROM notification_outbox o
+                    WHERE ((o.attempts < ? AND o.state IN ('PENDING', 'FAILED') AND o.available_at <= ?)
+                        OR (o.state = 'SENDING' AND o.lease_until <= ?))
+                      AND (o.workspace_id IS NULL OR o.connection_id IS NULL OR EXISTS (
+                          SELECT 1 FROM workspace_connections wc
+                          WHERE wc.id = o.connection_id AND wc.workspace_id = o.workspace_id AND wc.state = 'ACTIVE'
+                      ))
+                    ORDER BY o.available_at ASC LIMIT 1 FOR UPDATE SKIP LOCKED
                 )
                 UPDATE notification_outbox o
                 SET state = 'SENDING', owner = ?, lease_until = ?,

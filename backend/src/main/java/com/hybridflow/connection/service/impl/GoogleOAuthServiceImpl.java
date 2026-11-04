@@ -2,6 +2,7 @@ package com.hybridflow.connection.service.impl;
 
 import com.google.api.client.auth.oauth2.TokenResponseException;
 import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeFlow;
+import com.google.api.client.googleapis.auth.oauth2.GoogleAuthorizationCodeRequestUrl;
 import com.google.api.client.googleapis.auth.oauth2.GoogleClientSecrets;
 import com.google.api.client.googleapis.auth.oauth2.GoogleRefreshTokenRequest;
 import com.google.api.client.googleapis.auth.oauth2.GoogleTokenResponse;
@@ -63,14 +64,22 @@ public class GoogleOAuthServiceImpl implements GoogleOAuthService {
 
     @Override
     public String buildAuthorizationUrl() {
+        return buildAuthorizationUrl(null);
+    }
+
+    @Override
+    public String buildAuthorizationUrl(String state) {
         if (flow == null) {
             throw new ApplicationException(ErrorCode.CONFIGURATION_ERROR);
         }
 
-        return flow.newAuthorizationUrl()
+        GoogleAuthorizationCodeRequestUrl url = flow.newAuthorizationUrl()
                 .set("prompt", "consent")
-                .setRedirectUri(redirectUri)
-                .build();
+                .setRedirectUri(redirectUri);
+        if (state != null) {
+            url.setState(state);
+        }
+        return url.build();
     }
 
     @Override

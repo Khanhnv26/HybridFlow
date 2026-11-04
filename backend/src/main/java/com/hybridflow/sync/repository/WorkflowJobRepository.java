@@ -19,10 +19,10 @@ public class WorkflowJobRepository {
 
     public void enqueue(ScheduledWorkflowRow row) {
         jdbc.update("""
-                INSERT INTO workflow_jobs(id,workflow_id,revision,scheduled_at,definition,available_at)
-                VALUES (?,?,?,?,?::jsonb,?) ON CONFLICT(workflow_id,revision,scheduled_at) DO NOTHING
+                INSERT INTO workflow_jobs(id,workflow_id,revision,scheduled_at,definition,available_at,workspace_id)
+                VALUES (?,?,?,?,?::jsonb,?,?) ON CONFLICT(workflow_id,revision,scheduled_at) DO NOTHING
                 """, UUID.randomUUID().toString(), row.getFlowId(), row.getRevision(), Timestamp.from(row.getNextRunAt()),
-                row.getDefinitionJson(), Timestamp.from(row.getNextRunAt()));
+                row.getDefinitionJson(), Timestamp.from(row.getNextRunAt()), row.getWorkspaceId());
     }
 
     public void cancelObsolete(Instant now) {
@@ -40,18 +40,26 @@ public class WorkflowJobRepository {
         String owner = UUID.randomUUID().toString();
         List<WorkflowJob> jobs = jdbc.query("""
                 WITH candidate AS (
-                    SELECT j.id FROM workflow_jobs j JOIN workflow_definitions d ON d.flow_id=j.workflow_id
+                    SELECT j.id FROM workflow_jobs j
+                    JOIN workflow_definitions d ON d.flow_id=j.workflow_id
+                    LEFT JOIN business_modules m ON m.workspace_id=d.workspace_id AND m.id=d.module_id
                     WHERE d.schedule_enabled AND d.schedule_revision=j.revision AND j.attempts < ?
                       AND ((j.state IN ('READY','RETRY') AND j.available_at <= ?)
                         OR (j.state='RUNNING' AND j.lease_until <= ?))
+                      AND (d.workspace_id IS NULL OR (d.enabled AND (d.module_id IS NULL OR m.enabled) AND (j.workspace_id IS NULL OR j.workspace_id = d.workspace_id)))
+                      AND (j.workspace_id IS NULL OR (
+                          SELECT COUNT(*) FROM workflow_jobs active
+                          WHERE active.workspace_id = j.workspace_id AND active.state = 'RUNNING' AND active.lease_until > ?
+                      ) < 2)
                     ORDER BY j.available_at LIMIT 1 FOR UPDATE OF j,d SKIP LOCKED
                 )
                 UPDATE workflow_jobs j SET state='RUNNING',owner=?,lease_until=?,attempts=attempts+1
                 FROM candidate WHERE j.id=candidate.id RETURNING j.*
                 """, (rs, number) -> WorkflowJob.builder().id(rs.getString("id")).workflowId(rs.getString("workflow_id"))
+                .workspaceId(rs.getObject("workspace_id", UUID.class))
                 .revision(rs.getLong("revision")).definition(rs.getString("definition")).owner(rs.getString("owner"))
-                .attempts(rs.getInt("attempts")).build(), maxAttempts, Timestamp.from(now), Timestamp.from(now), owner,
-                Timestamp.from(now.plusSeconds(leaseSeconds)));
+                .attempts(rs.getInt("attempts")).build(), maxAttempts, Timestamp.from(now), Timestamp.from(now),
+                Timestamp.from(now), owner, Timestamp.from(now.plusSeconds(leaseSeconds)));
         return jobs.stream().findFirst();
     }
 

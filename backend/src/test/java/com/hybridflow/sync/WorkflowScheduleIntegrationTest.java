@@ -105,7 +105,7 @@ class WorkflowScheduleIntegrationTest {
     private String connection;
 
     @BeforeEach void setup() {
-        jdbc.execute("TRUNCATE notification_outbox,workflow_jobs,sheet_write_journal,sync_conflicts,sync_snapshots,vault_records,sync_flow_bindings,sync_executions,workflow_definitions,google_connections RESTART IDENTITY");
+        jdbc.execute("TRUNCATE notification_outbox,workflow_jobs,sheet_write_journal,sync_conflicts,sync_snapshots,vault_records,sync_flow_bindings,sync_executions,workflow_definitions,google_connections RESTART IDENTITY CASCADE");
         now.set(Instant.parse("2026-11-03T02:00:00Z"));
         when(clock.instant()).thenAnswer(invocation -> now.get());
         connection = credentials.store(new GoogleTokenResponse().setAccessToken("access-test").setRefreshToken("refresh-test").setExpiresInSeconds(3600L));

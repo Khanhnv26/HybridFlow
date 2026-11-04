@@ -33,7 +33,8 @@ import {
   GenericOrchestrationNode,
   RouterConditionNode,
 } from './components/nodes/OrchestrationNodes';
-import { googleService, syncService, workflowService, telegramService } from './services/api';
+import { apiClient, googleService, syncService, workflowService, telegramService } from './services/api';
+import { createTenantEditorApi } from './services/tenantEditor';
 import { arrangeWorkflowNodes } from './services/workflowLayout';
 import { connectedSheetSources, flowIdFor, workflowConfig } from './services/workflow';
 import { historyLog } from './services/history';
@@ -112,27 +113,39 @@ const initialEdges: Edge[] = [
     targetHandle: 'in',
   },
 ];
-const draftKey = 'hybridflow-workflow-v2';
-function draft(): { nodes: Node<OrchestrationNodeData>[]; edges: Edge[] } {
+interface EditorProps {
+  userId?: string;
+  workspaceId?: string;
+  workflowId?: string;
+}
+
+function readDraft(key: string): { nodes: Node<OrchestrationNodeData>[]; edges: Edge[] } {
   try {
-    const value = JSON.parse(localStorage.getItem(draftKey) || 'null');
+    const value = JSON.parse(localStorage.getItem(key) || 'null');
     if (Array.isArray(value?.nodes) && Array.isArray(value?.edges)) return value;
   } catch {
-    /* A malformed local draft must not stop the editor from opening. */
   }
   return { nodes: initialNodes, edges: initialEdges };
 }
 
-export default function App() {
-  const [startingDraft] = useState(draft);
-  const [hadDraft] = useState(() => !!localStorage.getItem(draftKey));
+export default function App({ userId, workspaceId, workflowId: propWorkflowId }: EditorProps = {}) {
+  const effectiveDraftKey = userId && workspaceId && propWorkflowId
+    ? `hybridflow:draft:${userId}:${workspaceId}:${propWorkflowId}`
+    : 'hybridflow-workflow-v2';
+
+  const [startingDraft] = useState(() => readDraft(effectiveDraftKey));
+  const [hadDraft] = useState(() => !!localStorage.getItem(effectiveDraftKey));
   const [workflowId] = useState(() => {
+    if (propWorkflowId) return propWorkflowId;
     const existing = localStorage.getItem('hybridflow-workflow-id');
     if (existing) return existing;
     const id = crypto.randomUUID();
     localStorage.setItem('hybridflow-workflow-id', id);
     return id;
   });
+  const tenant = useMemo(() => workspaceId ? createTenantEditorApi(apiClient, workspaceId, workflowId) : null, [workspaceId, workflowId]);
+  const syncApi = tenant?.sync || syncService;
+  const workflowApi = tenant?.workflow || workflowService;
   const [nodes, setNodes, onNodesChange] = useNodesState(startingDraft.nodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(startingDraft.edges);
   const fitCanvas = useRef<(() => void) | null>(null);
@@ -246,12 +259,12 @@ export default function App() {
   }, [configuredFiles, connected, connectionVersion, setNodes]);
 
   useEffect(() => {
-    localStorage.setItem(draftKey, JSON.stringify({ nodes, edges }));
-  }, [nodes, edges]);
+    localStorage.setItem(effectiveDraftKey, JSON.stringify({ nodes, edges }));
+  }, [nodes, edges, effectiveDraftKey]);
   useEffect(() => {
     if (hadDraft) return;
     let live = true;
-    workflowService
+    workflowApi
       .load(workflowId)
       .then((saved) => {
         if (live && Array.isArray(saved.nodes) && Array.isArray(saved.edges)) {
@@ -265,7 +278,7 @@ export default function App() {
     return () => {
       live = false;
     };
-  }, [hadDraft, workflowId, setNodes, setEdges, showToast]);
+  }, [hadDraft, workflowId, workflowApi, setNodes, setEdges, showToast]);
   useEffect(() => {
     const handle = (event: MessageEvent) => {
       if (event.origin !== oauthOrigin.current || event.source !== popup.current || !popup.current)
@@ -317,8 +330,8 @@ export default function App() {
   const refreshRunData = useCallback(async (id: string, signal?: AbortSignal) => {
     const revision = ++refreshRevision.current;
     const [open, history] = await Promise.all([
-      syncService.getOpenConflicts(id, signal),
-      syncService.getHistory(id, signal),
+      syncApi.getOpenConflicts(id, signal),
+      syncApi.getHistory(id, signal),
     ]);
     if (!signal?.aborted && currentFlow.current === id && revision === refreshRevision.current) {
       const fingerprint = JSON.stringify([open, history.filter((run) => run.status !== 'RUNNING')]);
@@ -331,17 +344,17 @@ export default function App() {
       return changed;
     }
     return false;
-  }, []);
+  }, [syncApi]);
   const notificationKey = flowId && latestExecution?.id ? flowId + '|' + latestExecution.id : '';
   useEffect(() => { setNotificationItems([]); }, [notificationKey]);
   const refreshNotifications = async (_key: string, signal: AbortSignal) => {
     if (!latestExecution?.id) return;
-    const items = await syncService.getNotifications(flowId, latestExecution.id, signal);
+    const items = await syncApi.getNotifications(flowId, latestExecution.id, signal);
     if (!signal.aborted && currentFlow.current === flowId) setNotificationItems(items);
   };
   useWorkflowPolling(notificationKey, refreshNotifications, error => showToast(message(error)), 2000);
   const retryNotification = async (id: string) => {
-    await syncService.retryNotification(id);
+    await syncApi.retryNotification(id);
     await refreshNotifications(notificationKey, new AbortController().signal);
   };
   const clearLogs = useCallback(async () => {
@@ -352,7 +365,7 @@ export default function App() {
       return;
     }
     try {
-      await syncService.clearHistory(id);
+      await syncApi.clearHistory(id);
       if (currentFlow.current !== id) return;
       ++refreshRevision.current;
       observedRunData.current = { flowId: id, fingerprint: JSON.stringify([conflicts, []]) };
@@ -363,7 +376,7 @@ export default function App() {
     } catch (error) {
       if (currentFlow.current === id) showToast(`Không thể xóa nhật ký: ${message(error)}`);
     }
-  }, [conflicts, showToast]);
+  }, [conflicts, syncApi, showToast]);
   const token = useCallback(() => {
     const value = localStorage.getItem('google_access_token');
     if (!value) throw new Error('Kết nối Google trước khi thao tác dữ liệu.');
@@ -398,13 +411,13 @@ export default function App() {
     [sheetNodes, fetchData, showToast],
   );
   const saveWorkflow = useCallback(async () => {
-    await workflowService.save(workflowId, {
+    await workflowApi.save(workflowId, {
       nodes,
       edges,
       flowId: flowId || undefined,
       accessToken: localStorage.getItem('google_access_token') || undefined,
     });
-  }, [workflowId, nodes, edges, flowId]);
+  }, [workflowId, workflowApi, nodes, edges, flowId]);
   const runWorkflow = useCallback(
     async (bootstrapConfirmed = false) => {
       if (running.current || backendRunning.current) return;
@@ -418,7 +431,7 @@ export default function App() {
         const config = configState.config;
         id = await flowIdFor(config);
         await saveWorkflow();
-        const result = await workflowService.run(workflowId, bootstrapConfirmed);
+        const result = await workflowApi.run(workflowId, bootstrapConfirmed);
         if (currentFlow.current !== id) return;
         setBootstrapRequired(result.bootstrapRequired);
         setConflicts(result.conflicts);
@@ -443,7 +456,7 @@ export default function App() {
         setIsRunning(false);
       }
     },
-    [configState, token, saveWorkflow, refreshRunData, refreshSources, showToast, workflowId, latestExecution?.id],
+    [configState, token, saveWorkflow, refreshRunData, refreshSources, showToast, workflowId, workflowApi, latestExecution?.id],
   );
   useEffect(() => {
     if (!autoActive) return;
@@ -461,32 +474,32 @@ export default function App() {
         return Promise.all(connectedSheetSources(nodes, edges, node.id).map(source =>
           googleService.readSheet(token(), source.spreadsheetId, source.sheetName, undefined, node.data.columnTypes)));
       if (!flowId) throw new Error(configState.error || 'Cấu hình luồng trước khi chạy thử.');
-      if (node.type === 'storageAction') return syncService.getVault(flowId);
+      if (node.type === 'storageAction') return syncApi.getVault(flowId);
       if (node.type === 'telegramAction') {
         if (!conflicts[0]) throw new Error('Chưa có xung đột thật để gửi lại thông báo.');
         const chatId = node.data.chatId?.trim();
         if (!chatId) throw new Error('Điền Telegram Chat ID.');
-        const result = await syncService.resendTelegramAlert(conflicts[0].id, chatId);
+        const result = await syncApi.resendTelegramAlert(conflicts[0].id, chatId);
         if (!result.success) throw new Error(result.message);
         return result;
       }
       throw new Error('Khối này chưa được hỗ trợ thực thi.');
     },
-    [nodes, edges, fetchData, flowId, configState.error, conflicts, token],
+    [nodes, edges, fetchData, flowId, configState.error, conflicts, token, syncApi],
   );
   const resolveConflict = useCallback(
     async (value: string, conflict: SyncConflictDto) => {
       if (value === undefined) throw new Error('Xung đột thiếu giá trị. Tải lại danh sách.');
-      await syncService.resolveConflict(conflict.id, value, token());
+      await syncApi.resolveConflict(conflict.id, value, token());
       refreshRevision.current++;
       setConflicts((items) => items.filter((item) => item.id !== conflict.id));
       await refreshSources();
       showToast('Đã đồng bộ giá trị đã chọn xuống tất cả các bảng và cập nhật snapshot.');
-      await refreshRunData(conflict.flowId || flowId).catch((error) =>
+      await refreshRunData(tenant ? currentFlow.current : conflict.flowId || flowId).catch((error) =>
         showToast(`Đã lưu quyết định; tải lại danh sách thất bại: ${message(error)}`),
       );
     },
-    [token, flowId, refreshRunData, refreshSources, showToast],
+    [token, flowId, tenant, syncApi, refreshRunData, refreshSources, showToast],
   );
   const sendTelegram = useCallback(
     async (conflictId: number) => {
@@ -497,7 +510,7 @@ export default function App() {
       const results = await Promise.all(targets.map(async node => {
         const destination = node.data.chatId?.trim();
         if (!destination) throw new Error('Điền Telegram Chat ID.');
-        return syncService.resendTelegramAlert(conflictId, destination);
+        return syncApi.resendTelegramAlert(conflictId, destination);
       }));
       const failed = results.filter(result => !result.success);
       if (failed.length) throw new Error(failed.map(result => result.message).join('; '));
@@ -505,7 +518,7 @@ export default function App() {
       return;
 
     },
-    [nodes, edges, showToast],
+    [nodes, edges, syncApi, showToast],
   );
   const updateCell = useCallback(
     async (range: string, value: string) => {
@@ -743,7 +756,7 @@ export default function App() {
       let updatedFlowId: string | undefined;
       try { updatedFlowId = await flowIdFor(workflowConfig(updatedNodes, edges)); }
       catch { /* Incomplete graphs may still be saved as drafts when no schedule is active. */ }
-      await workflowService.save(workflowId, {
+      await workflowApi.save(workflowId, {
         nodes: updatedNodes,
         edges,
         flowId: updatedFlowId,
@@ -890,8 +903,8 @@ export default function App() {
           </ReactFlow>
           <RunHistoryDrawer
             flowId={flowId}
-            loadNotifications={syncService.getNotificationPage}
-            retryNotification={syncService.retryNotification}
+            loadNotifications={syncApi.getNotificationPage}
+            retryNotification={syncApi.retryNotification}
             logs={logs}
             activeConflictIds={conflicts.map((conflict) => conflict.id)}
             isRunning={isRunning}
@@ -949,6 +962,7 @@ export default function App() {
         />
       )}
       <NaturalLanguageConfigModal
+        workspaceId={workspaceId}
         workflowId={workflowId}
         key={`node-config:${activeNodeId}`}
         node={['dataTransform', 'routerCondition'].includes(activeNode?.type || '') || !activeNode ? null : { ...activeNode, data: { ...activeNode.data, notificationItems: notificationItems.filter(item => item.actionNodeId === activeNode.id) } }}

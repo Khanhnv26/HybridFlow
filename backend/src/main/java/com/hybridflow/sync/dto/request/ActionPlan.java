@@ -13,6 +13,7 @@ import lombok.Setter;
 @Builder
 public class ActionPlan {
     private String nodeId;
+    private String connectionId;
     private String channel;
     private String chatId;
     private String recordTemplate;

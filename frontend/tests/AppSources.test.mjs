@@ -26,7 +26,7 @@ const bundle = await build({
           namespace: 'test-api',
         }));
         builder.onLoad({ filter: /.*/, namespace: 'test-api' }, () => ({
-          contents: ['googleService', 'syncService', 'workflowService', 'telegramService']
+          contents: ['apiClient', 'googleService', 'syncService', 'workflowService', 'telegramService']
             .map(
               (name) =>
                 'export const ' +
@@ -104,6 +104,10 @@ async function mount(options = {}) {
       }),
     ],
   ]);
+  if (options.editorProps) {
+    const { userId, workspaceId, workflowId } = options.editorProps;
+    storage.set(`hybridflow:draft:${userId}:${workspaceId}:${workflowId}`, JSON.stringify(options.draft));
+  }
   globalThis.localStorage = {
     getItem: (key) => storage.get(key) ?? null,
     setItem: (key, value) => storage.set(key, value),
@@ -117,10 +121,41 @@ async function mount(options = {}) {
   api.workflowService = { load: async () => ({}), save: async () => ({}) };
   api.syncService = { getNotifications: async () => [], ...options.syncService };
   api.telegramService = {};
+  api.apiClient = options.apiClient || {};
   await act(async () => {
-    renderer = create(React.createElement(App));
+    renderer = create(React.createElement(App, options.editorProps));
   });
 }
+
+test('workspace editor opens historical outbox through the execution context and never calls legacy workflow APIs', async context => {
+  context.mock.timers.enable({ apis: ['setTimeout'] });
+  const requests = [];
+  const history = ['new', 'old'].map(id => ({ id, flow_id: 'context-' + id, status: 'SUCCESS',
+    started_at: '2026-11-04T03:00:00Z', result: JSON.stringify({ cleanRecordIds: [], conflicts: [], notificationsQueued: 0 }) }));
+  api.googleService = { readSheet: async (_token, file, tab) => rows(file, tab, 1) };
+  await mount({ editorProps: { userId: 'user', workspaceId: 'workspace', workflowId: 'workflow' },
+    draft: { nodes: [source('a', 'file-a', 'Tab A'),
+      { id: 'diff', type: 'diffEngine', position: { x: 0, y: 0 }, data: { uniqueKey: 'id', conflictPolicy: 'ASK_TELEGRAM' } },
+      { id: 'vault', type: 'storageAction', position: { x: 0, y: 0 }, data: { tableName: 'vault' } }],
+      edges: [{ source: 'a', sourceHandle: 'out', target: 'diff', targetHandle: 'in' },
+        { source: 'diff', sourceHandle: 'clean', target: 'vault', targetHandle: 'in' }] },
+    apiClient: { get: async url => {
+      requests.push(url);
+      return { data: url.endsWith('/history') ? history : url.endsWith('/conflicts') ? []
+        : url.includes('/contexts/context-old/notifications') ? [{ id: 'old-notice', state: 'SENT', channel: 'TELEGRAM',
+          message: 'Old run message', actionNodeId: 'telegram', destination: '123', sourceType: 'RECORD',
+          attempts: 1, createdAt: '2026-11-04T03:00:00Z', availableAt: '2026-11-04T03:00:00Z' }] : [] };
+    } },
+  });
+  for (let attempt = 0; attempt < 6; attempt++) await act(async () => new Promise(setImmediate));
+  const buttons = label => renderer.root.findAllByType('button').filter(node => text(node).includes(label));
+  await act(async () => buttons('Lịch sử')[0].props.onClick());
+  assert.equal(buttons('Xem thông báo').length, 2, JSON.stringify({ requests, ui: text(renderer.root).slice(-1800) }));
+  await act(async () => buttons('Xem thông báo')[1].props.onClick());
+  assert.match(text(renderer.root), /Old run message/);
+  assert.ok(requests.includes('/workspaces/workspace/workflows/workflow/contexts/context-old/notifications'));
+  assert.ok(requests.every(url => url.startsWith('/workspaces/workspace/workflows/workflow')));
+});
 
 test('scheduled completions update history and source data without reloading the page', async (context) => {
   context.mock.timers.enable({ apis: ['setTimeout'] });

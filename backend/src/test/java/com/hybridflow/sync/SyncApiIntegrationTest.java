@@ -13,6 +13,9 @@ import com.hybridflow.sync.dto.request.RunSyncRequest;
 import com.hybridflow.sync.service.NotificationOutboxService;
 import com.hybridflow.sync.service.SyncExecutionService;
 import com.hybridflow.sync.service.WorkflowJobService;
+import com.hybridflow.common.filter.CorrelationIdFilter;
+import org.springframework.web.context.WebApplicationContext;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
@@ -68,7 +71,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
         "hybridflow.scheduler.enabled=false",
         "google.oauth.encryption-key=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
         "logging.level.com.hybridflow=WARN", "logging.level.org.hibernate=WARN" })
-@AutoConfigureMockMvc
+// Engine integration is exercised independently of HTTP authorization; workspace isolation tests keep filters enabled.
+@AutoConfigureMockMvc(addFilters = false)
 class SyncApiIntegrationTest {
     @Test void deliveryErrorsPersistMachineCodeAndCorrelationForHistoryQueries() throws Exception {
         String body = routedRequest("delivery-error");
@@ -84,6 +88,7 @@ class SyncApiIntegrationTest {
     }
 
     @Autowired MockMvc mvc;
+    @Autowired WebApplicationContext webContext;
     @Autowired JdbcTemplate jdbc;
     @MockBean GoogleSheetsService sheets;
     @MockBean GoogleOAuthService oauth;
@@ -94,7 +99,8 @@ class SyncApiIntegrationTest {
     @Autowired NotificationOutboxService outbox;
 
     @BeforeEach void cleanDatabase() {
-        jdbc.execute("TRUNCATE notification_outbox,workflow_jobs,sheet_write_journal,sync_conflicts,sync_snapshots,vault_records,sync_flow_bindings,sync_executions,workflow_definitions,google_connections RESTART IDENTITY");
+        mvc = MockMvcBuilders.webAppContextSetup(webContext).addFilters(new CorrelationIdFilter()).build();
+        jdbc.execute("TRUNCATE notification_outbox,workflow_jobs,sheet_write_journal,sync_conflicts,sync_snapshots,vault_records,sync_flow_bindings,sync_executions,workflow_definitions,google_connections RESTART IDENTITY CASCADE");
         source("NEW");
         doAnswer(call -> {
             Map<String, String> cells = call.getArgument(2);

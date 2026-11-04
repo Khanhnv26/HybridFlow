@@ -13,6 +13,10 @@ import type {
   TelegramRecipient,
   TelegramLink,
   NotificationOutboxItem,
+  Me,
+  Workspace,
+  BusinessModule,
+  TenantWorkflowSummary,
 } from '../types';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '');
@@ -23,7 +27,107 @@ export const apiClient = axios.create({
     'Content-Type': 'application/json',
   },
   timeout: 120000,
+  withCredentials: true,
 });
+
+interface CsrfInfo {
+  headerName: string;
+  token: string;
+}
+
+let csrfInfo: CsrfInfo | null = null;
+let csrfPending: Promise<CsrfInfo> | null = null;
+
+export function invalidateCsrf() {
+  csrfInfo = null;
+  csrfPending = null;
+}
+
+async function ensureCsrf(): Promise<CsrfInfo> {
+  if (csrfInfo) return csrfInfo;
+  if (!csrfPending) {
+    csrfPending = apiClient.get<CsrfInfo>('/auth/csrf')
+      .then(response => {
+        csrfInfo = response.data;
+        return response.data;
+      })
+      .finally(() => {
+        csrfPending = null;
+      });
+  }
+  return csrfPending;
+}
+
+apiClient.interceptors.request.use(async config => {
+  const method = (config.method || 'get').toUpperCase();
+  if (!['GET', 'HEAD', 'OPTIONS'].includes(method)) {
+    const csrf = await ensureCsrf();
+    config.headers.set(csrf.headerName, csrf.token);
+  }
+  return config;
+});
+
+apiClient.interceptors.response.use(
+  response => response,
+  error => {
+    if (axios.isAxiosError(error) && error.response?.status === 401) {
+      const url = error.config?.url || '';
+      if (!url.includes('/auth/me')) {
+        window.dispatchEvent(new CustomEvent('auth-expired'));
+      }
+    }
+    return Promise.reject(error);
+  }
+);
+
+export const authService = {
+  me: async (signal?: AbortSignal) =>
+    (await apiClient.get<Me>('/auth/me', { signal })).data,
+  logout: async () => {
+    await apiClient.post('/auth/logout');
+    invalidateCsrf();
+  },
+};
+
+export const workspaceService = {
+  list: async (signal?: AbortSignal) =>
+    (await apiClient.get<Workspace[]>('/workspaces', { signal })).data,
+  create: async (name: string) =>
+    (await apiClient.post<Workspace>('/workspaces', { name })).data,
+};
+
+export const moduleService = {
+  list: async (workspaceId: string, signal?: AbortSignal) =>
+    (await apiClient.get<BusinessModule[]>(`/workspaces/${encodeURIComponent(workspaceId)}/modules`, { signal })).data,
+  create: async (workspaceId: string, name: string, description = '', enabled = true) =>
+    (await apiClient.post<BusinessModule>(`/workspaces/${encodeURIComponent(workspaceId)}/modules`, { name, description, enabled })).data,
+};
+
+export function tenantWorkflowApi(workspaceId: string, workflowId: string) {
+  const base = `/workspaces/${encodeURIComponent(workspaceId)}/workflows/${encodeURIComponent(workflowId)}`;
+  return {
+    load: async (signal?: AbortSignal) =>
+      (await apiClient.get(base, { signal })).data,
+    save: async (expectedVersion: number, definition: unknown, connectionBindings: unknown[]) =>
+      (await apiClient.put(base, { expectedVersion, definition, connectionBindings })).data,
+    run: async (bootstrapConfirmed?: boolean) =>
+      (await apiClient.post(base + '/run', null, { params: { bootstrapConfirmed } })).data,
+    history: async (signal?: AbortSignal) =>
+      (await apiClient.get(base + '/history', { signal })).data,
+    notifications: async (contextId: string, executionId: string, offset = 0, signal?: AbortSignal) =>
+      (await apiClient.get(base + `/contexts/${encodeURIComponent(contextId)}/notifications`,
+        { params: { executionId, offset, limit: 50 }, signal })).data,
+    retry: async (contextId: string, notificationId: string) =>
+      apiClient.post(base + `/contexts/${encodeURIComponent(contextId)}/notifications/${encodeURIComponent(notificationId)}/retry`),
+  };
+}
+
+export const tenantWorkflowService = {
+  list: async (workspaceId: string, signal?: AbortSignal) =>
+    (await apiClient.get<TenantWorkflowSummary[]>(`/workspaces/${encodeURIComponent(workspaceId)}/workflows`, { signal })).data,
+  create: async (workspaceId: string, moduleId: string, name: string) =>
+    (await apiClient.post<TenantWorkflowSummary>(`/workspaces/${encodeURIComponent(workspaceId)}/workflows`, { moduleId, name })).data,
+};
 
 export const googleService = {
   // Bắt đầu OAuth 2.0 Web Flow
@@ -134,8 +238,8 @@ export const syncService = {
 export const workflowService = {
   run: async (id: string, bootstrapConfirmed: boolean): Promise<RunSyncResponse> =>
     (await apiClient.post(`/workflows/${encodeURIComponent(id)}/run`, null, { params: { bootstrapConfirmed } })).data,
-  scheduleStatus: async (id: string, signal?: AbortSignal): Promise<{ enabled: boolean; state?: string; error?: string; next_run_at?: string; last_run_at?: string }> =>
-    (await apiClient.get(`/workflows/${encodeURIComponent(id)}/schedule`, { signal })).data,
+  scheduleStatus: async (id: string, signal?: AbortSignal, workspaceId?: string): Promise<{ enabled: boolean; state?: string; error?: string; next_run_at?: string; last_run_at?: string }> =>
+    (await apiClient.get(`${workspaceId ? `/workspaces/${encodeURIComponent(workspaceId)}` : ''}/workflows/${encodeURIComponent(id)}/schedule`, { signal })).data,
   load: async (id: string) =>
     (await apiClient.get(`/workflows/${encodeURIComponent(id)}/definition`)).data,
   save: async (id: string, definition: unknown) =>

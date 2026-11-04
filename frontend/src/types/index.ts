@@ -293,6 +293,7 @@ export interface RunSyncResponse {
 }
 
 export interface ExecutionHistoryDto {
+  flow_id?: string;
   error_code?: string;
   correlation_id?: string;
   progress?: string | ExecutionPhase[] | null;
@@ -330,4 +331,36 @@ export interface ConnectedSheetSource {
   spreadsheetId: string;
   spreadsheetTitle?: string;
   sheetName: string;
+}
+
+export interface Me {
+  id: string;
+  email: string;
+  displayName: string;
+}
+
+export type WorkspaceRole = 'OWNER' | 'ADMIN' | 'EDITOR' | 'VIEWER';
+
+export interface Workspace {
+  id: string;
+  name: string;
+  role: WorkspaceRole;
+}
+
+export interface BusinessModule {
+  id: string;
+  workspaceId: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  createdAt: string;
+}
+
+export interface TenantWorkflowSummary {
+  flowId: string;
+  workspaceId: string;
+  moduleId?: string;
+  name: string;
+  enabled: boolean;
+  definitionVersion: number;
 }

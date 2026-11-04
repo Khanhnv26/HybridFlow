@@ -1,0 +1,75 @@
+package com.hybridflow.workspace.controller;
+
+import com.hybridflow.workspace.dto.request.CreateTelegramConnectionRequest;
+import com.hybridflow.workspace.dto.response.WorkspaceConnectionResponse;
+import com.hybridflow.workspace.service.WorkspaceConnectionService;
+import jakarta.servlet.http.HttpSession;
+import jakarta.validation.Valid;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.bind.annotation.DeleteMapping;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.ResponseStatus;
+import org.springframework.web.bind.annotation.RestController;
+
+import java.util.List;
+import java.util.Map;
+import java.util.UUID;
+
+@RestController
+@RequiredArgsConstructor
+@RequestMapping("/api/v1/workspaces")
+public class WorkspaceConnectionController {
+    private final WorkspaceConnectionService service;
+
+    @PostMapping("/{workspaceId}/connections/google/start")
+    public Map<String, String> startGoogleOAuth(@PathVariable UUID workspaceId,
+                                                @RequestParam(defaultValue = "Google Sheets") String connectionName,
+                                                HttpSession session) {
+        String authUrl = service.startGoogleOAuth(workspaceId, connectionName, session);
+        return Map.of("url", authUrl);
+    }
+
+    @GetMapping("/connections/google/callback")
+    public WorkspaceConnectionResponse completeGoogleOAuth(@RequestParam String code,
+                                                           @RequestParam String state,
+                                                           HttpSession session) {
+        return service.completeGoogleOAuth(code, state, session);
+    }
+
+    @PostMapping("/{workspaceId}/connections/telegram")
+    @ResponseStatus(HttpStatus.CREATED)
+    public WorkspaceConnectionResponse createTelegram(@PathVariable UUID workspaceId,
+                                                      @Valid @RequestBody CreateTelegramConnectionRequest request) {
+        return service.createTelegram(workspaceId, request);
+    }
+
+    @GetMapping("/{workspaceId}/connections")
+    public List<WorkspaceConnectionResponse> list(@PathVariable UUID workspaceId) {
+        return service.list(workspaceId);
+    }
+
+    @PostMapping("/{workspaceId}/connections/{connectionId}/grants")
+    public void grantRole(@PathVariable UUID workspaceId,
+                          @PathVariable String connectionId,
+                          @RequestParam(defaultValue = "EDITOR") String role) {
+        service.grantRole(workspaceId, connectionId, role);
+    }
+
+    @PostMapping("/{workspaceId}/connections/{connectionId}/revoke")
+    public void revoke(@PathVariable UUID workspaceId,
+                       @PathVariable String connectionId) {
+        service.revoke(workspaceId, connectionId);
+    }
+
+    @DeleteMapping("/{workspaceId}/connections/{connectionId}")
+    public void delete(@PathVariable UUID workspaceId,
+                       @PathVariable String connectionId) {
+        service.delete(workspaceId, connectionId);
+    }
+}

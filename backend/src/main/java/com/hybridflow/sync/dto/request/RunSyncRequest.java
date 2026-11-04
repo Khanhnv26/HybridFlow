@@ -16,6 +16,8 @@ import java.util.Set;
 @Builder
 public class RunSyncRequest {
     private String flowId;
+    private java.util.UUID workspaceId;
+    private String workflowId;
     private String accessToken;
     private java.util.Map<String, List<String>> executionNodes;
     private boolean scheduledExecution;

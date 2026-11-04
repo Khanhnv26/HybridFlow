@@ -5,6 +5,7 @@ import { Clock, Save, X, Check, Calendar, Timer, Globe, AlertTriangle } from 'lu
 import type { OrchestrationNodeData } from '../../types';
 
 interface Props {
+  workspaceId?: string;
   workflowId?: string;
   data: OrchestrationNodeData;
   disabled: boolean;
@@ -33,20 +34,20 @@ const JOB_STATES: Record<string, string> = {
   DEAD: 'Đã dừng sau nhiều lần thử', CANCELLED: 'Đã hủy',
 };
 
-export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId }: Props) {
+export function ScheduleConfig({ data, disabled, onClose, onSave, workflowId, workspaceId }: Props) {
   const [status, setStatus] = useState<Awaited<ReturnType<typeof workflowService.scheduleStatus>> | null>(null);
   const [statusError, setStatusError] = useState('');
   const [timezone, setTimezone] = useState(data.scheduleTimezone || 'Asia/Ho_Chi_Minh');
   useEffect(() => {
     if (!workflowId) return;
     const controller = new AbortController();
-    const refresh = () => void workflowService.scheduleStatus(workflowId, controller.signal)
+    const refresh = () => void workflowService.scheduleStatus(workflowId, controller.signal, workspaceId)
       .then((value) => { if (!controller.signal.aborted) { setStatus(value); setStatusError(''); } })
       .catch(() => { if (!controller.signal.aborted) setStatusError('Không tải được trạng thái lịch từ máy chủ.'); });
     refresh();
     const timer = setInterval(refresh, 5000);
     return () => { controller.abort(); clearInterval(timer); };
-  }, [workflowId]);
+  }, [workflowId, workspaceId]);
   const [enabled, setEnabled] = useState(data.scheduleEnabled !== false);
   const [type, setType] = useState<'interval' | 'daily'>(
     (data.scheduleType as 'interval' | 'daily') || 'interval',

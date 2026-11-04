@@ -40,7 +40,8 @@ class NotificationOutboxRepositoryIntegrationTest {
         DriverManagerDataSource source = new DriverManagerDataSource(url + "?currentSchema=" + schema, "hybridflow_test", "hybridflow_test");
         jdbc = new JdbcTemplate(source);
         jdbc.execute(Files.readString(Path.of("src/main/resources/db/migration/V10__notification_outbox.sql")));
-        jdbc.execute("ALTER TABLE notification_outbox ADD COLUMN error_code VARCHAR(64), ADD COLUMN correlation_id VARCHAR(36)");
+        jdbc.execute("ALTER TABLE notification_outbox ADD COLUMN error_code VARCHAR(64), ADD COLUMN correlation_id VARCHAR(36), ADD COLUMN workspace_id UUID, ADD COLUMN connection_id VARCHAR(50)");
+        jdbc.execute("CREATE TABLE workspace_connections(id VARCHAR(50) PRIMARY KEY,workspace_id UUID,state VARCHAR(30))");
         repository = new NotificationOutboxRepository(jdbc);
         transaction = new TransactionTemplate(new DataSourceTransactionManager(source));
     }

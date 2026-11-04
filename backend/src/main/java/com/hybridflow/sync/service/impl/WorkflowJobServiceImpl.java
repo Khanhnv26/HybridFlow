@@ -18,6 +18,10 @@ import com.hybridflow.sync.repository.WorkflowJobRepository;
 import com.hybridflow.sync.service.SyncExecutionService;
 import com.hybridflow.sync.service.WorkflowJobService;
 import com.hybridflow.sync.support.WorkflowGraphParser;
+import com.hybridflow.workspace.dto.request.ConnectionBindingItem;
+import com.hybridflow.workspace.repository.TenantWorkflowRepository;
+import com.hybridflow.workspace.repository.WorkspaceConnectionRepository;
+import com.hybridflow.workspace.service.TenantRunPlanService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -26,6 +30,8 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.util.List;
+import java.util.Optional;
 
 @Service @RequiredArgsConstructor
 public class WorkflowJobServiceImpl implements WorkflowJobService {
@@ -37,6 +43,9 @@ public class WorkflowJobServiceImpl implements WorkflowJobService {
     private final ObjectMapper mapper;
     private final PlatformTransactionManager transactions;
     private final Clock clock;
+    private final TenantWorkflowRepository tenantWorkflowRepository;
+    private final WorkspaceConnectionRepository workspaceConnectionRepository;
+    private final TenantRunPlanService tenantRunPlanService;
     @Value("${hybridflow.scheduler.lease-seconds:120}") private int leaseSeconds = 120;
     @Value("${hybridflow.scheduler.max-attempts:3}") private int maxAttempts = 3;
 
@@ -83,21 +92,43 @@ public class WorkflowJobServiceImpl implements WorkflowJobService {
     }
 
     private void execute(WorkflowJob job) {
-        // Held through the sync transaction: an expired lease cannot be stolen from a live worker.
         if (!jobs.lockOwned(job)) return;
         if (!definitions.isCurrent(job.getWorkflowId(), job.getRevision())) {
             jobs.finish(job, "CANCELLED", null, clock.instant());
             return;
         }
-        String connection = definitions.findConnection(job.getWorkflowId()).orElseThrow(GoogleReconnectRequiredException::new);
-        RunSyncRequest request;
-        try {
-            request = parser.buildSyncRequest(job.getWorkflowId(), mapper.readTree(job.getDefinition()), connection)
-                    .orElseThrow(() -> new ValidationException("Cấu hình luồng không hợp lệ."));
-        } catch (JsonProcessingException exception) {
-            throw new ValidationException("Cấu hình luồng không hợp lệ.");
+        if (job.getWorkspaceId() != null && !tenantWorkflowRepository.runnable(job.getWorkspaceId(), job.getWorkflowId())) {
+            jobs.finish(job, "CANCELLED", null, clock.instant());
+            return;
         }
-        credentials.resolveAccessToken(connection);
+        RunSyncRequest request;
+        if (job.getWorkspaceId() != null) {
+            String accessToken = null;
+            List<ConnectionBindingItem> bindings = tenantWorkflowRepository.findBindings(job.getWorkspaceId(), job.getWorkflowId());
+            for (ConnectionBindingItem b : bindings) {
+                Optional<String> googleConnId = workspaceConnectionRepository.findGoogleConnectionId(job.getWorkspaceId(), b.getConnectionId());
+                if (googleConnId.isPresent()) {
+                    accessToken = credentials.resolveAccessToken(googleConnId.get());
+                    break;
+                }
+            }
+            if (accessToken == null) {
+                String legacyConnection = definitions.findConnection(job.getWorkflowId()).orElse(null);
+                if (legacyConnection != null) {
+                    accessToken = credentials.resolveAccessToken(legacyConnection);
+                }
+            }
+            request = tenantRunPlanService.createPlan(job.getWorkspaceId(), job.getWorkflowId(), job.getDefinition(), accessToken);
+        } else {
+            String connection = definitions.findConnection(job.getWorkflowId()).orElseThrow(GoogleReconnectRequiredException::new);
+            try {
+                request = parser.buildSyncRequest(job.getWorkflowId(), mapper.readTree(job.getDefinition()), connection)
+                        .orElseThrow(() -> new ValidationException("Cấu hình luồng không hợp lệ."));
+            } catch (JsonProcessingException exception) {
+                throw new ValidationException("Cấu hình luồng không hợp lệ.");
+            }
+            credentials.resolveAccessToken(connection);
+        }
         request.setScheduledExecution(true);
         RunSyncResponse result = execution.executeSync(request);
         String state = result.isBootstrapRequired() ? "NEEDS_BOOTSTRAP" : "SUCCEEDED";

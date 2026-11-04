@@ -134,8 +134,14 @@ public class NotificationOutboxServiceImpl implements NotificationOutboxService 
         }
         TelegramDeliveryResult result;
         try {
-            result = sender.get().send(item.getDestination(), item.getMessage());
-            if (result == null) throw new ApplicationException(ErrorCode.INTERNAL_ERROR);
+            NotificationSender notificationSender = sender.get();
+            result = notificationSender.send(item);
+            if (result == null) {
+                result = notificationSender.send(item.getDestination(), item.getMessage());
+            }
+            if (result == null) {
+                throw new ApplicationException(ErrorCode.INTERNAL_ERROR);
+            }
         } catch (RuntimeException error) {
             ErrorDetails details = ErrorClassifier.classify(error);
             result = TelegramDeliveryResult.builder().success(false).retryable(details.getCode().isRetryable())

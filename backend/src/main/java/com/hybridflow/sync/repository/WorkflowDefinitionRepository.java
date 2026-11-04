@@ -12,6 +12,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.UUID;
 
 @Repository @RequiredArgsConstructor
 public class WorkflowDefinitionRepository {
@@ -64,12 +65,16 @@ public class WorkflowDefinitionRepository {
     public List<ScheduledWorkflowRow> lockDueWorkflows(Instant now) {
         return jdbc.query("""
                 SELECT d.* FROM workflow_definitions d
-                WHERE schedule_enabled AND next_run_at <= ?
+                LEFT JOIN business_modules m ON m.workspace_id=d.workspace_id AND m.id=d.module_id
+                WHERE d.schedule_enabled AND d.next_run_at <= ?
+                  AND (d.workspace_id IS NULL OR (d.enabled AND (d.module_id IS NULL OR m.enabled)))
                   AND NOT EXISTS (SELECT 1 FROM workflow_jobs j WHERE j.workflow_id=d.flow_id
                       AND (j.state IN ('READY','RETRY','RUNNING') OR (j.revision=d.schedule_revision
                           AND j.state IN ('NEEDS_CONNECTION','NEEDS_BOOTSTRAP','DEAD'))))
-                ORDER BY next_run_at LIMIT 100 FOR UPDATE OF d SKIP LOCKED
+                ORDER BY d.next_run_at LIMIT 100 FOR UPDATE OF d SKIP LOCKED
                 """, (rs, number) -> ScheduledWorkflowRow.builder().flowId(rs.getString("flow_id"))
+                .workspaceId(rs.getObject("workspace_id", UUID.class))
+                .moduleId(rs.getObject("module_id", UUID.class))
                 .definitionJson(rs.getString("definition")).scheduleType(rs.getString("schedule_type"))
                 .intervalMinutes(rs.getInt("interval_minutes")).dailyTime(rs.getString("daily_time"))
                 .timezone(rs.getString("schedule_timezone")).revision(rs.getLong("schedule_revision"))

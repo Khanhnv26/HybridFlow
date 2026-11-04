@@ -15,6 +15,8 @@ import java.time.Instant;
 @Builder
 public class NotificationOutboxItem {
     private String id;
+    private java.util.UUID workspaceId;
+    private String connectionId;
     private String flowId;
     private String executionId;
     private String actionNodeId;

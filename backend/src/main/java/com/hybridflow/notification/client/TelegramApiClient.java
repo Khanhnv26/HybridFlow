@@ -30,13 +30,17 @@ public class TelegramApiClient {
         this.restClient = RestClient.builder().requestFactory(factory).build();
     }
 
-    public boolean isConfigured() { return botToken != null && !botToken.isBlank(); }
+    public boolean isConfigured() {
+        return botToken != null && !botToken.isBlank();
+    }
 
-    public JsonNode call(String method, Map<String, Object> body) {
-        if (!isConfigured()) throw new ApplicationException(ErrorCode.CONFIGURATION_ERROR);
+    public JsonNode callWithToken(String token, String method, Map<String, Object> body) {
+        if (token == null || token.isBlank()) {
+            throw new ApplicationException(ErrorCode.CONFIGURATION_ERROR);
+        }
         try {
-            JsonNode response = restClient.post().uri("https://api.telegram.org/bot" + botToken + "/" + method)
-                    .body(body).retrieve().body(JsonNode.class);
+            JsonNode response = restClient.post().uri("https://api.telegram.org/bot" + token + "/" + method)
+                    .body(body != null ? body : Map.of()).retrieve().body(JsonNode.class);
             if (response == null || !response.path("ok").asBoolean()) {
                 throw failure(response == null ? 0 : response.path("error_code").asInt(),
                         response == null ? "" : response.path("description").asText(),
@@ -50,12 +54,16 @@ public class TelegramApiClient {
                 JsonNode response = mapper.readTree(ex.getResponseBodyAsString());
                 description = response.path("description").asText();
                 retryAfter = response.path("parameters").path("retry_after").asInt(30);
+            } catch (Exception ignored) {
             }
-            catch (Exception ignored) { /* Use a safe status-based message; never expose a token-bearing URL. */ }
             throw failure(ex.getStatusCode().value(), description, retryAfter);
         } catch (RestClientException ex) {
             throw new ApplicationException(ErrorCode.UPSTREAM_UNAVAILABLE);
         }
+    }
+
+    public JsonNode call(String method, Map<String, Object> body) {
+        return callWithToken(botToken, method, body);
     }
 
     private ApplicationException failure(int code, String description, int retryAfter) {

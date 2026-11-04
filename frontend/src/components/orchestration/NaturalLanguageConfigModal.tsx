@@ -9,6 +9,7 @@ import { ScheduleConfig } from './ScheduleConfig';
 import { DiffEngineConfigModal, type ComparisonSource } from './DiffEngineConfigModal';
 
 interface Props {
+  workspaceId?: string;
   workflowId?: string;
   node: Node<OrchestrationNodeData> | null;
   onClose: () => void;
@@ -49,7 +50,7 @@ export function NaturalLanguageConfigModal(props: Props) {
     connected={props.connected} connectionVersion={props.connectionVersion} onClose={onClose}
     onConnectGoogle={props.onConnectGoogle} onReadSource={(file, tab, signal) => props.onReadSource(node.id, file, tab, signal)}
     onSave={settings => props.onSaveSource(node.id, settings)} />;
-  if (node.type === 'scheduleTrigger') return <ScheduleConfig workflowId={props.workflowId} data={node.data}
+  if (node.type === 'scheduleTrigger') return <ScheduleConfig workspaceId={props.workspaceId} workflowId={props.workflowId} data={node.data}
     disabled={disabled} onClose={onClose} onSave={settings => props.onSaveSource(node.id, settings)} />;
   if (node.type === 'telegramAction') return <TelegramConfig data={node.data} disabled={disabled}
     notificationConnected={props.notificationConnected} availableColumns={props.availableColumns}

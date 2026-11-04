@@ -1,10 +1,17 @@
 package com.hybridflow.architecture;
 
+import com.hybridflow.auth.controller.AuthController;
 import com.hybridflow.connection.controller.GoogleConnectionController;
 import com.hybridflow.connection.controller.TelegramConnectionController;
 import com.hybridflow.sync.controller.SyncConflictController;
 import com.hybridflow.sync.controller.SyncExecutionController;
 import com.hybridflow.sync.controller.WorkflowController;
+import com.hybridflow.workspace.controller.InvitationController;
+import com.hybridflow.workspace.controller.MemberController;
+import com.hybridflow.workspace.controller.ModuleController;
+import com.hybridflow.workspace.controller.TenantWorkflowController;
+import com.hybridflow.workspace.controller.WorkspaceConnectionController;
+import com.hybridflow.workspace.controller.WorkspaceController;
 import com.sun.source.tree.Tree;
 import com.sun.source.util.JavacTask;
 import com.sun.source.util.TreeScanner;
@@ -24,8 +31,19 @@ import static org.junit.jupiter.api.Assertions.*;
 class ControllerArchitectureTest {
     @Test
     void controllersOnlyDependOnServiceInterfaces() {
-        List<Class<?>> controllers = List.of(GoogleConnectionController.class, TelegramConnectionController.class,
-                SyncConflictController.class, SyncExecutionController.class, WorkflowController.class);
+        List<Class<?>> controllers = List.of(
+                AuthController.class,
+                GoogleConnectionController.class,
+                TelegramConnectionController.class,
+                SyncConflictController.class,
+                SyncExecutionController.class,
+                WorkflowController.class,
+                WorkspaceController.class,
+                ModuleController.class,
+                MemberController.class,
+                InvitationController.class,
+                TenantWorkflowController.class,
+                WorkspaceConnectionController.class);
         for (Class<?> controller : controllers) {
             for (Field dependency : controller.getDeclaredFields()) {
                 if (dependency.isSynthetic()) {

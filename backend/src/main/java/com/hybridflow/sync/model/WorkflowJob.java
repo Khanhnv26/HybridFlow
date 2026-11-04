@@ -1,10 +1,17 @@
 package com.hybridflow.sync.model;
 
-import lombok.*;
+import lombok.AllArgsConstructor;
+import lombok.Builder;
+import lombok.Getter;
 
-@Getter @Builder @AllArgsConstructor
+import java.util.UUID;
+
+@Getter
+@Builder
+@AllArgsConstructor
 public class WorkflowJob {
     private final String id;
+    private final UUID workspaceId;
     private final String workflowId;
     private final String definition;
     private final long revision;
