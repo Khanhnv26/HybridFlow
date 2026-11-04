@@ -12,11 +12,4 @@ public class MeResponse {
     private final String email;
     private final String displayName;
 
-    public UUID getId() {
-        return id;
-    }
-
-    public UUID getID() {
-        return id;
-    }
 }

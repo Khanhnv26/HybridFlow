@@ -36,6 +36,6 @@ public class CurrentUserServiceImpl implements CurrentUserService {
     @Override
     @Transactional(readOnly = true)
     public UUID requireUserId() {
-        return requireUser().getID();
+        return requireUser().getId();
     }
 }

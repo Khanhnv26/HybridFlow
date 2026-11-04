@@ -1,6 +1,7 @@
 package com.hybridflow.common.config;
 
 import com.hybridflow.auth.security.GoogleOidcUserLoader;
+import com.hybridflow.auth.security.GoogleLoginFailureHandler;
 import com.hybridflow.auth.security.SecurityErrorWriter;
 import com.hybridflow.common.exception.ErrorCode;
 import org.springframework.beans.factory.annotation.Value;
@@ -17,6 +18,7 @@ public class SecurityConfig {
     @Bean
     public SecurityFilterChain applicationSecurity(HttpSecurity http,
                                                    GoogleOidcUserLoader loader, SecurityErrorWriter errors,
+                                                   GoogleLoginFailureHandler loginFailure,
                                                    @Value("${app.frontend-origin:http://localhost:3000}") String frontend) throws Exception {
         http.cors(Customizer.withDefaults());
         http.csrf(csrf -> csrf.csrfTokenRepository(new HttpSessionCsrfTokenRepository()));
@@ -30,7 +32,7 @@ public class SecurityConfig {
         http.oauth2Login(login -> login
                 .userInfoEndpoint(info -> info.oidcUserService(loader))
                 .defaultSuccessUrl(frontend, true)
-                .failureUrl(frontend + "/?login=failed"));
+                .failureHandler(loginFailure));
         http.exceptionHandling(handler -> handler
                 .authenticationEntryPoint((request, response, exception) ->
                         errors.write(request, response, ErrorCode.AUTHENTICATION_REQUIRED))

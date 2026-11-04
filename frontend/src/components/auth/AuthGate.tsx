@@ -62,11 +62,30 @@ export function AuthGate({ children }: { children: (user: Me) => ReactNode }) {
     );
   }
   if (state.kind === 'anonymous') {
+    const query = new URLSearchParams(window.location.search);
+    const failureMessages: Record<string, string> = {
+      authorization_request_not_found: 'Không tìm thấy phiên đăng nhập Google. Hãy mở ứng dụng bằng localhost:3000 và bắt đầu đăng nhập lại trong cùng trình duyệt.',
+      invalid_state_parameter: 'Phiên đăng nhập Google không khớp. Hãy bắt đầu đăng nhập lại.',
+      invalid_token_response: 'Backend không đổi được mã Google lấy token. Cần kiểm tra client ID/secret và kết nối từ backend đến Google.',
+      invalid_id_token: 'Backend không xác minh được ID token Google. Cần kiểm tra thời gian hệ thống và kết nối đến Google.',
+      invalid_user_info_response: 'Backend không lấy được thông tin tài khoản từ Google.',
+      access_denied: 'Quyền đăng nhập Google đã bị từ chối hoặc hủy.',
+      invalid_client: 'Google từ chối cấu hình OAuth client của backend.',
+      invalid_grant: 'Mã đăng nhập Google không còn hợp lệ. Hãy bắt đầu đăng nhập lại.',
+    };
+    const reason = query.get('reason') || 'authentication_failed';
+    const knownReason = Object.prototype.hasOwnProperty.call(failureMessages, reason);
     return (
       <main className="min-h-screen flex items-center justify-center bg-slate-900 text-white p-6">
         <div className="bg-slate-800 p-8 rounded-xl shadow-xl max-w-md w-full text-center space-y-6">
           <h1 className="text-2xl font-bold tracking-tight">Đăng nhập HybridFlow</h1>
           <p className="text-slate-400 text-sm">Vui lòng đăng nhập bằng tài khoản Google để tiếp tục.</p>
+          {query.get('login') === 'failed' && (
+            <div role="alert" className="text-sm text-red-300 space-y-2">
+              <p>{knownReason ? failureMessages[reason] : 'Đăng nhập Google chưa thành công. Kiểm tra log backend ở dòng Google login failed để xác định nguyên nhân.'}</p>
+              <p>Mã lỗi: {knownReason ? reason : 'authentication_failed'}</p>
+            </div>
+          )}
           <a
             href="/api/v1/auth/login/google"
             className="inline-block w-full py-3 px-4 bg-blue-600 hover:bg-blue-500 text-white font-medium rounded-lg transition-colors shadow-sm"
