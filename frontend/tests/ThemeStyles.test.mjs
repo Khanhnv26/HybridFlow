@@ -11,11 +11,11 @@ test('theme utilities use the explicit theme even when launched from the reposit
   try {
     process.chdir(fileURLToPath(new URL('../../', import.meta.url)));
     const result = await postcss([tailwindcss(config.plugins.tailwindcss)]).process(
-      await readFile(new URL('../src/index.css', import.meta.url), 'utf8'),
+      `${await readFile(new URL('../src/index.css', import.meta.url), 'utf8')}\n.theme-regression-probe { @apply text-black dark:text-white; }`,
       { from: fileURLToPath(new URL('../src/index.css', import.meta.url)) },
     );
     assert.match(result.css, /data-theme/);
-    assert.match(result.css, /dark\\:text-white/);
+    assert.match(result.css, /\.theme-regression-probe:where\(\[data-theme="dark"\]/);
     assert.doesNotMatch(result.css, /prefers-color-scheme:\s*dark/);
   } finally {
     process.chdir(previousDirectory);

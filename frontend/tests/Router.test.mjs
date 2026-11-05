@@ -2,6 +2,29 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { resolveRoute, syncOAuthRedirect } from '../src/router.ts';
 
+test('login has its own route and receives failed Google callbacks', () => {
+  assert.equal(resolveRoute('/login', ''), 'login');
+  assert.equal(resolveRoute('/login/', ''), 'login');
+  assert.equal(resolveRoute('/', '?login=failed&reason=access_denied'), 'login');
+});
+
+test('failed OAuth preserves the error instead of forwarding to workspace', () => {
+  const previousWindow = globalThis.window;
+  const previousStorage = globalThis.sessionStorage;
+  let target;
+  let cleared = false;
+  globalThis.sessionStorage = { getItem: () => '1', removeItem: () => { cleared = true; } };
+  globalThis.window = { location: { pathname: '/', search: '?login=failed&reason=access_denied' }, history: { replaceState: (_state, _title, path) => { target = path; } } };
+  try {
+    assert.equal(syncOAuthRedirect(), true);
+    assert.equal(target, '/login?login=failed&reason=access_denied');
+    assert.equal(cleared, true);
+  } finally {
+    globalThis.window = previousWindow;
+    globalThis.sessionStorage = previousStorage;
+  }
+});
+
 test('resolveRoute returns landing for root and landing paths', () => {
   assert.equal(resolveRoute('/', ''), 'landing');
   assert.equal(resolveRoute('', ''), 'landing');

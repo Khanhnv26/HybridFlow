@@ -19,7 +19,8 @@ const bundle = await build({
     {
       name: 'landing-externals',
       setup(builder) {
-        builder.onResolve({ filter: /^(?:react(?:\/.*)?|lenis)$/ }, args => ({
+        builder.onLoad({ filter: /\.css$/ }, () => ({ contents: '', loader: 'js' }));
+        builder.onResolve({ filter: /^(?:react(?:\/.*)?|lenis|lucide-react)$/ }, args => ({
           path: import.meta.resolve(args.path),
           external: true,
         }));
@@ -48,8 +49,8 @@ test('LandingPage renders hero headline and marketing value proposition', async 
     renderer = create(React.createElement(LandingPage));
   });
   const output = JSON.stringify(renderer.toJSON());
-  assert.match(output, /Biến Google Sheets thành/);
-  assert.match(output, /trung tâm vận hành tự động/);
+  assert.match(output, /Hai bảng tính/);
+  assert.match(output, /Một nguồn/);
   assert.match(output, /Thuật toán 3-Way Diff/);
   renderer.unmount();
 });
@@ -116,15 +117,51 @@ test('LandingPage interactive scenarios trigger conflict resolution on Telegram'
   renderer.unmount();
 });
 
-test('LandingPage includes standard Google OAuth login endpoints', async () => {
+test('LandingPage sends anonymous visitors to the dedicated login page', async () => {
   let renderer;
   await act(async () => {
     renderer = create(React.createElement(LandingPage));
   });
 
   const links = renderer.root.findAllByType('a');
-  const googleLoginLinks = links.filter(a => a.props.href === '/api/v1/auth/login/google');
-  assert.ok(googleLoginLinks.length >= 2, 'Should have multiple accessible Google OAuth login buttons');
+  const loginLinks = links.filter(a => a.props.href === '/login');
+  assert.ok(loginLinks.length >= 3, 'Header and primary calls to action should open the login page');
+  assert.equal(links.filter(a => a.props.href === '/api/v1/auth/login/google').length, 0);
 
   renderer.unmount();
+});
+
+test('workflow steps switch the actual setup preview', async () => {
+  let renderer;
+  await act(async () => { renderer = create(React.createElement(LandingPage)); });
+  try {
+    const choose = text => renderer.root.findAllByType('button').find(button => collectText(button).includes(text));
+    await act(async () => choose('Đặt quy tắc').props.onClick());
+    assert.match(JSON.stringify(renderer.toJSON()), /Ghép cột. Giữ dữ liệu khớp/);
+    assert.match(JSON.stringify(renderer.toJSON()), /ma_don/);
+    await act(async () => choose('Theo dõi & duyệt').props.onClick());
+    assert.match(JSON.stringify(renderer.toJSON()), /Mọi thay đổi, trong tầm mắt/);
+  } finally { await act(async () => renderer.unmount()); }
+});
+
+test('changing industry cancels a pending demo synchronization', async () => {
+  const originalSetTimeout = globalThis.setTimeout;
+  const originalClearTimeout = globalThis.clearTimeout;
+  const pending = new Map();
+  globalThis.setTimeout = callback => { const id = Symbol(); pending.set(id, callback); return id; };
+  globalThis.clearTimeout = id => pending.delete(id);
+  let renderer;
+  try {
+    await act(async () => { renderer = create(React.createElement(LandingPage)); });
+    const choose = text => renderer.root.findAllByType('button').find(button => collectText(button).includes(text));
+    await act(async () => choose('Tình huống 1').props.onClick());
+    assert.equal(pending.size, 1);
+    await act(async () => choose('Trung Tâm & Học Phí').props.onClick());
+    assert.equal(pending.size, 0);
+    assert.doesNotMatch(JSON.stringify(renderer.toJSON()), /Đã đồng bộ thành công/);
+  } finally {
+    if (renderer) await act(async () => renderer.unmount());
+    globalThis.setTimeout = originalSetTimeout;
+    globalThis.clearTimeout = originalClearTimeout;
+  }
 });

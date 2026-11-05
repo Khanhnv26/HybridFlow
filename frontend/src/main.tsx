@@ -4,6 +4,7 @@ import { AuthGate } from './components/auth/AuthGate';
 import { WorkspacePicker } from './components/workspace/WorkspacePicker';
 import { ModuleWorkflowPicker } from './components/workspace/ModuleWorkflowPicker';
 import { LandingPage } from './pages/LandingPage';
+import { OpenWorkspace } from './pages/LoginPage';
 import { resolveRoute, syncOAuthRedirect } from './router';
 import App from './App.tsx';
 import './index.css';
@@ -34,6 +35,8 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
           </WorkspacePicker>
         )}
       </AuthGate>
+    ) : route === 'login' ? (
+      <AuthGate>{() => <OpenWorkspace />}</AuthGate>
     ) : (
       <LandingPage />
     )}

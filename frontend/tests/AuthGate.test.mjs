@@ -15,7 +15,7 @@ const bundle = await build({
   plugins: [{ name: 'auth-boundary', setup(builder) {
     builder.onResolve({ filter: /services\/api$/ }, () => ({ path: 'api', namespace: 'auth-api' }));
     builder.onLoad({ filter: /.*/, namespace: 'auth-api' }, () => ({ contents: 'export const authService = globalThis.__authGateApi;' }));
-    builder.onResolve({ filter: /^(?:react(?:\/.*)?|axios)$/ }, args => ({ path: import.meta.resolve(args.path), external: true }));
+    builder.onResolve({ filter: /^(?:react(?:\/.*)?|axios|lucide-react)$/ }, args => ({ path: import.meta.resolve(args.path), external: true }));
   } }],
 });
 const directory = await mkdtemp(join(tmpdir(), 'hybridflow-auth-test-'));
@@ -48,7 +48,15 @@ test('failed Google callback explains token exchange failure after auth/me retur
 test('initial anonymous visit shows login without a failure alert', async () => {
   await renderAnonymous('', renderer => {
     assert.equal(renderer.root.findAllByProps({ role: 'alert' }).length, 0);
-    assert.equal(renderer.root.findByType('a').props.href, '/api/v1/auth/login/google');
+    const login = renderer.root.findAllByType('a').find(link => link.props.href === '/api/v1/auth/login/google');
+    assert.ok(login);
+    const previousStorage = globalThis.sessionStorage;
+    const storage = new Map();
+    globalThis.sessionStorage = { setItem: (key, value) => storage.set(key, value) };
+    try {
+      login.props.onClick();
+      assert.equal(storage.get('hf_login_pending'), '1');
+    } finally { globalThis.sessionStorage = previousStorage; }
   });
 });
 
