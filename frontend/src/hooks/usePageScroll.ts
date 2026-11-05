@@ -2,6 +2,17 @@ import { useEffect } from 'react';
 import type { RefObject } from 'react';
 import Lenis from 'lenis';
 
+/** Smooth scroll to top helper using active Lenis instance or fallback */
+export function scrollToTop() {
+  if (typeof window === 'undefined') return;
+  const lenis = (window as unknown as { __hybridflowLenis?: Lenis }).__hybridflowLenis;
+  if (lenis && typeof lenis.scrollTo === 'function') {
+    lenis.scrollTo(0, { duration: 1.2 });
+  } else {
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  }
+}
+
 /** Page scrolling only; nested tables retain their native scroll behavior. */
 export function usePageScroll(page: RefObject<HTMLElement>, overflowOnly = false) {
   useEffect(() => {
@@ -13,12 +24,19 @@ export function usePageScroll(page: RefObject<HTMLElement>, overflowOnly = false
       if (motion.matches || !needsScroll) {
         lenis?.destroy();
         lenis = undefined;
+        if (typeof window !== 'undefined') {
+          delete (window as unknown as { __hybridflowLenis?: Lenis }).__hybridflowLenis;
+        }
       } else if (!lenis) {
         lenis = new Lenis({
-          autoRaf: true, lerp: 0.1, smoothWheel: true, syncTouch: false,
+          autoRaf: true,
+          lerp: 0.1,
+          smoothWheel: true,
+          syncTouch: false,
           anchors: { offset: -96 },
           prevent: node => !!node.closest('[data-lenis-prevent]'),
         });
+        (window as unknown as { __hybridflowLenis?: Lenis }).__hybridflowLenis = lenis;
       }
     };
     refresh();
@@ -31,6 +49,9 @@ export function usePageScroll(page: RefObject<HTMLElement>, overflowOnly = false
       motion.removeEventListener('change', refresh);
       window.removeEventListener('resize', refresh);
       lenis?.destroy();
+      if (typeof window !== 'undefined') {
+        delete (window as unknown as { __hybridflowLenis?: Lenis }).__hybridflowLenis;
+      }
     };
   }, [page, overflowOnly]);
 }

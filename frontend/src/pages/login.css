@@ -47,9 +47,16 @@
 .login-page--split :is(.login-card,.login-story) > :nth-child(3) { animation-delay:80ms; }
 .login-page--split :is(.login-card,.login-story) > :nth-child(4) { animation-delay:120ms; }
 .login-page--split :is(.login-card,.login-story) > :nth-child(n+5) { animation-delay:160ms; }
-.login-page--split .google-login-button { transition:background 180ms ease,border-color 180ms ease,transform 130ms ease; }
-.login-page--split .google-login-button:hover { transform:none; background:#f4f7fb; border-color:#cbd5e1; box-shadow:none; }
-.login-page--split .google-login-button:active { transform:scale(.99); }
+.login-page--split .google-login-button {
+  transition: background 180ms ease, border-color 180ms ease, transform 160ms cubic-bezier(0.16, 1, 0.3, 1), box-shadow 180ms ease;
+}
+.login-page--split .google-login-button:hover {
+  transform: translateY(-2px);
+  background: #f4f7fb;
+  border-color: #cbd5e1;
+  box-shadow: 0 10px 24px -6px rgba(0, 0, 0, 0.15), 0 0 0 1px rgba(16, 185, 129, 0.25);
+}
+.login-page--split .google-login-button:active { transform: scale(.985); }
 .login-page--split .login-back,.login-header-actions > a { transition:opacity 180ms ease,color 180ms ease; }
 .login-page--split .login-back:hover,.login-header-actions > a:hover { opacity:.75; }
 .login-page--split .login-error { animation:login-content-in 260ms var(--login-motion-ease) both; }

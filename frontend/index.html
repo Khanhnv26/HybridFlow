@@ -32,13 +32,30 @@
       <div class="preloader-content">
         <div class="preloader-brand"><span class="preloader-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 18 18 6M6 6h12v12" stroke-linecap="round" stroke-linejoin="round" /></svg></span><span>HybridFlow</span></div>
         <p class="preloader-message">Đang chuẩn bị trải nghiệm…</p>
-        <div class="preloader-feedback"><div class="preloader-track" role="progressbar" aria-label="Đang tải HybridFlow"><span></span></div><svg class="preloader-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke-linecap="round" stroke-linejoin="round" /></svg></div>
+        <div class="preloader-feedback"><div class="preloader-track" role="progressbar" aria-label="Đang tải HybridFlow"><span></span></div><span class="preloader-percent" aria-hidden="true">0%</span><svg class="preloader-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke-linecap="round" stroke-linejoin="round" /></svg></div>
         <p class="preloader-detail">Đang khởi tạo giao diện</p>
         <a class="preloader-retry" href="">Tải lại trang</a>
       </div>
-      <small class="preloader-footer" aria-hidden="true">© 2026 HybridFlow</small>
+      <small class="preloader-footer" aria-hidden="true">© 2026 HybridFlow · AI Powered Sync</small>
     </div>
-    <script>document.getElementById('app-preloader').dataset.startedAt = String(performance.now());</script>
+    <script>
+      (() => {
+        const shell = document.getElementById('app-preloader');
+        if (!shell) return;
+        shell.dataset.startedAt = String(performance.now());
+        const percentEl = shell.querySelector('.preloader-percent');
+        const start = performance.now();
+        const duration = 1100;
+        function updateCounter(now) {
+          if (!shell || shell.classList.contains('app-preloader--leaving')) return;
+          const elapsed = now - start;
+          const progress = Math.min(100, Math.round((elapsed / duration) * 100));
+          if (percentEl) percentEl.textContent = progress + '%';
+          if (progress < 100) requestAnimationFrame(updateCounter);
+        }
+        requestAnimationFrame(updateCounter);
+      })();
+    </script>
     <noscript><style>#app-preloader{display:none}</style><p>Vui lòng bật JavaScript để sử dụng HybridFlow.</p></noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>

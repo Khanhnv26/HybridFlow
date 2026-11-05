@@ -256,16 +256,17 @@ export function DataTransformConfigModal({
               ) : (
                 <>
                   {columns.length > 5 && (
-                    <div className="relative">
-                      <Search size={18} className="absolute left-2.5 top-2.5 text-muted pointer-events-none" />
+                    <label className="hf-search-field flex items-center gap-2 rounded-lg border border-line bg-canvas px-2.5 py-2 text-muted">
+                      <Search size={16} className="shrink-0" aria-hidden="true" />
                       <input
-                        type="text"
+                        type="search"
+                        aria-label="Tìm tên cột"
                         value={colSearchQuery}
                         onChange={(e) => setColSearchQuery(e.target.value)}
                         placeholder="Tìm tên cột..."
-                        className="w-full pl-8 pr-3 py-1.5 rounded-lg bg-canvas border border-line text-sm text-primary placeholder-gray-500 outline-none focus:border-purple-500"
+                        className="text-sm text-primary placeholder:text-muted"
                       />
-                    </div>
+                    </label>
                   )}
                   <div className="grid max-h-64 grid-cols-2 gap-3 overflow-y-auto p-1 sm:grid-cols-3">
                     {filteredColumns.map(column => {

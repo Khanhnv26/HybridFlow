@@ -40,7 +40,7 @@ for (const reduced of [false, true]) {
       assert.equal(removed, reduced);
       if (!reduced) {
         assert.equal(classes.has('app-preloader--leaving'), true);
-        act(() => t.mock.timers.tick(240));
+        act(() => t.mock.timers.tick(320));
         assert.equal(removed, true);
       }
     } finally {

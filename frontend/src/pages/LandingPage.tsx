@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowDown, ArrowRight, ArrowUpRight, Check, FileSpreadsheet, Menu, RotateCcw, Send, ShieldCheck, X } from 'lucide-react';
+import { ArrowDown, ArrowRight, ArrowUp, ArrowUpRight, Check, FileSpreadsheet, Menu, RotateCcw, Send, ShieldCheck, X } from 'lucide-react';
 import { ThemeToggle } from '../components/ThemeToggle';
-import { usePageScroll } from '../hooks/usePageScroll';
+import { usePageScroll, scrollToTop } from '../hooks/usePageScroll';
 import { FaqItem } from '../components/marketing/FaqItem';
 import { INDUSTRIES } from '../components/marketing/landingData';
 import { HeroProduct, ProductSheet, SafetyPreview, SetupPreview, workflowSteps } from '../components/marketing/ProductPreview';
@@ -25,11 +25,26 @@ export function LandingPage({ loginFailed }: LandingPageProps) {
   const [step, setStep] = useState(0);
   const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
+  const [scrollProgress, setScrollProgress] = useState(0);
+  const [isScrolled, setIsScrolled] = useState(false);
   const page = useRef<HTMLDivElement>(null);
   usePageScroll(page);
   const scenarioTimer = useRef<ReturnType<typeof setTimeout>>();
   const data = INDUSTRIES[industry];
   const destination = currentUser ? '/app' : '/login';
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const onScroll = () => {
+      const total = document.documentElement.scrollHeight - window.innerHeight;
+      const progress = total > 0 ? Math.min(1, Math.max(0, window.scrollY / total)) : 0;
+      setScrollProgress(progress);
+      setIsScrolled(window.scrollY > 30);
+    };
+    window.addEventListener('scroll', onScroll, { passive: true });
+    onScroll();
+    return () => window.removeEventListener('scroll', onScroll);
+  }, []);
 
   useEffect(() => {
     if (typeof document === 'undefined') return;
@@ -118,7 +133,8 @@ export function LandingPage({ loginFailed }: LandingPageProps) {
   const formula2 = resolved ? data.tg[`${selected}Formula2`] : complete ? data.tg.syncedFormula2 : data.sheet2.formula;
 
   return <div className="editorial-landing marketing-surface" ref={page}>
-    <header className="ed-header"><div className="ed-container ed-header-inner">
+    <div className="scroll-progress-bar" style={{ transform: `scaleX(${scrollProgress})` }} aria-hidden="true" />
+    <header className={`ed-header ${isScrolled ? 'is-scrolled' : ''}`}><div className="ed-container ed-header-inner">
       <a className="ed-brand" href="/" aria-label="HybridFlow · Trang chủ"><span className="flow-brand-mark"><ArrowUpRight size={24} /></span>HybridFlow</a>
       <nav aria-label="Điều hướng chính" className={menuOpen ? 'ed-nav is-open' : 'ed-nav'}>
         {[['#product', 'Sản phẩm'], ['#how-it-works', 'Cách hoạt động'], ['#sandbox', 'Trải nghiệm'], ['#faq', 'Hỏi đáp']].map(([href, text]) => <a key={href} href={href} onClick={() => setMenuOpen(false)}>{text}</a>)}
@@ -130,6 +146,7 @@ export function LandingPage({ loginFailed }: LandingPageProps) {
 
     <main>
       <section className="ed-hero ed-container" id="product">
+        <div className="ambient-glow ambient-glow--hero" aria-hidden="true" />
         <div className="ed-hero-main">
         <div className="ed-hero-copy ed-reveal"><p className="ed-kicker">DÀNH CHO ĐỘI NGŨ VẬN HÀNH</p><h1>Hai bảng tính.<br />Một nguồn{' '}<br />dữ liệu <em>đúng.</em></h1><p className="ed-intro">Đồng bộ Google Sheets hai chiều.<br />Phát hiện xung đột trước khi dữ liệu bị ghi đè.</p><div className="ed-hero-actions"><a className="ed-button" href={destination}>{currentUser ? 'Vào Workspace' : 'Bắt đầu miễn phí'}<ArrowRight size={17} /></a><a className="ed-text-link" href="#how-it-works">Xem cách hoạt động <ArrowDown size={16} /></a></div></div>
         <HeroProduct />
@@ -138,17 +155,20 @@ export function LandingPage({ loginFailed }: LandingPageProps) {
       </section>
 
       <section className="ed-comparison ed-container ed-reveal" id="comparison">
+        <div className="ambient-glow ambient-glow--comparison" aria-hidden="true" />
         <p className="ed-kicker">ÍT ĐỐI SOÁT HƠN. NHIỀU THỜI GIAN HƠN.</p><h2>Một lần sửa.<br className="ed-mobile-break" /> Không còn ba lần đối soát.</h2>
         <div className="ed-comparison-layout"><div className="ed-comparison-story"><span className="ed-number">01</span><h3>Dữ liệu thường bị lệch vì phải cập nhật ở nhiều nơi.</h3><p>Sửa ở bảng của Sale, rồi lại phải báo Kho, nhắn tin xác nhận, và cuối ngày vẫn phải dò soát lại từng dòng.</p><a className="ed-text-link" href="#sandbox">Thử một cách khác <ArrowRight size={16} /></a></div>
         <div className="ed-comparison-table"><table><caption className="sr-only">So sánh quản lý thủ công và HybridFlow</caption><thead><tr><th /><th>Trước đây</th><th>Với HybridFlow</th></tr></thead><tbody>{[['Cập nhật dữ liệu', 'Copy / paste thủ công', 'Tự đồng bộ hai chiều'], ['Xử lý khác biệt', 'Hỏi lại số liệu qua chat', 'Cảnh báo trước khi ghi đè'], ['Đảm bảo chính xác', 'Dò lỗi, đối soát cuối ngày', 'Giữ dữ liệu gốc và lịch sử']].map(([title, before, after], index) => <tr key={title} style={{ '--row': index } as React.CSSProperties}><th scope="row">{title}</th><td><span>{before}</span></td><td><Check size={16} /><span>{after}</span></td></tr>)}</tbody></table></div></div>
       </section>
 
       <section className="ed-dark ed-how" id="how-it-works"><div className="ed-container">
+        <div className="ambient-glow ambient-glow--how" aria-hidden="true" />
         <div className="ed-section-heading ed-reveal"><p className="ed-kicker">KẾT NỐI MỘT LẦN. DÙNG TRONG CÔNG VIỆC MỖI NGÀY.</p><h2>Từ thay đổi nhỏ đến<br />quy trình liền mạch.</h2></div>
         <div className="ed-how-layout"><div className="ed-step-list">{workflowSteps.map((item, index) => <div className={`ed-step ${index === step ? 'is-active' : ''}`} data-step={index} key={item.title}><button type="button" aria-pressed={index === step} onClick={() => setStep(index)}><span>0{index + 1}</span><strong>{item.title}</strong></button><p>{item.description}</p></div>)}</div><div className="ed-setup-sticky"><SetupPreview step={step} /><p className="ed-setup-caption">Cuộn hoặc chọn từng bước để xem cách HybridFlow hoạt động.</p></div></div>
       </div></section>
 
       <section className="ed-demo ed-container" id="sandbox">
+        <div className="ambient-glow ambient-glow--demo" aria-hidden="true" />
         <div className="ed-section-heading ed-reveal"><p className="ed-kicker">KHÔNG CẦN ĐĂNG NHẬP ĐỂ TRẢI NGHIỆM</p><h2>Thử sửa một ô.<br />Xem cả quy trình chạy.</h2><p>Chọn lĩnh vực, tạo một thay đổi và xem cách hai bảng tính giữ dữ liệu khớp nhau.</p></div>
         <div className="ed-industry-tabs" style={{ '--active-tab': Object.keys(INDUSTRIES).indexOf(industry) } as React.CSSProperties} role="group" aria-label="Lĩnh vực trải nghiệm">{(Object.keys(INDUSTRIES) as Industry[]).map(key => <button type="button" key={key} aria-pressed={industry === key} onClick={() => changeIndustry(key)}>{INDUSTRIES[key].name}</button>)}</div>
         <div className="ed-demo-toolbar"><span>Kịch bản:</span><button type="button" aria-pressed={scenario === 'syncing' || scenario === 'synced'} disabled={scenario === 'syncing'} onClick={() => changeScenario('syncing')}>{data.btnNormal}</button><button type="button" aria-pressed={conflict || resolved} onClick={() => changeScenario('conflict')}>{data.btnConflict}</button><button type="button" className="ed-reset" onClick={() => changeScenario('idle')} aria-label="Đặt lại"><RotateCcw size={14} /><span>Đặt lại</span></button></div>
@@ -176,9 +196,10 @@ export function LandingPage({ loginFailed }: LandingPageProps) {
 
       <section className="ed-faq ed-container" id="faq"><div className="ed-reveal"><p className="ed-kicker">RÕ RÀNG TRƯỚC KHI BẮT ĐẦU</p><h2>Những điều bạn{' '}<br />muốn biết.</h2><a className="ed-text-link" href="#sandbox">Tự trải nghiệm trước <ArrowRight size={16} /></a></div><div className="ed-questions ed-reveal">{questions.map(([question, answer], index) => <FaqItem key={question} question={question} answer={answer} index={index} />)}</div></section>
 
-      <section className="ed-final"><div className="ed-container ed-reveal"><p className="ed-kicker">BẮT ĐẦU TỪ NHỮNG BẢNG TÍNH BẠN ĐANG CÓ</p><h2>Để bảng tính<br className="ed-mobile-break" /> làm việc cùng bạn.</h2><p>Đồng bộ dữ liệu, kiểm soát thay đổi và giảm thời gian đối soát mỗi ngày.</p><a href={destination} className="ed-button">{currentUser ? 'Mở Workspace' : 'Kết nối Google Sheets'}<ArrowRight size={17} /></a></div></section>
+      <section className="ed-final"><div className="ed-container ed-reveal"><div className="ambient-glow ambient-glow--final" aria-hidden="true" /><p className="ed-kicker">BẮT ĐẦU TỪ NHỮNG BẢNG TÍNH BẠN ĐANG CÓ</p><h2>Để bảng tính<br className="ed-mobile-break" /> làm việc cùng bạn.</h2><p>Đồng bộ dữ liệu, kiểm soát thay đổi và giảm thời gian đối soát mỗi ngày.</p><a href={destination} className="ed-button">{currentUser ? 'Mở Workspace' : 'Kết nối Google Sheets'}<ArrowRight size={17} /></a></div></section>
     </main>
     <footer className="ed-footer"><div className="ed-container"><a href="/" className="ed-brand"><span className="flow-brand-mark"><ArrowUpRight size={24} /></span>HybridFlow</a><p>Tự động hóa bắt đầu từ dữ liệu đúng.</p><small>© 2026 HybridFlow</small><a href="#product">Lên đầu trang ↑</a></div></footer>
+    <button type="button" className={`scroll-to-top ${isScrolled ? 'is-visible' : ''}`} onClick={scrollToTop} aria-label="Cuộn lên đầu trang"><ArrowUp size={20} /></button>
   </div>;
 }
 

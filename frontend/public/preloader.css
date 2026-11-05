@@ -1,32 +1,243 @@
-.app-preloader {
-  --preload-bg:#0b0f17; --preload-text:#edf2f9; --preload-muted:#a0b1bd; --preload-line:#263342; --preload-accent:#34d399;
-  position:fixed; inset:0; z-index:1000; display:flex; align-items:center; justify-content:center;
-  padding:24px; box-sizing:border-box; background:var(--preload-bg); color:var(--preload-text);
-  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
-  text-align:center; line-height:1.7;
+/* Keep the boot shell's decorative elements borderless before and after app
+   styles load or hot-update. Retry links retain their keyboard focus ring. */
+.app-preloader,
+.app-preloader :where(div, p, span, small, svg, path) {
+  border: 0 !important;
+  outline: 0 !important;
+  box-shadow: none !important;
 }
-[data-theme="light"] .app-preloader { --preload-bg:#f4f7fb; --preload-text:#182539; --preload-muted:#495b75; --preload-line:#ced9e8; --preload-accent:#087651; }
-.app-preloader::before { content:""; position:absolute; inset:0; pointer-events:none; opacity:.18; background-image:linear-gradient(var(--preload-line) 1px,transparent 1px),linear-gradient(90deg,var(--preload-line) 1px,transparent 1px); background-size:40px 40px; mask-image:radial-gradient(ellipse at center,#000,transparent 60%); }
-.preloader-content { position:relative; width:min(100%,440px); animation:preloader-in 280ms ease-out both; }
-.preloader-brand { display:flex; align-items:center; justify-content:center; gap:14px; font-size:32px; font-weight:650; letter-spacing:-.025em; }
-.preloader-mark { display:flex; align-items:center; justify-content:center; width:56px; height:56px; flex-shrink:0; border-radius:15px; background:linear-gradient(135deg,#34d399,#059669); color:white; }
-.preloader-mark svg { width:35px; height:35px; }
-.preloader-message { font-size:16px; font-weight:400; line-height:1.8; margin:24px 0 16px; color:var(--preload-muted); }
-.preloader-feedback { height:22px; display:flex; justify-content:center; align-items:center; }
-.preloader-track { position:relative; width:220px; max-width:80%; height:3px; overflow:hidden; border-radius:8px; background:var(--preload-line); }
-.preloader-track > span { display:block; height:100%; width:35%; border-radius:inherit; background:var(--preload-accent); animation:preloader-progress 1150ms cubic-bezier(.4,0,.2,1) infinite; }
-.preloader-check { display:none; width:22px; height:22px; color:var(--preload-accent); }
-.preloader-detail { margin:12px 0 0; color:var(--preload-muted); font-size:12px; font-weight:400; }
-.preloader-retry { display:none; margin-top:20px; color:var(--preload-accent); font-size:14px; text-underline-offset:4px; }
-.app-preloader--error .preloader-feedback { display:none; }
-.app-preloader--error .preloader-retry { display:inline-block; }
-.preloader-footer { position:absolute; bottom:max(22px,env(safe-area-inset-bottom)); left:24px; right:24px; font-size:11px; color:var(--preload-muted); }
-.app-preloader--leaving { pointer-events:none; animation:preloader-out 180ms ease-out forwards; }
-.app-preloader--leaving .preloader-track { display:none; }
-.app-preloader--leaving .preloader-check { display:block; }
-.app-preloader--leaving .preloader-content { animation:none; }
-@keyframes preloader-progress { from { transform:translateX(-110%); } to { transform:translateX(300%); } }
-@keyframes preloader-in { from { opacity:0; transform:translateY(5px); } to { opacity:1; transform:translateY(0); } }
-@keyframes preloader-out { to { opacity:0; } }
-@media (max-width:480px) { .preloader-brand { font-size:28px; gap:12px; } .preloader-mark { width:48px; height:48px; border-radius:13px; } .preloader-message { font-size:14px; } }
-@media (prefers-reduced-motion:reduce) { .app-preloader,.preloader-content,.preloader-track > span { animation:none; } .preloader-track > span { transform:translateX(93%); } }
+
+.app-preloader {
+  --preload-bg: #070b12;
+  --preload-text: #f0f6fc;
+  --preload-muted: #8b9eb0;
+  --preload-line: rgba(255, 255, 255, 0.12);
+  --preload-accent: #10b981;
+  --preload-accent-glow: rgba(16, 185, 129, 0.3);
+  position: fixed;
+  inset: 0;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  box-sizing: border-box;
+  background-color: var(--preload-bg);
+  background-image:
+    radial-gradient(ellipse 700px 500px at 50% 40%, rgba(16, 185, 129, 0.14) 0%, transparent 70%),
+    radial-gradient(ellipse 600px 400px at 80% 25%, rgba(56, 189, 248, 0.08) 0%, transparent 60%);
+  color: var(--preload-text);
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  text-align: center;
+  line-height: 1.7;
+  overflow: hidden;
+  isolation: isolate;
+}
+
+[data-theme="light"] .app-preloader {
+  --preload-bg: #f8fafc;
+  --preload-text: #0f172a;
+  --preload-muted: #475569;
+  --preload-line: rgba(15, 23, 42, 0.1);
+  --preload-accent: #059669;
+  --preload-accent-glow: rgba(5, 150, 105, 0.2);
+  background-color: var(--preload-bg);
+  background-image:
+    radial-gradient(ellipse 700px 500px at 50% 40%, rgba(16, 185, 129, 0.09) 0%, transparent 70%),
+    radial-gradient(ellipse 600px 400px at 80% 25%, rgba(56, 189, 248, 0.05) 0%, transparent 60%);
+}
+
+/* Keep the boot shell above the session loader during handoff. */
+#app-preloader { z-index:10000; }
+
+.preloader-content {
+  position: relative;
+  z-index: 2;
+  width: min(100%, 460px);
+  animation: preloader-in 450ms cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.preloader-brand {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+  font-size: 32px;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+}
+
+.preloader-mark {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 58px;
+  height: 58px;
+  flex-shrink: 0;
+  border-radius: 17px;
+  background: linear-gradient(135deg, #34d399, #059669);
+  color: white;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.2) inset;
+}
+
+.preloader-mark svg {
+  width: 34px;
+  height: 34px;
+}
+
+.preloader-message {
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.8;
+  margin: 28px 0 16px;
+  color: var(--preload-muted);
+  letter-spacing: -0.01em;
+}
+
+.preloader-feedback {
+  height: 28px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 12px;
+}
+
+.preloader-track {
+  position: relative;
+  width: 240px;
+  max-width: 75%;
+  height: 5px;
+  overflow: hidden;
+  border-radius: 10px;
+  background: var(--preload-line);
+  box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.preloader-track > span {
+  display: block;
+  height: 100%;
+  width: 0%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #10b981, #34d399, #6ee7b7);
+  transition: width 150ms ease-out;
+  animation: preloader-bar-fill 1.15s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+.preloader-percent {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--preload-accent);
+  min-width: 38px;
+  text-align: left;
+}
+
+.preloader-check {
+  display: none;
+  width: 24px;
+  height: 24px;
+  color: var(--preload-accent);
+}
+
+.preloader-detail {
+  margin: 14px 0 0;
+  color: var(--preload-muted);
+  font-size: 13px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+
+.preloader-retry {
+  display: none;
+  margin-top: 20px;
+  color: var(--preload-accent);
+  font-size: 14px;
+  text-underline-offset: 4px;
+}
+
+.app-preloader--error .preloader-feedback {
+  display: none;
+}
+
+.app-preloader--error .preloader-retry {
+  display: inline-block;
+}
+
+.preloader-footer {
+  position: absolute;
+  bottom: max(22px, env(safe-area-inset-bottom));
+  left: 24px;
+  right: 24px;
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  color: var(--preload-muted);
+  opacity: 0.7;
+}
+
+/* Fade a stationary, opaque surface to avoid full-screen raster tile flashes. */
+.app-preloader--leaving {
+  pointer-events: none;
+  animation: preloader-fade-out 280ms ease-out forwards;
+}
+
+.app-preloader--leaving .preloader-content {
+  animation: none;
+}
+
+.app-preloader--leaving .preloader-track {
+  display: none;
+}
+
+.app-preloader--leaving .preloader-percent {
+  display: none;
+}
+
+.app-preloader--leaving .preloader-check {
+  display: block;
+  animation: preloader-check-in 300ms ease-out forwards;
+}
+
+@keyframes preloader-bar-fill {
+  0% { width: 0%; }
+  60% { width: 85%; }
+  100% { width: 100%; }
+}
+
+@keyframes preloader-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes preloader-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes preloader-check-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (max-width: 480px) {
+  .preloader-brand { font-size: 28px; gap: 12px; }
+  .preloader-mark { width: 48px; height: 48px; border-radius: 14px; }
+  .preloader-message { font-size: 14px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-preloader,
+  .preloader-content,
+  .preloader-track > span,
+  .preloader-mark {
+    animation: none !important;
+  }
+  .app-preloader--leaving {
+    opacity: 0 !important;
+    transform: none !important;
+  }
+  .preloader-track > span {
+    width: 100% !important;
+  }
+}

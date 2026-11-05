@@ -48,6 +48,7 @@
 .studio-shell .node-palette > div:first-child { border:0; margin-bottom:10px; }
 .studio-shell .node-palette > div:first-child > p { margin-top:6px; font-size:11px; }
 .studio-shell .node-palette label { background:transparent; padding:10px; }
+.studio-shell .palette-search { height:42px; }
 .studio-shell .palette-section-title { color:rgb(var(--secondary-rgb)); font-size:10px; letter-spacing:.055em; padding:6px 4px; font-weight:650; }
 .studio-shell .palette-item { border:1px solid transparent; border-bottom-color:var(--studio-border); border-radius:8px; background:transparent; box-shadow:none; padding:12px 5px; gap:5px; }
 .studio-shell .palette-item:hover:not(:disabled) { background:var(--studio-accent-soft); border-color:transparent; }

@@ -352,6 +352,11 @@ button:disabled { cursor: not-allowed; }
 .switcher-search { display: flex; align-items: center; gap: 8px; margin: 10px 0; padding: 8px 10px; border: 1px solid var(--line-color); border-radius: 8px; background: var(--elevated-color); color: rgb(var(--muted-rgb)); }
 .switcher-search svg { flex-shrink: 0; }
 .switcher-search input { min-width: 0; width: 100%; background: transparent; color: rgb(var(--primary-rgb)); font-size: 13px; }
+.hf-search-field { min-width:0; transition:border-color 160ms ease,box-shadow 160ms ease; }
+.hf-search-field:focus-within { border-color:var(--studio-accent,var(--success)); box-shadow:0 0 0 3px var(--studio-accent-soft,rgb(var(--success-soft-rgb) / .5)); }
+.hf-search-field > svg { flex-shrink:0; }
+.hf-search-field input { min-width:0; width:100%; padding:0; border:0; border-radius:0; background:transparent; line-height:20px; box-shadow:none; }
+.hf-search-field input:focus-visible { outline:none; box-shadow:none; }
 .switcher-list { min-height: 140px; max-height: min(300px, 30dvh); flex: 1; overflow-y: auto; }
 .switcher-item { display: flex; align-items: center; gap: 9px; width: 100%; min-height: 44px; padding: 9px 10px; margin-bottom: 3px; border: 1px solid transparent; border-radius: 8px; color: rgb(var(--primary-rgb)); text-align: left; font-size: 13px; }
 .switcher-item:hover { background: rgb(var(--subtle-rgb)); }
@@ -414,9 +419,9 @@ button:disabled { cursor: not-allowed; }
   .toolbar-popover { position: fixed; top: auto; right: 12px; margin-top: 8px; }
 }
 :root {
-  --motion-fast: 140ms;
-  --motion-panel: 220ms;
-  --motion-ease: cubic-bezier(.2, .7, .2, 1);
+  --motion-fast: 150ms;
+  --motion-panel: 250ms;
+  --motion-ease: cubic-bezier(0.16, 1, 0.3, 1);
 }
 :where(button, summary, input, select, textarea, .switcher-item, .workflow-node) {
   transition: background-color var(--motion-fast) ease, color var(--motion-fast) ease,
@@ -430,8 +435,16 @@ button:disabled { cursor: not-allowed; }
 :is(.toolbar-button, .switcher-trigger, .studio-header-run, .sheet-cell-save, .sheet-cell-cancel, .switcher-submit):active:not(:disabled) { transform: scale(.98); }
 .switcher-trigger > svg:last-child { transition: transform 180ms var(--motion-ease); }
 .switcher-trigger[aria-expanded="true"] > svg:last-child { transform: rotate(180deg); }
-.hf-motion-overlay { animation: hf-overlay-in var(--motion-panel) ease both; }
-.hf-motion-overlay > .hf-modal { animation: hf-panel-in var(--motion-panel) var(--motion-ease) both; transform-origin: center; }
+.hf-motion-overlay {
+  animation: hf-overlay-in var(--motion-panel) ease both;
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+.hf-motion-overlay > .hf-modal {
+  animation: hf-panel-in var(--motion-panel) var(--motion-ease) both;
+  transform-origin: center;
+  box-shadow: 0 25px 70px -15px rgba(0, 0, 0, 0.4), 0 0 0 1px var(--line-color);
+}
 .switcher-panel { animation: hf-popover-in 180ms var(--motion-ease) both; }
 .switcher-create-form, .sheet-cell-editor { animation: hf-content-in 180ms var(--motion-ease) both; }
 .theme-toggle-icon { display: inline-flex; animation: hf-theme-icon-in 180ms var(--motion-ease) both; }

@@ -95,7 +95,7 @@ export function WorkflowSwitcher({ navigation }: { navigation: StudioNavigation 
   }
 
   function search(index: number, label: string) {
-    return <label className="switcher-search"><Search size={15} /><input type="search" aria-label={`Tìm ${label}`} placeholder={`Tìm ${label}…`} value={queries[index]} onChange={event => setQueries(previous => previous.map((value, i) => i === index ? event.target.value : value))} /></label>;
+    return <label className="hf-search-field switcher-search"><Search size={15} /><input type="search" aria-label={`Tìm ${label}`} placeholder={`Tìm ${label}…`} value={queries[index]} onChange={event => setQueries(previous => previous.map((value, i) => i === index ? event.target.value : value))} /></label>;
   }
   const matches = (name: string, index: number) => normalize(name).includes(normalize(queries[index].trim()));
   const noResults = <p className="switcher-empty">Không tìm thấy kết quả.</p>;

@@ -163,7 +163,7 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ onAddNode, disabled, o
       <div className="shrink-0 pb-2 border-b border-line mb-3">
         <h3 className="text-xs font-bold text-primary uppercase tracking-wider">Thư viện khối</h3>
         <p className="text-xs text-secondary mt-0.5">Bấm để thêm khối vào luồng</p>
-        <label className="mt-3 flex items-center gap-2 rounded-lg border border-line bg-elevated px-2.5 py-2 text-muted">
+        <label className="hf-search-field palette-search mt-3 flex items-center gap-2 rounded-lg border border-line bg-elevated px-2.5 py-2 text-muted">
           <Search size={15} className="shrink-0" />
           <input aria-label="Tìm khối" type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder="Tìm khối…" className="min-w-0 w-full bg-transparent text-sm text-primary outline-none placeholder:text-muted" />
         </label>
