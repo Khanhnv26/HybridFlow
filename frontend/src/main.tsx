@@ -8,12 +8,13 @@ import { OpenWorkspace } from './pages/LoginPage';
 import { resolveRoute, syncOAuthRedirect } from './router';
 import App from './App.tsx';
 import './index.css';
+import { BootstrapPreloader } from './components/Preloader';
 
 syncOAuthRedirect();
 const route = resolveRoute(window.location.pathname, window.location.search);
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
+  <><BootstrapPreloader /><React.StrictMode>
     {route === 'workspace' ? (
       <AuthGate>
         {user => (
@@ -40,5 +41,5 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     ) : (
       <LandingPage />
     )}
-  </React.StrictMode>,
+  </React.StrictMode></>,
 );

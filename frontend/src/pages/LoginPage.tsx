@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import { ArrowUpRight, ArrowLeft, ShieldCheck, Check, FileSpreadsheet, Send, Database } from 'lucide-react';
 import { ThemeToggle } from '../components/ThemeToggle';
+import { Preloader } from '../components/Preloader';
 import { usePageScroll } from '../hooks/usePageScroll';
 import './login.css';
 
@@ -70,5 +71,5 @@ export function LoginPage() {
 
 export function OpenWorkspace() {
   useEffect(() => { window.location.replace('/app'); }, []);
-  return <p role="status">Đang mở Workspace…</p>;
+  return <Preloader detail="Đang mở Workspace…" />;
 }

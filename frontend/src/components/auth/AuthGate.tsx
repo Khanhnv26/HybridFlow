@@ -5,6 +5,7 @@ import { authService } from '../../services/api';
 import { errorMessage } from '../../services/errors';
 import axios from 'axios';
 import { LoginPage } from '../../pages/LoginPage';
+import { PreloadBoundary } from '../Preloader';
 
 type State =
   | { kind: 'loading' }
@@ -44,11 +45,9 @@ export function AuthGate({ children }: { children: (user: Me) => ReactNode }) {
     return () => controller.abort();
   }, [revision]);
 
-  if (state.kind === 'loading') {
-    return <p role="status">Đang kiểm tra phiên…</p>;
-  }
+  let content: ReactNode = null;
   if (state.kind === 'error') {
-    return (
+    content = (
       <div role="alert" className="min-h-screen flex items-center justify-center p-6 text-danger">
         <div>
           <p>{state.message}</p>
@@ -62,6 +61,7 @@ export function AuthGate({ children }: { children: (user: Me) => ReactNode }) {
       </div>
     );
   }
-  if (state.kind === 'anonymous') return <LoginPage />;
-  return <>{children(state.user)}</>;
+  if (state.kind === 'anonymous') content = <LoginPage />;
+  if (state.kind === 'ready') content = children(state.user);
+  return <PreloadBoundary loading={state.kind === 'loading'} detail="Đang kiểm tra phiên đăng nhập">{content}</PreloadBoundary>;
 }

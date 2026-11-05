@@ -15,9 +15,31 @@
         document.documentElement.style.colorScheme = theme;
         document.documentElement.classList.toggle('dark', theme === 'dark');
       })();
+      window.addEventListener('error', event => {
+        if (!(event.target instanceof HTMLScriptElement) || event.target.type !== 'module') return;
+        const shell = document.getElementById('app-preloader');
+        if (!shell) return;
+        shell.classList.add('app-preloader--error');
+        shell.setAttribute('aria-busy', 'false');
+        shell.querySelector('.preloader-message').textContent = 'Chưa tải được giao diện';
+        shell.querySelector('.preloader-detail').textContent = 'Kiểm tra kết nối và thử tải lại trang.';
+      }, true);
     </script>
+    <link rel="stylesheet" href="/preloader.css" />
   </head>
   <body class="antialiased">
+    <div id="app-preloader" class="app-preloader" role="status" aria-live="polite" aria-busy="true">
+      <div class="preloader-content">
+        <div class="preloader-brand"><span class="preloader-mark" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M6 18 18 6M6 6h12v12" stroke-linecap="round" stroke-linejoin="round" /></svg></span><span>HybridFlow</span></div>
+        <p class="preloader-message">Đang chuẩn bị trải nghiệm…</p>
+        <div class="preloader-feedback"><div class="preloader-track" role="progressbar" aria-label="Đang tải HybridFlow"><span></span></div><svg class="preloader-check" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" aria-hidden="true"><path d="m5 12 4 4L19 6" stroke-linecap="round" stroke-linejoin="round" /></svg></div>
+        <p class="preloader-detail">Đang khởi tạo giao diện</p>
+        <a class="preloader-retry" href="">Tải lại trang</a>
+      </div>
+      <small class="preloader-footer" aria-hidden="true">© 2026 HybridFlow</small>
+    </div>
+    <script>document.getElementById('app-preloader').dataset.startedAt = String(performance.now());</script>
+    <noscript><style>#app-preloader{display:none}</style><p>Vui lòng bật JavaScript để sử dụng HybridFlow.</p></noscript>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

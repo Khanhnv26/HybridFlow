@@ -67,3 +67,50 @@ test('unknown failure reason is not reflected in the login page', async () => {
     assert.match(JSON.stringify(renderer.toJSON()), /authentication_failed/);
   });
 });
+
+test('pending session shows branded progress and releases the workspace immediately when ready', async () => {
+  const previousWindow = globalThis.window;
+  const previousMe = globalThis.__authGateApi.me;
+  globalThis.window = Object.assign(new EventTarget(), { location: { search: '' } });
+  let resolveSession;
+  globalThis.__authGateApi.me = () => new Promise(resolve => { resolveSession = resolve; });
+  let renderer;
+  try {
+    await act(async () => { renderer = create(React.createElement(AuthGate, { children: user => `Workspace ${user.id}` })); });
+    assert.match(JSON.stringify(renderer.toJSON()), /Đang kiểm tra phiên đăng nhập/);
+    const bar = renderer.root.findByProps({ role: 'progressbar' });
+    assert.equal(bar.props['aria-valuenow'], undefined);
+    assert.doesNotMatch(JSON.stringify(renderer.toJSON()), /Workspace 42/);
+    await act(async () => resolveSession({ id: 42 }));
+    assert.equal(renderer.root.findAllByProps({ role: 'progressbar' }).length, 0);
+    assert.match(JSON.stringify(renderer.toJSON()), /Workspace 42/);
+  } finally {
+    if (renderer) await act(async () => renderer.unmount());
+    globalThis.window = previousWindow;
+    globalThis.__authGateApi.me = previousMe;
+  }
+});
+
+test('a failed session releases the loader and retry can reach login', async () => {
+  const previousWindow = globalThis.window;
+  const previousMe = globalThis.__authGateApi.me;
+  globalThis.window = Object.assign(new EventTarget(), { location: { search: '' } });
+  let rejectSession;
+  globalThis.__authGateApi.me = () => new Promise((_, reject) => { rejectSession = reject; });
+  let renderer;
+  try {
+    await act(async () => { renderer = create(React.createElement(AuthGate, { children: () => 'Workspace' })); });
+    await act(async () => rejectSession(new Error('Network unavailable')));
+    assert.equal(renderer.root.findAllByProps({ role: 'progressbar' }).length, 0);
+    assert.equal(renderer.root.findAllByProps({ role: 'alert' }).length, 1);
+    await act(async () => renderer.root.findByType('button').props.onClick());
+    assert.equal(renderer.root.findAllByProps({ role: 'progressbar' }).length, 1);
+    await act(async () => rejectSession({ isAxiosError: true, response: { status: 401 } }));
+    assert.equal(renderer.root.findAllByProps({ role: 'progressbar' }).length, 0);
+    assert.match(JSON.stringify(renderer.toJSON()), /Tiếp tục với Google/);
+  } finally {
+    if (renderer) await act(async () => renderer.unmount());
+    globalThis.window = previousWindow;
+    globalThis.__authGateApi.me = previousMe;
+  }
+});
