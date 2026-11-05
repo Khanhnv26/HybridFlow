@@ -13,6 +13,7 @@ const bundle = await build({
   entryPoints: [fileURLToPath(new URL('../src/components/auth/AuthGate.tsx', import.meta.url))],
   bundle: true, write: false, platform: 'node', format: 'esm', jsx: 'automatic',
   plugins: [{ name: 'auth-boundary', setup(builder) {
+    builder.onLoad({ filter: /\.css$/ }, () => ({ contents: '', loader: 'js' }));
     builder.onResolve({ filter: /services\/api$/ }, () => ({ path: 'api', namespace: 'auth-api' }));
     builder.onLoad({ filter: /.*/, namespace: 'auth-api' }, () => ({ contents: 'export const authService = globalThis.__authGateApi;' }));
     builder.onResolve({ filter: /^(?:react(?:\/.*)?|axios|lucide-react)$/ }, args => ({ path: import.meta.resolve(args.path), external: true }));

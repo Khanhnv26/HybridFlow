@@ -7,8 +7,8 @@ export function ProductSheet({ title, headers, rows, formula = '=SUM(C2:C4)', to
 }) {
   return <div className={`product-sheet product-sheet--${tone}`}>
     <div className="product-sheet-title"><FileSpreadsheet size={21} /><div><strong>{title}</strong><small>Google Sheets <span>· Tệp &nbsp; Chỉnh sửa &nbsp; Xem &nbsp; Dữ liệu</span></small></div>{label && <span className="product-sheet-label">{label}</span>}<MoreHorizontal size={16} /></div>
-    <div className="product-formula"><span>C4</span><i>fx</i><code>{formula}</code></div>
-    <div className="product-table-scroll"><table><caption className="sr-only">{title}</caption><thead><tr><th aria-label="Số dòng">1</th>{headers.map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>{rows.map((row, i) => <tr key={i} className={i === 2 ? 'product-active-row' : ''}><th scope="row">{i + 2}</th>{row.map((cell, j) => <td key={j}>{cell}</td>)}</tr>)}</tbody></table></div>
+    <div className="product-formula"><span>C4</span><i>fx</i><code key={formula}>{formula}</code></div>
+    <div className="product-table-scroll" data-lenis-prevent><table><caption className="sr-only">{title}</caption><thead><tr><th aria-label="Số dòng">1</th>{headers.map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>{rows.map((row, i) => <tr key={i} className={i === 2 ? 'product-active-row' : ''}><th scope="row">{i + 2}</th>{row.map((cell, j) => <td key={j}><span key={cell} className={i === 2 ? 'product-cell-value' : undefined}>{cell}</span></td>)}</tr>)}</tbody></table></div>
     <small className="product-scroll-hint">Kéo ngang để xem bảng →</small>
     <div className="product-sheet-footer"><FileSpreadsheet size={12} /><span>Sheet 1</span><small>Đã lưu thay đổi</small></div>
   </div>;
@@ -17,20 +17,27 @@ export function ProductSheet({ title, headers, rows, formula = '=SUM(C2:C4)', to
 export function HeroProduct() {
   const [synced, setSynced] = useState(false);
   const preview = useRef<HTMLDivElement>(null);
+  const timer = useRef<ReturnType<typeof setTimeout>>();
+  const interacted = useRef(false);
   useEffect(() => {
-    if (typeof window === 'undefined' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
-    const timer = setInterval(() => {
-      if (!document.hidden && preview.current && preview.current.getBoundingClientRect().bottom > 0 && preview.current.getBoundingClientRect().top < window.innerHeight) setSynced(value => !value);
-    }, 3600);
-    return () => clearInterval(timer);
+    if (typeof window === 'undefined' || typeof IntersectionObserver === 'undefined' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return;
+    const observer = new IntersectionObserver(entries => {
+      if (!entries.some(entry => entry.isIntersecting)) return;
+      observer.disconnect();
+      timer.current = setTimeout(() => {
+        if (!interacted.current && !document.hidden && !window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) setSynced(true);
+      }, 1100);
+    }, { threshold: .4 });
+    if (preview.current) observer.observe(preview.current);
+    return () => { observer.disconnect(); clearTimeout(timer.current); };
   }, []);
-  return <div ref={preview} className={`editorial-product ${synced ? 'is-synced' : ''}`} aria-label="Minh họa đơn hàng thay đổi và tồn kho cập nhật từ 100 xuống 95">
+  return <div ref={preview} className={`editorial-product ed-reveal ${synced ? 'is-synced' : ''}`} aria-label="Minh họa đơn hàng thay đổi và tồn kho cập nhật từ 100 xuống 95">
     <div className="editorial-product-main"><ProductSheet title="Đơn hàng · Sale" headers={['Mã đơn', 'Sản phẩm', 'SL', 'Thành tiền']} rows={[
       ['#DH-101', 'Áo thun', '10', '1.000.000'], ['#DH-102', 'Túi tote', '3', '360.000'], ['#DH-103', 'Áo Polo Kem', '5', '2.200.000'], ['#DH-104', 'Mũ lưỡi trai', '4', '320.000'],
     ]} formula="=5" /></div>
     <div className="editorial-product-stock"><div><FileSpreadsheet size={17} /><strong>Kho · Tồn kho</strong></div><span>Mã sản phẩm <b>Tồn kho</b></span><p>POLO-KEM <strong key={String(synced)}>{synced ? '95' : '100'}</strong></p><small>{synced ? 'Đã trừ 5 chiếc' : 'Chờ đơn hàng mới'}</small></div>
     <div className="editorial-history"><strong>Lịch sử thay đổi: #DH-103</strong><div><span className="editorial-history-line" /><span>100 <ArrowDown size={12} /> <b className={synced ? 'history-updated' : ''}>95</b></span><p>Cập nhật từ Kho <time>10:24</time></p></div><div><span /><span>0 <ArrowDown size={12} /> <b>5</b></span><p>Đơn mới từ Sale <time>10:27</time></p></div></div>
-    <button type="button" className="editorial-product-status" onClick={() => setSynced(value => !value)} aria-label="Chạy minh họa đồng bộ tồn kho"><Check size={13} />{synced ? '01 thay đổi · 02 bảng đã khớp' : 'Thử đồng bộ: 100 → 95'} <span aria-hidden="true">↻</span></button>
+    <button type="button" className="editorial-product-status" onClick={() => { interacted.current = true; clearTimeout(timer.current); setSynced(value => !value); }} aria-label="Chạy minh họa đồng bộ tồn kho"><Check size={13} />{synced ? '01 thay đổi · 02 bảng đã khớp' : 'Thử đồng bộ: 100 → 95'} <span aria-hidden="true">↻</span></button>
   </div>;
 }
 

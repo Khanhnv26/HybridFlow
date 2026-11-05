@@ -144,6 +144,23 @@ test('workflow steps switch the actual setup preview', async () => {
   } finally { await act(async () => renderer.unmount()); }
 });
 
+test('FAQ buttons expand and collapse their labelled answer without navigation', async () => {
+  let renderer;
+  await act(async () => { renderer = create(React.createElement(LandingPage)); });
+  try {
+    const button = renderer.root.findByProps({ id: 'landing-question-0' });
+    const answer = () => renderer.root.findByProps({ id: button.props['aria-controls'] });
+    assert.equal(button.props['aria-expanded'], true);
+    assert.equal(answer().props['aria-hidden'], false);
+    assert.equal(answer().props['aria-labelledby'], button.props.id);
+    await act(async () => button.props.onClick());
+    assert.equal(button.props['aria-expanded'], false);
+    assert.equal(answer().props['aria-hidden'], true);
+    await act(async () => button.props.onClick());
+    assert.equal(answer().props['aria-hidden'], false);
+  } finally { await act(async () => renderer.unmount()); }
+});
+
 test('changing industry cancels a pending demo synchronization', async () => {
   const originalSetTimeout = globalThis.setTimeout;
   const originalClearTimeout = globalThis.clearTimeout;

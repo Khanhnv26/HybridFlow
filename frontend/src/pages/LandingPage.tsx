@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { ArrowDown, ArrowRight, ArrowUpRight, Check, FileSpreadsheet, Menu, RotateCcw, Send, ShieldCheck, X } from 'lucide-react';
 import { ThemeToggle } from '../components/ThemeToggle';
-import { MarketingBackdrop } from '../components/marketing/FlowIllustration';
+import { usePageScroll } from '../hooks/usePageScroll';
+import { FaqItem } from '../components/marketing/FaqItem';
 import { INDUSTRIES } from '../components/marketing/landingData';
 import { HeroProduct, ProductSheet, SafetyPreview, SetupPreview, workflowSteps } from '../components/marketing/ProductPreview';
 import './landing.css';
@@ -25,6 +26,7 @@ export function LandingPage({ loginFailed }: LandingPageProps) {
   const [currentUser, setCurrentUser] = useState<{ id: string } | null>(null);
   const [menuOpen, setMenuOpen] = useState(false);
   const page = useRef<HTMLDivElement>(null);
+  usePageScroll(page);
   const scenarioTimer = useRef<ReturnType<typeof setTimeout>>();
   const data = INDUSTRIES[industry];
   const destination = currentUser ? '/app' : '/login';
@@ -41,6 +43,11 @@ export function LandingPage({ loginFailed }: LandingPageProps) {
       .then(user => { if (!controller.signal.aborted && user?.id) setCurrentUser(user); })
       .catch(() => {});
     const elements = page.current?.querySelectorAll('.ed-reveal');
+    const motion = window.matchMedia?.('(prefers-reduced-motion: reduce)');
+    const animations = new Set<Animation>();
+    const cancelAnimations = () => { animations.forEach(animation => animation.cancel()); animations.clear(); };
+    const onMotionChange = () => { if (motion?.matches) cancelAnimations(); };
+    motion?.addEventListener('change', onMotionChange);
     let observer: IntersectionObserver | undefined;
     let steps: IntersectionObserver | undefined;
     if (typeof IntersectionObserver !== 'undefined') {
@@ -48,6 +55,18 @@ export function LandingPage({ loginFailed }: LandingPageProps) {
         entries.forEach(entry => {
           if (entry.isIntersecting) {
             entry.target.classList.add('ed-visible');
+            if (!motion?.matches) {
+              const children = Array.from(entry.target.children);
+              children.forEach((child, index) => {
+                if (typeof child.animate !== 'function') return;
+                const animation = child.animate(
+                  [{ opacity: 0, transform: 'translateY(12px)' }, { opacity: 1, transform: 'translateY(0)' }],
+                  { duration: 460, delay: Math.min(index * 65, 260), easing: 'cubic-bezier(.2,.7,.2,1)', fill: 'backwards' },
+                );
+                animations.add(animation);
+                animation.onfinish = () => animations.delete(animation);
+              });
+            }
             observer?.unobserve(entry.target);
           }
         });
@@ -63,6 +82,8 @@ export function LandingPage({ loginFailed }: LandingPageProps) {
       controller.abort();
       observer?.disconnect();
       steps?.disconnect();
+      motion?.removeEventListener('change', onMotionChange);
+      cancelAnimations();
       document.body.style.overflow = overflow;
       document.title = title;
     };
@@ -109,10 +130,11 @@ export function LandingPage({ loginFailed }: LandingPageProps) {
 
     <main>
       <section className="ed-hero ed-container" id="product">
-        <MarketingBackdrop />
-        <div className="ed-hero-copy"><p className="ed-kicker">DÀNH CHO ĐỘI NGŨ VẬN HÀNH</p><h1>Hai bảng tính.<br />Một nguồn{' '}<br />dữ liệu <em>đúng.</em></h1><p className="ed-intro">Đồng bộ Google Sheets hai chiều.<br />Phát hiện xung đột trước khi dữ liệu bị ghi đè.</p><div className="ed-hero-actions"><a className="ed-button" href={destination}>{currentUser ? 'Vào Workspace' : 'Bắt đầu miễn phí'}<ArrowRight size={17} /></a><a className="ed-text-link" href="#how-it-works">Xem cách hoạt động <ArrowDown size={16} /></a></div></div>
+        <div className="ed-hero-main">
+        <div className="ed-hero-copy ed-reveal"><p className="ed-kicker">DÀNH CHO ĐỘI NGŨ VẬN HÀNH</p><h1>Hai bảng tính.<br />Một nguồn{' '}<br />dữ liệu <em>đúng.</em></h1><p className="ed-intro">Đồng bộ Google Sheets hai chiều.<br />Phát hiện xung đột trước khi dữ liệu bị ghi đè.</p><div className="ed-hero-actions"><a className="ed-button" href={destination}>{currentUser ? 'Vào Workspace' : 'Bắt đầu miễn phí'}<ArrowRight size={17} /></a><a className="ed-text-link" href="#how-it-works">Xem cách hoạt động <ArrowDown size={16} /></a></div></div>
         <HeroProduct />
-        <div className="ed-capabilities"><span><FileSpreadsheet size={22} /> Google Sheets</span><span><span aria-hidden="true">⇄</span> Đồng bộ hai chiều</span><span><Send size={21} /> Duyệt qua Telegram</span></div>
+        </div>
+        <div className="ed-capabilities ed-reveal"><span><FileSpreadsheet size={22} /> Google Sheets</span><span><span aria-hidden="true">⇄</span> Đồng bộ hai chiều</span><span><Send size={21} /> Duyệt qua Telegram</span></div>
       </section>
 
       <section className="ed-comparison ed-container ed-reveal" id="comparison">
@@ -128,9 +150,9 @@ export function LandingPage({ loginFailed }: LandingPageProps) {
 
       <section className="ed-demo ed-container" id="sandbox">
         <div className="ed-section-heading ed-reveal"><p className="ed-kicker">KHÔNG CẦN ĐĂNG NHẬP ĐỂ TRẢI NGHIỆM</p><h2>Thử sửa một ô.<br />Xem cả quy trình chạy.</h2><p>Chọn lĩnh vực, tạo một thay đổi và xem cách hai bảng tính giữ dữ liệu khớp nhau.</p></div>
-        <div className="ed-industry-tabs" role="group" aria-label="Lĩnh vực trải nghiệm">{(Object.keys(INDUSTRIES) as Industry[]).map(key => <button type="button" key={key} aria-pressed={industry === key} onClick={() => changeIndustry(key)}>{INDUSTRIES[key].name}</button>)}</div>
+        <div className="ed-industry-tabs" style={{ '--active-tab': Object.keys(INDUSTRIES).indexOf(industry) } as React.CSSProperties} role="group" aria-label="Lĩnh vực trải nghiệm">{(Object.keys(INDUSTRIES) as Industry[]).map(key => <button type="button" key={key} aria-pressed={industry === key} onClick={() => changeIndustry(key)}>{INDUSTRIES[key].name}</button>)}</div>
         <div className="ed-demo-toolbar"><span>Kịch bản:</span><button type="button" aria-pressed={scenario === 'syncing' || scenario === 'synced'} disabled={scenario === 'syncing'} onClick={() => changeScenario('syncing')}>{data.btnNormal}</button><button type="button" aria-pressed={conflict || resolved} onClick={() => changeScenario('conflict')}>{data.btnConflict}</button><button type="button" className="ed-reset" onClick={() => changeScenario('idle')} aria-label="Đặt lại"><RotateCcw size={14} /><span>Đặt lại</span></button></div>
-        <div className={`ed-demo-layout ${conflict ? 'has-conflict' : ''} ${complete ? 'is-complete' : ''}`}>
+        <div key={industry} className={`ed-demo-layout ed-pane-enter ${conflict ? 'has-conflict' : ''} ${complete ? 'is-complete' : ''}`}>
           <div className="ed-demo-sheets" key={industry}>
             <ProductSheet title={data.sheet1.filename} headers={[...data.sheet1.headers]} rows={sourceRows} formula={formula1} tone={conflict ? 'amber' : 'green'} label="01 · Bảng nguồn" />
             <div className={`ed-sync-label ${scenario === 'syncing' ? 'is-syncing' : ''}`} role="status"><span>⇄</span>{scenario === 'syncing' ? 'Đang đồng bộ thay đổi…' : complete ? 'Hai bảng đã khớp dữ liệu' : conflict ? 'Giữ nguyên dữ liệu gốc · Chờ bạn duyệt' : 'HybridFlow · Đồng bộ hai chiều'}</div>
@@ -152,7 +174,7 @@ export function LandingPage({ loginFailed }: LandingPageProps) {
         { kind: 'workflows' as const, title: 'Nhiều quy trình, một nơi quản lý', text: 'Quản lý từng quy trình đồng bộ, theo dõi trạng thái và phát hiện vấn đề trong cùng một Workspace.' },
       ].map((feature, index) => <div className="ed-safety-row ed-reveal" key={feature.kind}><div className="ed-safety-copy"><span className="ed-number">0{index + 1}</span><div><h3>{feature.title}</h3><p>{feature.text}</p></div></div><SafetyPreview kind={feature.kind} /></div>)}</div></section>
 
-      <section className="ed-faq ed-container" id="faq"><div className="ed-reveal"><p className="ed-kicker">RÕ RÀNG TRƯỚC KHI BẮT ĐẦU</p><h2>Những điều bạn{' '}<br />muốn biết.</h2><a className="ed-text-link" href="#sandbox">Tự trải nghiệm trước <ArrowRight size={16} /></a></div><div className="ed-questions ed-reveal">{questions.map(([question, answer], index) => <details key={question} open={index === 0 ? true : undefined}><summary>{question}<span aria-hidden="true">+</span></summary><div><p>{answer}</p></div></details>)}</div></section>
+      <section className="ed-faq ed-container" id="faq"><div className="ed-reveal"><p className="ed-kicker">RÕ RÀNG TRƯỚC KHI BẮT ĐẦU</p><h2>Những điều bạn{' '}<br />muốn biết.</h2><a className="ed-text-link" href="#sandbox">Tự trải nghiệm trước <ArrowRight size={16} /></a></div><div className="ed-questions ed-reveal">{questions.map(([question, answer], index) => <FaqItem key={question} question={question} answer={answer} index={index} />)}</div></section>
 
       <section className="ed-final"><div className="ed-container ed-reveal"><p className="ed-kicker">BẮT ĐẦU TỪ NHỮNG BẢNG TÍNH BẠN ĐANG CÓ</p><h2>Để bảng tính<br className="ed-mobile-break" /> làm việc cùng bạn.</h2><p>Đồng bộ dữ liệu, kiểm soát thay đổi và giảm thời gian đối soát mỗi ngày.</p><a href={destination} className="ed-button">{currentUser ? 'Mở Workspace' : 'Kết nối Google Sheets'}<ArrowRight size={17} /></a></div></section>
     </main>
