@@ -23,6 +23,7 @@ export function ThemeToggle({ className }: { className?: string } = {}) {
     if (typeof document !== 'undefined') {
       document.documentElement.dataset.theme = theme;
       document.documentElement.style.colorScheme = theme;
+      document.documentElement.classList.toggle('dark', theme === 'dark');
     }
   }, [theme]);
   useEffect(() => {

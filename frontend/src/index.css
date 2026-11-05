@@ -1,5 +1,7 @@
 @import "@xyflow/react/dist/style.css";
 
+@config "../tailwind.config.js";
+
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
