@@ -170,7 +170,7 @@ export function DataTransformConfigModal({
     >
       <section
         role="dialog"
-        aria-modal="true"
+        aria-modal="false"
         aria-labelledby="transform-title"
         className="flex  w-full hf-modal hf-modal--complex flex-col overflow-hidden rounded-2xl border border-line bg-surface text-primary shadow-2xl"
         onClick={event => event.stopPropagation()}

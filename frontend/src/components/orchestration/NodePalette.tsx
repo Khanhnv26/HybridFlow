@@ -20,15 +20,15 @@ const PALETTE_ITEMS: PaletteItem[] = [
   // Nhóm 1: Nguồn dữ liệu
   {
     type: 'sheetsTrigger',
-    label: 'Google Trang Tính',
-    subtitle: 'Lắng nghe thay đổi dữ liệu',
+    label: 'Google Sheets',
+    subtitle: 'Đọc dữ liệu bảng tính',
     category: 'trigger',
     icon: <ExcelIcon size={22} />,
     color: 'emerald',
   },
   {
     type: 'scheduleTrigger',
-    label: 'Hẹn Giờ Định Kỳ',
+    label: 'Hẹn giờ định kỳ',
     subtitle: 'Chạy mỗi 5 phút hoặc mỗi ngày',
     category: 'trigger',
     icon: <Clock size={15} />,
@@ -36,7 +36,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   },
   {
     type: 'webhookTrigger',
-    label: 'Đón Sự Kiện Webhook',
+    label: 'Webhook',
     subtitle: 'Nhận dữ liệu từ app ngoài',
     category: 'trigger',
     icon: <Webhook size={15} />,
@@ -54,7 +54,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   },
   {
     type: 'routerCondition',
-    label: 'Rẽ Nhánh Điều Kiện',
+    label: 'Rẽ nhánh điều kiện',
     subtitle: 'Nếu... thì...',
     category: 'logic',
     icon: <Split size={15} />,
@@ -62,7 +62,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   },
   {
     type: 'dataTransform',
-    label: 'Chuẩn Hóa Dữ Liệu',
+    label: 'Chuẩn hóa dữ liệu',
     subtitle: 'Làm sạch cột trước khi so khớp',
     category: 'logic',
     icon: <Wand2 size={15} />,
@@ -72,7 +72,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   // Nhóm 3: Hành động
   {
     type: 'storageAction',
-    label: 'Kho Lưu Trữ An Toàn',
+    label: 'Kho lưu trữ',
     subtitle: 'Lưu trữ & ghi nhớ bản gốc',
     category: 'action',
     icon: <Database size={15} />,
@@ -80,7 +80,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   },
   {
     type: 'telegramAction',
-    label: 'Báo Động Telegram',
+    label: 'Telegram',
     subtitle: 'Gửi tin nhắn tức thì về máy',
     category: 'action',
     icon: <TelegramIcon size={22} />,
@@ -88,7 +88,7 @@ const PALETTE_ITEMS: PaletteItem[] = [
   },
   {
     type: 'sheetWriteAction',
-    label: 'Ghi Ngược Lại Sheet',
+    label: 'Ghi về bảng tính',
     subtitle: 'Cập nhật lại bảng tính',
     category: 'action',
     icon: <FileEdit size={15} />,
@@ -114,7 +114,7 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ onAddNode, disabled, o
 
   const renderSection = (title: string, colorText: string, items: PaletteItem[]) => items.length > 0 && (
     <div className="space-y-1.5 mb-4">
-      <div className={`text-xs font-bold uppercase tracking-wider px-1 ${colorText}`}>
+      <div className={`palette-section-title text-xs font-bold uppercase tracking-wider px-1 ${colorText}`}>
         {title}
       </div>
       <div className="space-y-1.5">
@@ -124,7 +124,7 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ onAddNode, disabled, o
             disabled={disabled || !executableTypes.has(item.type)}
             key={item.type}
             onClick={() => { if (!disabled && executableTypes.has(item.type)) onAddNode(item); }}
-            className="w-full text-left disabled:opacity-40 disabled:cursor-not-allowed p-2.5 rounded-xl bg-elevated border border-line hover:border-line hover:bg-subtle cursor-pointer transition flex items-center justify-between group shadow-sm"
+            className="palette-item w-full text-left disabled:opacity-40 disabled:cursor-not-allowed p-2.5 rounded-xl bg-elevated border border-line hover:border-line hover:bg-subtle cursor-pointer transition flex items-center justify-between group shadow-sm"
             aria-disabled={disabled || !executableTypes.has(item.type)}
             title={executableTypes.has(item.type) ? 'Bấm để thêm' : 'Chưa hỗ trợ thực thi'}
           >
@@ -161,7 +161,7 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ onAddNode, disabled, o
   return (
     <aside ref={palette} data-open={open} aria-hidden={!open} aria-label="Thư viện khối" className="node-palette min-h-0 w-72 overflow-hidden bg-surface border-r border-line p-3 flex flex-col z-20 shrink-0 select-none">
       <div className="shrink-0 pb-2 border-b border-line mb-3">
-        <h3 className="text-xs font-bold text-primary uppercase tracking-wider">Thư Viện Khối Điều Phối</h3>
+        <h3 className="text-xs font-bold text-primary uppercase tracking-wider">Thư viện khối</h3>
         <p className="text-xs text-secondary mt-0.5">Bấm để thêm khối vào luồng</p>
         <label className="mt-3 flex items-center gap-2 rounded-lg border border-line bg-elevated px-2.5 py-2 text-muted">
           <Search size={15} className="shrink-0" />
@@ -170,14 +170,14 @@ export const NodePalette: React.FC<NodePaletteProps> = ({ onAddNode, disabled, o
       </div>
 
       <div className="palette-scrollbar min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain pr-2 pt-1 pb-2">
-        {renderSection('1. Nguồn Dữ Liệu (Triggers)', 'text-success', triggers)}
-        {renderSection('2. Bộ Não Điều Phối (Logic)', 'text-violet', logics)}
-        {renderSection('3. Hành Động & Đích Đến', 'text-info', actions)}
+        {renderSection('Nguồn dữ liệu', 'text-success', triggers)}
+        {renderSection('Xử lý dữ liệu', 'text-violet', logics)}
+        {renderSection('Hành động', 'text-info', actions)}
         {matching.length === 0 && <p role="status" className="px-1 py-4 text-sm text-secondary">Không tìm thấy khối. Thử từ khóa khác.</p>}
       </div>
 
       <div className="shrink-0 pt-2 border-t border-line text-xs text-muted text-center">
-        HybridFlow Orchestration Engine
+        Bảng tính kết nối. Công việc liền mạch.
       </div>
     </aside>
   );

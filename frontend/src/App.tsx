@@ -153,6 +153,15 @@ export default function App({ userId, workspaceId, workspaceRole, workflowId: pr
   const [edges, setEdges, onEdgesChange] = useEdgesState(startingDraft.edges);
   const fitCanvas = useRef<(() => void) | null>(null);
   const [activeNodeId, setActiveNodeId] = useState<string | null>(null);
+  const inspectorOpen = !!activeNodeId;
+  useEffect(() => {
+    if (typeof window.requestAnimationFrame !== 'function') return;
+    let nextFrame: number | undefined;
+    const frame = window.requestAnimationFrame(() => {
+      nextFrame = window.requestAnimationFrame(() => fitCanvas.current?.());
+    });
+    return () => { window.cancelAnimationFrame(frame); if (nextFrame !== undefined) window.cancelAnimationFrame(nextFrame); };
+  }, [inspectorOpen]);
   const [isTableModalOpen, setIsTableModalOpen] = useState(false);
   const [isConflictModalOpen, setIsConflictModalOpen] = useState(false);
   const [manualRunning, setIsRunning] = useState(false);
@@ -807,7 +816,7 @@ export default function App({ userId, workspaceId, workspaceRole, workflowId: pr
   };
 
   return (
-    <div className="h-full min-h-0 w-full flex flex-col bg-canvas text-primary overflow-hidden font-sans">
+    <div className="studio-shell h-full min-h-0 w-full flex flex-col bg-canvas text-primary overflow-hidden font-sans">
       <StudioHeader
         navigation={navigation}
         isRunning={isRunning}
@@ -897,7 +906,7 @@ export default function App({ userId, workspaceId, workspaceRole, workflowId: pr
             maxZoom={2}
             defaultEdgeOptions={{ type: 'smoothstep' }}
           >
-            <Background variant={BackgroundVariant.Dots} gap={24} size={1.5} color="var(--grid-dot)" />
+            <Background variant={BackgroundVariant.Dots} gap={24} size={1} color="var(--grid-dot)" />
             {executionView.label && <Panel position="top-right">
               <div role="status" aria-live="polite" className={`workflow-run-summary workflow-run-summary--${executionView.running ? 'running' : latestExecution?.status === 'ERROR' ? 'error' : ['CONFLICT', 'AWAITING_CONFIRMATION'].includes(latestExecution?.status || '') ? 'warning' : 'success'}`}>
                 <span className="workflow-run-indicator" />
@@ -937,15 +946,8 @@ export default function App({ userId, workspaceId, workspaceRole, workflowId: pr
             onOpenConflictModal={() => setIsConflictModalOpen(true)}
           />
         </div>
-      </div>
-      {toastMessage && (
-        <div
-          role="status"
-          className="fixed bottom-16 right-4 max-w-xl px-4 py-3 rounded-xl bg-surface border border-line text-primary text-sm z-50"
-        >
-          {toastMessage}
-        </div>
-      )}
+        {activeNode && <aside className="studio-inspector" aria-label="Cấu hình khối">
+          <div className="studio-inspector-eyebrow">CẤU HÌNH KHỐI</div>
       {activeNode?.type === 'dataTransform' && <DataTransformConfigModal
         key={JSON.stringify([activeNode.id, transformSources.map(sourceDescriptor)])}
         data={activeNode.data}
@@ -1028,6 +1030,16 @@ export default function App({ userId, workspaceId, workspaceRole, workflowId: pr
           )
         }
       />
+        </aside>}
+      </div>
+      {toastMessage && (
+        <div
+          role="status"
+          className="fixed bottom-16 right-4 max-w-xl px-4 py-3 rounded-xl bg-surface border border-line text-primary text-sm z-50"
+        >
+          {toastMessage}
+        </div>
+      )}
       <ConflictModal
         key={conflicts[0]?.id || 'empty'}
         isOpen={isConflictModalOpen}

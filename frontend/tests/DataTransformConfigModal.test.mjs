@@ -40,7 +40,7 @@ async function mount(overrides = {}) {
 test('palette enables transformation and keeps unsupported blocks disabled', async () => {
   const added = [];
   await act(async () => { renderer = create(React.createElement(NodePalette, { onAddNode: item => added.push(item) })); });
-  const transform = renderer.root.findAllByType('button').find(node => text(node).includes('Chuẩn Hóa Dữ Liệu'));
+  const transform = renderer.root.findAllByType('button').find(node => text(node).includes('Chuẩn hóa dữ liệu'));
   assert.equal(transform.props.disabled, false);
   await act(async () => transform.props.onClick());
   assert.equal(added[0].type, 'dataTransform');

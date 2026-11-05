@@ -5,7 +5,7 @@ import {
   Play,
   RotateCcw,
   Clock,
-  Layers,
+  ArrowUpRight,
   MoreHorizontal,
   Shield,
   Save,
@@ -51,8 +51,8 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
       <div className="studio-header-navigation flex items-center gap-3 min-w-0">
         {/* Brand Logo */}
         <div className="flex items-center gap-2 pr-2 sm:pr-3 border-r border-line shrink-0">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-indigo-600 text-on-accent">
-            <Layers size={18} />
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg studio-brand-mark text-on-accent">
+            <ArrowUpRight size={23} />
           </div>
           <span className="font-bold text-sm tracking-tight text-primary hidden md:inline">
             HybridFlow
@@ -153,7 +153,8 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
           className="studio-header-run flex h-9 items-center gap-2 whitespace-nowrap rounded-lg bg-indigo-600 hover:bg-indigo-500 px-4 font-semibold text-on-accent transition active:scale-[0.98] disabled:cursor-not-allowed disabled:opacity-50"
         >
           <Play size={13} className="fill-current shrink-0" />
-          <span>{isRunning ? 'Đang chạy...' : 'Chạy thử luồng'}</span>
+          <span className="hidden sm:inline">{isRunning ? 'Đang chạy...' : 'Chạy thử luồng'}</span>
+          <span className="sm:hidden">{isRunning ? 'Đang chạy…' : 'Chạy thử'}</span>
         </button>
 
         {/* Theme Toggle Button */}

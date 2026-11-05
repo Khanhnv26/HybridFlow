@@ -22,8 +22,8 @@ import {
   RouterTriggerOn,
 } from '../../types';
 
-const cardClass = (selected: boolean, accent: string, execution?: NodeExecutionState) =>
-  `workflow-node workflow-node--${execution?.state || 'idle'} w-[280px] rounded-xl border bg-elevated shadow-lg select-none ${selected ? accent : 'border-line hover:border-line'}`;
+const cardClass = (selected: boolean, _accent: string, execution?: NodeExecutionState) =>
+  `workflow-node workflow-node--${execution?.state || 'idle'} w-[260px] rounded-xl border bg-elevated shadow-lg select-none ${selected ? 'workflow-node--selected' : 'border-line hover:border-line'}`;
 const handleClass = '!h-3 !w-3 !border-2 !bg-[#111827] transition-colors hover:!bg-subtle';
 const stopNodeClick = (event: React.MouseEvent) => event.stopPropagation();
 

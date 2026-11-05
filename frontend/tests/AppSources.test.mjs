@@ -285,11 +285,15 @@ test('closing the router cancels its outstanding source read', async () => {
       { source: 'diff', sourceHandle: 'clean', target: 'router', targetHandle: 'in' }],
   } });
   await act(async () => renderer.root.find(node => node.props['data-workflow-node'] === 'router').props.onClick());
+  const inspector = renderer.root.findByProps({ 'aria-label': 'Cấu hình khối' });
+  assert.equal(inspector.type, 'aside');
+  assert.equal(inspector.findByProps({ role: 'dialog' }).props['aria-modal'], 'false');
   assert.equal(reads.length, 1);
   await act(async () => renderer.root.findByProps({ 'aria-label': 'Đóng' }).props.onClick());
   assert.equal(reads[0]?.aborted, true, 'Closing must cancel the dialog source read');
   await act(async () => rejectRead(new Error('read cancelled')));
   assert.equal(renderer.root.findAllByProps({ role: 'dialog' }).length, 0);
+  assert.equal(renderer.root.findAllByProps({ 'aria-label': 'Cấu hình khối' }).length, 0);
 });
 
 test('a failed router preview read is shown once and can be retried without trapping the dialog', async () => {

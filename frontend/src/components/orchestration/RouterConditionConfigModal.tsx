@@ -97,7 +97,7 @@ export function RouterConditionConfigModal({
     } finally { setSaving(false); }
   };
 
-  return <div role="dialog" aria-modal="true" aria-labelledby="router-modal-title" ref={motionRef} className="hf-motion-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 sm:p-6" onClick={event => { if (event.target === event.currentTarget && !saving) onClose(); }}>
+  return <div role="dialog" aria-modal="false" aria-labelledby="router-modal-title" ref={motionRef} className="hf-motion-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-3 sm:p-6" onClick={event => { if (event.target === event.currentTarget && !saving) onClose(); }}>
     <div className="flex  w-full hf-modal hf-modal--complex flex-col overflow-hidden rounded-2xl border border-line bg-surface text-primary">
       <header className="hf-modal-header flex shrink-0 items-start justify-between gap-4 border-b border-line px-5 py-4 sm:px-4">
         <div className="flex gap-3"><Split size={22} className="mt-1 text-violet" /><div>

@@ -229,7 +229,7 @@ export function SheetSourceConfig({
   return (
     <div
       role="dialog"
-      aria-modal="true"
+      aria-modal="false"
       aria-labelledby="sheet-source-title"
       ref={motionRef} className="hf-motion-overlay fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/80"
     >

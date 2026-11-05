@@ -18,7 +18,7 @@ export function useExitMotion<T extends HTMLElement = HTMLDivElement>(visible = 
     return () => {
       window.removeEventListener('resize', resize);
       const reduced = window.matchMedia('(prefers-reduced-motion: reduce)');
-      if (reduced.matches || document.hidden || !element.animate) return;
+      if (element.closest?.('.studio-inspector') || reduced.matches || document.hidden || !element.animate) return;
       // The next frame distinguishes a real removal from StrictMode's effect replay.
       window.requestAnimationFrame(() => {
         if (element.isConnected || reduced.matches || document.hidden || !bounds.width || !bounds.height) return;

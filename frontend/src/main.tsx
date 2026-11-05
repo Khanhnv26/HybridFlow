@@ -8,6 +8,7 @@ import { OpenWorkspace } from './pages/LoginPage';
 import { resolveRoute, syncOAuthRedirect } from './router';
 import App from './App.tsx';
 import './index.css';
+import './studio.css';
 import { BootstrapPreloader } from './components/Preloader';
 
 syncOAuthRedirect();
