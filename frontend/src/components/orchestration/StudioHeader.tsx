@@ -1,4 +1,5 @@
 import React from 'react';
+import { AccountMenu } from './AccountMenu';
 import { WorkflowSwitcher } from '../workspace/WorkflowSwitcher';
 import { ExcelIcon } from '../icons/BrandIcons';
 import {
@@ -9,12 +10,13 @@ import {
   MoreHorizontal,
   Shield,
   Save,
-  LogOut,
 } from 'lucide-react';
 import { ThemeToggle } from '../ThemeToggle';
-import type { StudioNavigation } from '../../types';
+import type { Me, WorkspaceRole, StudioNavigation } from '../../types';
 
 interface StudioHeaderProps {
+  user?: Me;
+  workspaceRole?: WorkspaceRole;
   isRunning: boolean;
   onRunWorkflow: () => void;
   onResetLayout: () => void;
@@ -44,6 +46,8 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
   onIntervalChange,
   onSaveWorkflow,
   navigation,
+  user,
+  workspaceRole,
 }) => {
   return (
     <header className="studio-header relative z-50 shrink-0 border-b border-line bg-surface flex items-center justify-between select-none">
@@ -206,22 +210,12 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
               <RotateCcw size={14} />
               <span>Sắp xếp bố cục</span>
             </button>
-            {navigation?.onLogout && (
-              <div className="border-t border-line my-1 pt-1">
-                <button
-                  type="button"
-                  onClick={() => {
-                    navigation.onLogout();
-                  }}
-                  className="toolbar-menu-item text-danger hover:!bg-red-950/20"
-                >
-                  <LogOut size={14} />
-                  <span>Đăng xuất</span>
-                </button>
-              </div>
-            )}
+
           </div>
         </details>
+        <AccountMenu user={user} workspaceRole={workspaceRole || navigation?.workspaceRole}
+          workspaceName={navigation?.workspaces.find(workspace => workspace.id === navigation.selectedWorkspaceId)?.name}
+          onLogout={navigation?.onLogout} />
       </div>
     </header>
   );

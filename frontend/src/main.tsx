@@ -25,6 +25,7 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
                 {(workflow, fullNav) => (
                   <App
                     key={`${user.id}:${workspace.id}:${workflow.id}`}
+                    user={user}
                     userId={user.id}
                     workspaceId={workspace.id}
                     workspaceRole={workspace.role}

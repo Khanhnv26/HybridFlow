@@ -44,7 +44,7 @@ import { useWorkflowPolling } from './hooks/useWorkflowPolling';
 import { useExecutionCompletion } from './hooks/useExecutionCompletion';
 import { executionVisuals } from './services/executionVisuals';
 import { ExecutionEdge } from './components/orchestration/ExecutionEdge';
-import type { RunHistoryItem, OrchestrationNodeData, SyncConflictDto, ExecutionHistoryDto, NotificationOutboxItem, WorkspaceRole, StudioNavigation } from './types';
+import type { Me, RunHistoryItem, OrchestrationNodeData, SyncConflictDto, ExecutionHistoryDto, NotificationOutboxItem, WorkspaceRole, StudioNavigation } from './types';
 
 const initialNodes: Node<OrchestrationNodeData>[] = [
   {
@@ -115,6 +115,7 @@ const initialEdges: Edge[] = [
   },
 ];
 interface EditorProps {
+  user?: Me;
   workspaceRole?: WorkspaceRole;
   userId?: string;
   workspaceId?: string;
@@ -131,7 +132,7 @@ function readDraft(key: string): { nodes: Node<OrchestrationNodeData>[]; edges: 
   return { nodes: initialNodes, edges: initialEdges };
 }
 
-export default function App({ userId, workspaceId, workspaceRole, workflowId: propWorkflowId, navigation }: EditorProps = {}) {
+export default function App({ user, userId, workspaceId, workspaceRole, workflowId: propWorkflowId, navigation }: EditorProps = {}) {
   const effectiveDraftKey = userId && workspaceId && propWorkflowId
     ? `hybridflow:draft:${userId}:${workspaceId}:${propWorkflowId}`
     : 'hybridflow-workflow-v2';
@@ -818,6 +819,8 @@ export default function App({ userId, workspaceId, workspaceRole, workflowId: pr
   return (
     <div className="studio-shell h-full min-h-0 w-full flex flex-col bg-canvas text-primary overflow-hidden font-sans">
       <StudioHeader
+        user={user}
+        workspaceRole={workspaceRole}
         navigation={navigation}
         isRunning={isRunning}
         autoActive={autoActive}
