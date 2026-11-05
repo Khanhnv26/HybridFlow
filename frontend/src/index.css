@@ -474,3 +474,72 @@ button:disabled { cursor: not-allowed; }
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after, ::details-content { scroll-behavior: auto !important; animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; transition-delay: 0ms !important; }
 }
+
+/* Landing Page Animations & Utilities */
+.landing-page-root {
+  overflow-y: auto;
+  min-height: 100vh;
+  background-color: #FAFAFA;
+  color: #0f172a;
+}
+
+.landing-dot-grid {
+  background-image: radial-gradient(rgba(16, 185, 129, 0.08) 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.reveal {
+  opacity: 0;
+  transform: translateY(20px);
+  transition: opacity 0.65s cubic-bezier(0.16, 1, 0.3, 1), transform 0.65s cubic-bezier(0.16, 1, 0.3, 1);
+  will-change: opacity, transform;
+}
+.reveal.revealed {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.delay-75 { transition-delay: 75ms; }
+.delay-150 { transition-delay: 150ms; }
+.delay-225 { transition-delay: 225ms; }
+.delay-300 { transition-delay: 300ms; }
+.delay-375 { transition-delay: 375ms; }
+
+@keyframes flowPulse {
+  0% { stroke-dashoffset: 24; }
+  100% { stroke-dashoffset: 0; }
+}
+.flow-dash-anim {
+  stroke-dasharray: 6 4;
+  animation: flowPulse 1.4s linear infinite;
+}
+
+@keyframes flashGreen {
+  0% { background-color: rgba(16, 185, 129, 0.35); transform: scale(1.04); }
+  50% { background-color: rgba(16, 185, 129, 0.18); transform: scale(1.01); }
+  100% { background-color: transparent; transform: scale(1); }
+}
+@keyframes flashRed {
+  0% { background-color: rgba(244, 63, 94, 0.35); transform: scale(1.04); }
+  50% { background-color: rgba(244, 63, 94, 0.18); transform: scale(1.01); }
+  100% { background-color: transparent; transform: scale(1); }
+}
+.cell-flash-success {
+  animation: flashGreen 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+.cell-flash-conflict {
+  animation: flashRed 0.7s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes tgSlideIn {
+  0% { opacity: 0; transform: translateY(14px) scale(0.96); }
+  100% { opacity: 1; transform: translateY(0) scale(1); }
+}
+.tg-bubble-animate {
+  animation: tgSlideIn 0.38s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.tab-fade-in {
+  animation: tgSlideIn 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+

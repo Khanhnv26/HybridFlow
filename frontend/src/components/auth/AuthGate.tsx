@@ -92,6 +92,13 @@ export function AuthGate({ children }: { children: (user: Me) => ReactNode }) {
           >
             Tiếp tục với Google
           </a>
+          <button
+            type="button"
+            onClick={() => { window.location.href = '/'; }}
+            className="w-full text-sm text-secondary hover:text-primary transition-colors py-1 cursor-pointer"
+          >
+            ← Quay lại trang chủ
+          </button>
         </div>
       </main>
     );
