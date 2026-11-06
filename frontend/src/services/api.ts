@@ -109,6 +109,8 @@ export function tenantWorkflowApi(workspaceId: string, workflowId: string) {
   return {
     load: async (signal?: AbortSignal) =>
       (await apiClient.get(base, { signal })).data,
+    updateStatus: async (enabled: boolean) =>
+      (await apiClient.put(`${base}/status`, { enabled })).data,
     save: async (expectedVersion: number, definition: unknown, connectionBindings: unknown[]) =>
       (await apiClient.put(base, { expectedVersion, definition, connectionBindings })).data,
     run: async (bootstrapConfirmed?: boolean) =>
@@ -128,6 +130,8 @@ export const tenantWorkflowService = {
     (await apiClient.get<TenantWorkflowSummary[]>(`/workspaces/${encodeURIComponent(workspaceId)}/workflows`, { signal })).data,
   create: async (workspaceId: string, moduleId: string, name: string) =>
     (await apiClient.post<TenantWorkflowSummary>(`/workspaces/${encodeURIComponent(workspaceId)}/workflows`, { moduleId, name })).data,
+  updateStatus: async (workspaceId: string, workflowId: string, enabled: boolean) =>
+    (await apiClient.put<TenantWorkflowSummary>(`/workspaces/${encodeURIComponent(workspaceId)}/workflows/${encodeURIComponent(workflowId)}/status`, { enabled })).data,
 };
 
 export const workspaceConnectionService = {
@@ -333,6 +337,7 @@ export const workflowService = {
     (await apiClient.get(`/workflows/${encodeURIComponent(id)}/definition`)).data,
   save: async (id: string, definition: unknown) =>
     apiClient.put(`/workflows/${encodeURIComponent(id)}/definition`, definition),
+  updateStatus: async (_id: string, _enabled: boolean) => ({ enabled: true }),
 };
 
 export const telegramService = {

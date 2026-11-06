@@ -75,7 +75,7 @@ public class TenantWorkflowServiceImpl implements TenantWorkflowService {
         }
         String workflowId = UUID.randomUUID().toString();
         String defaultDefinition = "{\"nodes\":[],\"edges\":[]}";
-        workflows.insertWorkflow(workspaceId, request.getModuleId(), workflowId, request.getName().trim(), defaultDefinition);
+        workflows.insertWorkflow(workspaceId, request.getModuleId(), workflowId, request.getName().trim(), defaultDefinition, true);
         audit.append(workspaceId, currentUser.requireUserId(), "WORKFLOW_CREATED", workflowId);
         return get(workspaceId, workflowId);
     }
@@ -127,6 +127,18 @@ public class TenantWorkflowServiceImpl implements TenantWorkflowService {
         }
 
         audit.append(workspaceId, currentUser.requireUserId(), "WORKFLOW_UPDATED", workflowId);
+        return get(workspaceId, workflowId);
+    }
+
+    @Override
+    @Transactional
+    public TenantWorkflowResponse updateStatus(UUID workspaceId, String workflowId, boolean enabled) {
+        access.requireEdit(workspaceId, workflowId);
+        int changed = workflows.updateWorkflowStatus(workspaceId, workflowId, enabled);
+        if (changed == 0) {
+            throw new ApplicationException(ErrorCode.RESOURCE_NOT_FOUND);
+        }
+        audit.append(workspaceId, currentUser.requireUserId(), enabled ? "WORKFLOW_ENABLED" : "WORKFLOW_DISABLED", workflowId);
         return get(workspaceId, workflowId);
     }
 
@@ -202,7 +214,7 @@ public class TenantWorkflowServiceImpl implements TenantWorkflowService {
 
         String newWorkflowId = UUID.randomUUID().toString();
         workflows.insertWorkflow(workspaceId, existing.getModuleId(), newWorkflowId,
-                existing.getName() + " (Copy)", existing.getDefinitionJson());
+                existing.getName() + " (Copy)", existing.getDefinitionJson(), existing.isEnabled());
 
         List<ConnectionBindingItem> existingBindings = workflows.findBindings(workspaceId, workflowId);
         workflows.replaceBindings(workspaceId, newWorkflowId, existingBindings);

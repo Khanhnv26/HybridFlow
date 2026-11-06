@@ -3,6 +3,7 @@ package com.hybridflow.workspace.service.impl;
 import com.hybridflow.auth.service.CurrentUserService;
 import com.hybridflow.common.exception.ApplicationException;
 import com.hybridflow.common.exception.ErrorCode;
+import com.hybridflow.workspace.model.TenantWorkflowDiagnostic;
 import com.hybridflow.workspace.model.WorkspaceRole;
 import com.hybridflow.workspace.repository.TenantWorkflowRepository;
 import com.hybridflow.workspace.service.WorkspaceAccessService;
@@ -53,8 +54,33 @@ public class WorkflowAccessServiceImpl implements WorkflowAccessService {
     @Override
     public void requireRun(UUID workspaceId, String workflowId) {
         requireOperate(workspaceId, workflowId);
-        if (!workflows.runnable(workspaceId, workflowId)) {
-            throw new ApplicationException(ErrorCode.STATE_CONFLICT, "Module hoặc workflow đang tắt.");
+        TenantWorkflowDiagnostic diagnostic = workflows.findRunDiagnostic(workspaceId, workflowId)
+                .orElse(null);
+        if (diagnostic == null) {
+            if (!workflows.runnable(workspaceId, workflowId)) {
+                throw new ApplicationException(ErrorCode.STATE_CONFLICT, "Module hoặc workflow đang tắt.");
+            }
+            return;
+        }
+
+        boolean wfOk = diagnostic.workflowEnabled();
+        boolean modOk = diagnostic.moduleEnabled();
+
+        if (!wfOk && !modOk) {
+            String modName = diagnostic.moduleName() != null && !diagnostic.moduleName().isBlank() ? diagnostic.moduleName() : "Module";
+            String wfName = diagnostic.workflowName() != null && !diagnostic.workflowName().isBlank() ? diagnostic.workflowName() : "Workflow";
+            throw new ApplicationException(ErrorCode.STATE_CONFLICT,
+                    String.format("Cả module '%s' và workflow '%s' đều đang tắt. Vui lòng bật lại để tiếp tục chạy luồng.", modName, wfName));
+        }
+        if (!wfOk) {
+            String wfName = diagnostic.workflowName() != null && !diagnostic.workflowName().isBlank() ? diagnostic.workflowName() : "Workflow";
+            throw new ApplicationException(ErrorCode.STATE_CONFLICT,
+                    String.format("Workflow '%s' đang tắt. Vui lòng bật workflow trước khi chạy luồng.", wfName));
+        }
+        if (!modOk) {
+            String modName = diagnostic.moduleName() != null && !diagnostic.moduleName().isBlank() ? diagnostic.moduleName() : "Module";
+            throw new ApplicationException(ErrorCode.STATE_CONFLICT,
+                    String.format("Module '%s' đang tắt. Vui lòng bật module trong phần quản lý để chạy workflow này.", modName));
         }
     }
 

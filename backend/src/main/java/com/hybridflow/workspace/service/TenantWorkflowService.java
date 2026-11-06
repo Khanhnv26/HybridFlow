@@ -17,6 +17,7 @@ import java.util.UUID;
 public interface TenantWorkflowService {
     TenantWorkflowResponse create(UUID workspaceId, CreateWorkflowRequest request);
     TenantWorkflowResponse update(UUID workspaceId, String workflowId, SaveWorkflowRequest request);
+    TenantWorkflowResponse updateStatus(UUID workspaceId, String workflowId, boolean enabled);
     TenantWorkflowResponse get(UUID workspaceId, String workflowId);
     List<TenantWorkflowResponse> list(UUID workspaceId);
     TenantWorkflowResponse cloneWorkflow(UUID workspaceId, String workflowId);

@@ -3,6 +3,7 @@ package com.hybridflow.workspace.service;
 import com.hybridflow.auth.service.CurrentUserService;
 import com.hybridflow.common.exception.ApplicationException;
 import com.hybridflow.common.exception.ErrorCode;
+import com.hybridflow.workspace.model.TenantWorkflowDiagnostic;
 import com.hybridflow.workspace.model.WorkspaceRole;
 import com.hybridflow.workspace.repository.TenantWorkflowRepository;
 import com.hybridflow.workspace.service.impl.WorkflowAccessServiceImpl;
@@ -100,6 +101,45 @@ class WorkflowAccessServiceTest {
         ApplicationException ex = assertThrows(ApplicationException.class,
                 () -> service.requireRun(workspaceId, workflowId));
         assertEquals(ErrorCode.STATE_CONFLICT, ex.getErrorCode());
+    }
+
+    @Test
+    void requireRunExplainsWhenWorkflowIsDisabled() {
+        when(workspaces.requireMember(workspaceId)).thenReturn(WorkspaceRole.ADMIN);
+        when(workflows.exists(workspaceId, workflowId)).thenReturn(true);
+        when(workflows.findRunDiagnostic(workspaceId, workflowId)).thenReturn(java.util.Optional.of(
+                new TenantWorkflowDiagnostic(true, "Đồng bộ đơn hàng", false, UUID.randomUUID(), "Bán hàng", true)));
+
+        ApplicationException ex = assertThrows(ApplicationException.class,
+                () -> service.requireRun(workspaceId, workflowId));
+        assertEquals(ErrorCode.STATE_CONFLICT, ex.getErrorCode());
+        assertEquals("Workflow 'Đồng bộ đơn hàng' đang tắt. Vui lòng bật workflow trước khi chạy luồng.", ex.getMessage());
+    }
+
+    @Test
+    void requireRunExplainsWhenModuleIsDisabled() {
+        when(workspaces.requireMember(workspaceId)).thenReturn(WorkspaceRole.ADMIN);
+        when(workflows.exists(workspaceId, workflowId)).thenReturn(true);
+        when(workflows.findRunDiagnostic(workspaceId, workflowId)).thenReturn(java.util.Optional.of(
+                new TenantWorkflowDiagnostic(true, "Đồng bộ đơn hàng", true, UUID.randomUUID(), "Bán hàng", false)));
+
+        ApplicationException ex = assertThrows(ApplicationException.class,
+                () -> service.requireRun(workspaceId, workflowId));
+        assertEquals(ErrorCode.STATE_CONFLICT, ex.getErrorCode());
+        assertEquals("Module 'Bán hàng' đang tắt. Vui lòng bật module trong phần quản lý để chạy workflow này.", ex.getMessage());
+    }
+
+    @Test
+    void requireRunExplainsWhenBothAreDisabled() {
+        when(workspaces.requireMember(workspaceId)).thenReturn(WorkspaceRole.ADMIN);
+        when(workflows.exists(workspaceId, workflowId)).thenReturn(true);
+        when(workflows.findRunDiagnostic(workspaceId, workflowId)).thenReturn(java.util.Optional.of(
+                new TenantWorkflowDiagnostic(true, "Đồng bộ đơn hàng", false, UUID.randomUUID(), "Bán hàng", false)));
+
+        ApplicationException ex = assertThrows(ApplicationException.class,
+                () -> service.requireRun(workspaceId, workflowId));
+        assertEquals(ErrorCode.STATE_CONFLICT, ex.getErrorCode());
+        assertEquals("Cả module 'Bán hàng' và workflow 'Đồng bộ đơn hàng' đều đang tắt. Vui lòng bật lại để tiếp tục chạy luồng.", ex.getMessage());
     }
 
     @Test

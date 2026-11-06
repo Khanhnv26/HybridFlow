@@ -117,3 +117,13 @@ test('a late response from a previously browsed workspace cannot replace the cur
   assert.ok(button('Đơn hàng'));
   assert.equal(button('Kế toán'), undefined);
 });
+
+test('disabled workflows display a disabled indicator in the switcher list', async () => {
+  workflows.push({ flowId: 'f3', workspaceId: 'w1', moduleId: 'm1', name: 'Đơn hàng nháp', definitionVersion: 1, enabled: false });
+  try {
+    await mount();
+    assert.ok(button('Đơn hàng nháp (tắt)'));
+  } finally {
+    workflows.pop();
+  }
+});

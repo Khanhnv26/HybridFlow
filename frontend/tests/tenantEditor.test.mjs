@@ -72,3 +72,20 @@ test('bootstrap confirmation, history deletion and vault remain in the selected 
   assert.equal(calls[2][1], base + '/history');
   assert.ok(calls.every(call => call[1].startsWith(base)));
 });
+
+test('loading preserves workflow enabled state and updateStatus updates it via dedicated endpoint', async () => {
+  const { editor, calls } = fixture((method, url, data) => {
+    if (method === 'get') return { definitionVersion: 1, enabled: false, definition: { nodes: [], edges: [] } };
+    if (url.endsWith('/status')) return { flowId: 'workflow-a', enabled: data.enabled };
+    return {};
+  });
+  const def = await editor.workflow.load('ignored');
+  assert.equal(def.enabled, false);
+  assert.equal(editor.workflow.isEnabled(), false);
+
+  const updated = await editor.workflow.updateStatus('ignored', true);
+  assert.equal(updated.enabled, true);
+  assert.equal(editor.workflow.isEnabled(), true);
+  assert.equal(calls[1][1], base + '/status');
+  assert.deepEqual(calls[1][2], { enabled: true });
+});

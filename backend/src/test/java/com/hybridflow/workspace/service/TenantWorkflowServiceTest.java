@@ -45,6 +45,7 @@ import java.util.UUID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
@@ -132,7 +133,7 @@ class TenantWorkflowServiceTest {
                 .workspaceId(workspaceId)
                 .moduleId(moduleId)
                 .name("Daily Sync")
-                .enabled(false)
+                .enabled(true)
                 .definitionVersion(1L)
                 .definitionJson("{\"nodes\":[],\"edges\":[]}")
                 .build();
@@ -142,7 +143,8 @@ class TenantWorkflowServiceTest {
 
         assertNotNull(response);
         assertEquals("Daily Sync", response.getName());
-        verify(workflows).insertWorkflow(eq(workspaceId), eq(moduleId), anyString(), eq("Daily Sync"), anyString());
+        assertTrue(response.isEnabled());
+        verify(workflows).insertWorkflow(eq(workspaceId), eq(moduleId), anyString(), eq("Daily Sync"), anyString(), eq(true));
         verify(audit).append(eq(workspaceId), eq(userId), eq("WORKFLOW_CREATED"), anyString());
     }
 
@@ -236,9 +238,32 @@ class TenantWorkflowServiceTest {
         TenantWorkflowResponse response = service.cloneWorkflow(workspaceId, workflowId);
 
         assertNotNull(response);
-        verify(workflows).insertWorkflow(eq(workspaceId), eq(moduleId), anyString(), eq("Original (Copy)"), eq("{}"));
+        verify(workflows).insertWorkflow(eq(workspaceId), eq(moduleId), anyString(), eq("Original (Copy)"), eq("{}"), eq(false));
         verify(workflows).replaceBindings(eq(workspaceId), anyString(), any());
         verify(audit).append(eq(workspaceId), eq(userId), eq("WORKFLOW_CLONED"), anyString());
+    }
+
+    @Test
+    void updateStatusTogglesWorkflowAndAudits() {
+        when(workflows.updateWorkflowStatus(workspaceId, workflowId, true)).thenReturn(1);
+        when(currentUser.requireUserId()).thenReturn(userId);
+
+        TenantWorkflowRow row = TenantWorkflowRow.builder()
+                .flowId(workflowId)
+                .workspaceId(workspaceId)
+                .moduleId(moduleId)
+                .name("Daily Sync")
+                .enabled(true)
+                .build();
+        when(workflows.findWorkflow(workspaceId, workflowId)).thenReturn(Optional.of(row));
+
+        TenantWorkflowResponse response = service.updateStatus(workspaceId, workflowId, true);
+
+        assertNotNull(response);
+        assertTrue(response.isEnabled());
+        verify(access).requireEdit(workspaceId, workflowId);
+        verify(workflows).updateWorkflowStatus(workspaceId, workflowId, true);
+        verify(audit).append(eq(workspaceId), eq(userId), eq("WORKFLOW_ENABLED"), eq(workflowId));
     }
 
     @Test

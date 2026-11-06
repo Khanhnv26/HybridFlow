@@ -4,6 +4,7 @@ import com.hybridflow.sync.entity.SyncConflict;
 import com.hybridflow.sync.model.NotificationOutboxItem;
 import com.hybridflow.workspace.dto.request.ConnectionBindingItem;
 import com.hybridflow.workspace.dto.response.WorkflowPermissionResponse;
+import com.hybridflow.workspace.model.TenantWorkflowDiagnostic;
 import com.hybridflow.workspace.model.TenantWorkflowRow;
 import lombok.RequiredArgsConstructor;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -44,6 +45,23 @@ public class TenantWorkflowRepository {
                 """, Boolean.class, workspaceId, workflowId));
     }
 
+    public Optional<TenantWorkflowDiagnostic> findRunDiagnostic(UUID workspaceId, String workflowId) {
+        return jdbc.query("""
+                SELECT d.name AS workflow_name, d.enabled AS workflow_enabled,
+                       d.module_id, m.name AS module_name, m.enabled AS module_enabled
+                FROM workflow_definitions d
+                LEFT JOIN business_modules m ON m.workspace_id=d.workspace_id AND m.id=d.module_id
+                WHERE d.workspace_id=? AND d.flow_id=?
+                """, (rs, row) -> new TenantWorkflowDiagnostic(
+                        true,
+                        rs.getString("workflow_name"),
+                        rs.getBoolean("workflow_enabled"),
+                        rs.getObject("module_id", UUID.class),
+                        rs.getString("module_name"),
+                        rs.getObject("module_id") == null || Boolean.TRUE.equals(rs.getObject("module_enabled", Boolean.class))
+                ), workspaceId, workflowId).stream().findFirst();
+    }
+
     public boolean contextBelongs(UUID workspaceId, String workflowId, String contextId) {
         return Boolean.TRUE.equals(jdbc.queryForObject("""
                 SELECT EXISTS(SELECT 1 FROM flow_contexts
@@ -70,10 +88,22 @@ public class TenantWorkflowRepository {
     }
 
     public void insertWorkflow(UUID workspaceId, UUID moduleId, String workflowId, String name, String definitionJson) {
+        insertWorkflow(workspaceId, moduleId, workflowId, name, definitionJson, true);
+    }
+
+    public void insertWorkflow(UUID workspaceId, UUID moduleId, String workflowId, String name, String definitionJson, boolean enabled) {
         jdbc.update("""
                 INSERT INTO workflow_definitions(workspace_id, module_id, flow_id, name, definition, enabled, definition_version)
-                VALUES (?, ?, ?, ?, ?::jsonb, false, 1)
-                """, workspaceId, moduleId, workflowId, name, definitionJson);
+                VALUES (?, ?, ?, ?, ?::jsonb, ?, 1)
+                """, workspaceId, moduleId, workflowId, name, definitionJson, enabled);
+    }
+
+    public int updateWorkflowStatus(UUID workspaceId, String workflowId, boolean enabled) {
+        return jdbc.update("""
+                UPDATE workflow_definitions
+                SET enabled=?, updated_at=now()
+                WHERE workspace_id=? AND flow_id=?
+                """, enabled, workspaceId, workflowId);
     }
 
     public Optional<TenantWorkflowRow> findWorkflow(UUID workspaceId, String workflowId) {

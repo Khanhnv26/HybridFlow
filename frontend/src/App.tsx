@@ -177,6 +177,8 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
   const [tableNodeId, setTableNodeId] = useState('');
   const [logs, setLogs] = useState<RunHistoryItem[]>([]);
   const [conflicts, setConflicts] = useState<SyncConflictDto[]>([]);
+  const [workflowEnabled, setWorkflowEnabled] = useState(true);
+  const [isTogglingWorkflow, setIsTogglingWorkflow] = useState(false);
   const refreshRevision = useRef(0);
   const observedRunData = useRef<{ flowId: string; fingerprint: string } | null>(null);
   useEffect(() => {
@@ -285,23 +287,33 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
     localStorage.setItem(effectiveDraftKey, JSON.stringify({ nodes, edges }));
   }, [nodes, edges, effectiveDraftKey]);
   useEffect(() => {
-    if (hadDraft) return;
     let live = true;
     workflowApi
       .load(workflowId)
       .then((saved) => {
-        if (live && Array.isArray(saved.nodes) && Array.isArray(saved.edges)) {
-          setNodes(saved.nodes);
-          setEdges(saved.edges);
+        if (!live) return;
+        const record = saved as { nodes?: unknown[]; edges?: unknown[]; enabled?: boolean } | null;
+        if (typeof record?.enabled === 'boolean') {
+          setWorkflowEnabled(record.enabled);
+        }
+        if (!hadDraft && Array.isArray(record?.nodes) && Array.isArray(record?.edges)) {
+          setNodes(record.nodes as any);
+          setEdges(record.edges as any);
         }
       })
       .catch((error) => {
-        if (live) showToast(`Chưa tải được cấu hình đã lưu: ${message(error)}`);
+        if (live && !hadDraft) showToast(`Chưa tải được cấu hình đã lưu: ${message(error)}`);
       });
     return () => {
       live = false;
     };
   }, [hadDraft, workflowId, workflowApi, setNodes, setEdges, showToast]);
+  useEffect(() => {
+    const target = navigation?.workflows.find((w) => w.flowId === workflowId);
+    if (target && typeof target.enabled === 'boolean') {
+      setWorkflowEnabled(target.enabled);
+    }
+  }, [navigation?.workflows, workflowId]);
   useEffect(() => {
     const handle = (event: MessageEvent) => {
       if (event.origin !== oauthOrigin.current || event.source !== popup.current || !popup.current)
@@ -442,6 +454,26 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
       ...(!workspaceId ? { accessToken: localStorage.getItem('google_access_token') || undefined } : {}),
     });
   }, [workflowId, workflowApi, nodes, edges, flowId, workspaceId]);
+  const handleToggleWorkflow = useCallback(async () => {
+    if (isTogglingWorkflow) return;
+    const next = !workflowEnabled;
+    setIsTogglingWorkflow(true);
+    try {
+      if (typeof (workflowApi as any).updateStatus === 'function') {
+        await (workflowApi as any).updateStatus(workflowId, next);
+      }
+      setWorkflowEnabled(next);
+      if (navigation?.workflows) {
+        const target = navigation.workflows.find((w) => w.flowId === workflowId);
+        if (target) target.enabled = next;
+      }
+      showToast(next ? 'Đã bật workflow.' : 'Đã tắt workflow.');
+    } catch (error) {
+      showToast(`Không thể đổi trạng thái workflow: ${message(error)}`);
+    } finally {
+      setIsTogglingWorkflow(false);
+    }
+  }, [workflowEnabled, isTogglingWorkflow, workflowApi, workflowId, navigation, showToast]);
   const runWorkflow = useCallback(
     async (bootstrapConfirmed = false) => {
       if (running.current || backendRunning.current) return;
@@ -840,7 +872,29 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
           void connectGoogle().catch((error) => showToast(message(error)));
         }}
         onManageConnections={workspaceId ? () => setIsConnectionsModalOpen(true) : undefined}
+        workflowEnabled={workflowEnabled}
+        onToggleWorkflowEnabled={workspaceId ? handleToggleWorkflow : undefined}
+        isTogglingWorkflow={isTogglingWorkflow}
       />
+      {workspaceId && !workflowEnabled && (
+        <div
+          role="alert"
+          className="px-5 py-2.5 bg-warning-soft border-b border-warning/20 text-warning text-xs sm:text-sm flex items-center justify-between gap-4"
+        >
+          <div className="flex items-center gap-2">
+            <span aria-hidden="true">⚠️</span>
+            <span>Workflow này đang bị tắt. Hãy bật workflow để có thể chạy thử hoặc kích hoạt đồng bộ.</span>
+          </div>
+          <button
+            type="button"
+            disabled={isTogglingWorkflow}
+            onClick={() => void handleToggleWorkflow()}
+            className="px-3 py-1 bg-amber-600 hover:bg-amber-500 rounded text-xs font-semibold text-on-accent disabled:opacity-50 shrink-0 transition"
+          >
+            {isTogglingWorkflow ? 'Đang bật…' : 'Bật workflow ngay'}
+          </button>
+        </div>
+      )}
       {bootstrapRequired && (
         <div
           role="alert"

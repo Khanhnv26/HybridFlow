@@ -30,6 +30,9 @@ interface StudioHeaderProps {
   onIntervalChange: (interval: number) => void;
   onSaveWorkflow: () => void;
   navigation?: StudioNavigation;
+  workflowEnabled?: boolean;
+  onToggleWorkflowEnabled?: () => void;
+  isTogglingWorkflow?: boolean;
 }
 
 export const StudioHeader: React.FC<StudioHeaderProps> = ({
@@ -48,6 +51,9 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
   navigation,
   user,
   workspaceRole,
+  workflowEnabled,
+  onToggleWorkflowEnabled,
+  isTogglingWorkflow,
 }) => {
   return (
     <header className="studio-header relative z-50 shrink-0 border-b border-line bg-surface flex items-center justify-between select-none">
@@ -134,6 +140,38 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
           <ExcelIcon size={18} />
           <span className="hidden lg:inline">Bảng tính</span>
         </button>
+
+        {/* Toggle Workflow Status Button */}
+        {onToggleWorkflowEnabled && (
+          <button
+            type="button"
+            disabled={isRunning || isTogglingWorkflow}
+            onClick={onToggleWorkflowEnabled}
+            aria-label={workflowEnabled ? 'Tắt workflow' : 'Bật workflow'}
+            className={`toolbar-button transition-colors ${
+              workflowEnabled
+                ? 'text-emerald-400 border-emerald-500/30 bg-emerald-500/10 hover:bg-emerald-500/20'
+                : 'text-secondary border-line bg-elevated/40 hover:text-primary'
+            } disabled:opacity-50`}
+            title={
+              workflowEnabled
+                ? 'Workflow đang bật. Nhấp để tắt (tạm dừng).'
+                : 'Workflow đang tắt. Nhấp để bật luồng.'
+            }
+          >
+            <span
+              className={`inline-block w-2 h-2 rounded-full shrink-0 ${
+                workflowEnabled
+                  ? 'bg-emerald-400 shadow-[0_0_8px_rgba(52,211,153,0.7)]'
+                  : 'bg-zinc-400'
+              }`}
+            />
+            <span className="hidden xl:inline">Luồng:</span>
+            <span className={workflowEnabled ? 'text-emerald-400 font-semibold' : 'text-secondary font-medium'}>
+              {isTogglingWorkflow ? 'Đang đổi…' : workflowEnabled ? 'Bật' : 'Tắt'}
+            </span>
+          </button>
+        )}
 
         {/* Save Workflow Button */}
         <button

@@ -9,6 +9,7 @@ import com.hybridflow.sync.model.NotificationOutboxItem;
 import com.hybridflow.workspace.dto.request.CreateWorkflowRequest;
 import com.hybridflow.workspace.dto.request.GrantWorkflowPermissionRequest;
 import com.hybridflow.workspace.dto.request.SaveWorkflowRequest;
+import com.hybridflow.workspace.dto.request.UpdateWorkflowStatusRequest;
 import com.hybridflow.workspace.dto.response.TenantWorkflowResponse;
 import com.hybridflow.workspace.dto.response.WorkflowPermissionResponse;
 import com.hybridflow.workspace.service.TenantWorkflowService;
@@ -97,6 +98,26 @@ class TenantWorkflowControllerTest {
                         .content(mapper.writeValueAsString(request)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.definitionVersion").value(2));
+    }
+
+    @Test
+    void updateStatusReturnsUpdated() throws Exception {
+        UpdateWorkflowStatusRequest request = new UpdateWorkflowStatusRequest(true);
+
+        TenantWorkflowResponse response = TenantWorkflowResponse.builder()
+                .flowId(workflowId)
+                .workspaceId(workspaceId)
+                .name("Daily Sync")
+                .enabled(true)
+                .build();
+        when(service.updateStatus(eq(workspaceId), eq(workflowId), eq(true))).thenReturn(response);
+
+        mvc.perform(put("/api/v1/workspaces/" + workspaceId + "/workflows/" + workflowId + "/status")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(mapper.writeValueAsString(request)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.flowId").value(workflowId))
+                .andExpect(jsonPath("$.enabled").value(true));
     }
 
     @Test

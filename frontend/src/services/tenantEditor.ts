@@ -10,6 +10,7 @@ export function createTenantEditorApi(client: Pick<AxiosInstance, 'get' | 'post'
   let latestContext = '';
   let version: number | undefined;
   let bindings: { nodeId: string; connectionId: string }[] = [];
+  let currentWorkflowEnabled = true;
 
   const contextFor = (executionId: string) => {
     const context = executionContexts.get(executionId);
@@ -19,8 +20,10 @@ export function createTenantEditorApi(client: Pick<AxiosInstance, 'get' | 'post'
   const load = async () => {
     const { data } = await client.get(base);
     version = data.definitionVersion;
+    currentWorkflowEnabled = data.enabled !== false;
     bindings = data.connectionBindings || [];
-    const def = (data.definition || {}) as { nodes?: unknown[]; edges?: unknown[] };
+    const def = (data.definition || {}) as { nodes?: unknown[]; edges?: unknown[]; enabled?: boolean };
+    def.enabled = currentWorkflowEnabled;
     if (Array.isArray(def.nodes) && Array.isArray(bindings) && bindings.length > 0) {
       def.nodes = def.nodes.map((node: unknown) => {
         const n = node as { id: string; data?: Record<string, unknown> };
@@ -63,6 +66,12 @@ export function createTenantEditorApi(client: Pick<AxiosInstance, 'get' | 'post'
         latestContext = data.flowId || latestContext;
         return data;
       },
+      updateStatus: async (_id: string, enabled: boolean) => {
+        const { data } = await client.put(base + '/status', { enabled });
+        currentWorkflowEnabled = data.enabled !== false;
+        return data;
+      },
+      isEnabled: () => currentWorkflowEnabled,
     },
     sync: {
       getHistory: async (_id: string, signal?: AbortSignal) => {
