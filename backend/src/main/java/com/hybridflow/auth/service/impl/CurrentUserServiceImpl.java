@@ -29,8 +29,9 @@ public class CurrentUserServiceImpl implements CurrentUserService {
         }
 
         OidcUser principal = (OidcUser) auth.getPrincipal();
-        return accountRepository.findBySubject(principal.getSubject())
+        MeResponse account = accountRepository.findBySubject(principal.getSubject())
                 .orElseThrow(() -> new ApplicationException(ErrorCode.AUTHENTICATION_REQUIRED));
+        return new MeResponse(account.getId(), account.getEmail(), account.getDisplayName(), principal.getPicture());
     }
 
     @Override

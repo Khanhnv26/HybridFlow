@@ -15,6 +15,23 @@ const bundle = await build({
 const { AccountMenu } = await import(`data:text/javascript;base64,${Buffer.from(bundle.outputFiles[0].text).toString('base64')}`);
 const user = { id: '1', displayName: 'Nguyễn Minh Anh', email: 'minhanh@example.com' };
 
+test('Google avatar appears in both places and falls back to initials on error', () => {
+  const avatarUrl = 'https://lh3.googleusercontent.com/avatar';
+  let renderer;
+  try {
+    act(() => { renderer = create(React.createElement(AccountMenu, { user: { ...user, avatarUrl } })); });
+    act(() => renderer.root.findByType('button').props.onClick());
+    const images = renderer.root.findAllByType('img');
+    assert.deepEqual(images.map(image => image.props.src), [avatarUrl, avatarUrl]);
+
+    act(() => images[0].props.onError());
+    assert.equal(renderer.root.findAllByType('img').length, 0);
+    assert.deepEqual(renderer.root.findAllByType('span')
+      .filter(span => span.props.className?.startsWith('account-avatar'))
+      .map(span => span.children), [['NA'], ['NA']]);
+  } finally { if (renderer) act(() => renderer.unmount()); }
+});
+
 test('account opens real identity and workspace role; logout happens only on explicit click', () => {
   let loggedOut = 0;
   let renderer;

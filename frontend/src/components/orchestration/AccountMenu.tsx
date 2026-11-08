@@ -10,6 +10,7 @@ export function AccountMenu({ user, workspaceRole, workspaceName, onLogout }: {
   user?: Me; workspaceRole?: WorkspaceRole; workspaceName?: string; onLogout?: () => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [failedAvatarUrl, setFailedAvatarUrl] = useState<string>();
   const container = useRef<HTMLDivElement>(null);
   const trigger = useRef<HTMLButtonElement>(null);
   const id = useId();
@@ -18,6 +19,10 @@ export function AccountMenu({ user, workspaceRole, workspaceName, onLogout }: {
   const initials = words.length > 1
     ? `${Array.from(words[0])[0]}${Array.from(words[words.length - 1])[0]}`.toLocaleUpperCase('vi')
     : Array.from(words[0] || '').slice(0, 2).join('').toLocaleUpperCase('vi');
+  const avatarUrl = user?.avatarUrl?.trim();
+  const avatarImage = avatarUrl && avatarUrl !== failedAvatarUrl
+    ? <img src={avatarUrl} alt="" referrerPolicy="no-referrer" onError={() => setFailedAvatarUrl(avatarUrl)} />
+    : null;
 
   useEffect(() => {
     if (!open || typeof window === 'undefined') return;
@@ -35,11 +40,11 @@ export function AccountMenu({ user, workspaceRole, workspaceName, onLogout }: {
   return <div className="account-menu" ref={container}>
     <button ref={trigger} type="button" className="account-trigger" aria-label={`Tài khoản: ${name}`}
       aria-expanded={open} aria-controls={open ? id : undefined} title={name} onClick={() => setOpen(value => !value)}>
-      <span className="account-avatar" aria-hidden="true">{initials || <UserRound size={18} />}</span>
+      <span className="account-avatar" aria-hidden="true">{avatarImage || initials || <UserRound size={18} />}</span>
     </button>
     {open && <section id={id} className="account-popover" aria-label="Thông tin tài khoản">
       <div className="account-identity">
-        <span className="account-avatar account-avatar--large" aria-hidden="true">{initials || <UserRound size={23} />}</span>
+        <span className="account-avatar account-avatar--large" aria-hidden="true">{avatarImage || initials || <UserRound size={23} />}</span>
         <div><span className="account-eyebrow">TÀI KHOẢN CỦA BẠN</span><h2>{name}</h2>{user?.email && <p>{user.email}</p>}</div>
       </div>
       {(workspaceName || workspaceRole) && <div className="account-workspace">
