@@ -46,20 +46,14 @@ function StudioPreview() {
     createWorkflowInModule: async (workspaceId, moduleId, name) => { explain(); return { flowId: crypto.randomUUID(), workspaceId, moduleId, name, enabled: true, definitionVersion: 1 }; },
     workspaces: [{ id: 'demo-ws', name: 'Demo Workspace', role: 'OWNER' }],
     selectedWorkspaceId: 'demo-ws',
-    onSelectWorkspace: () => {},
+    onNavigate: explain,
     onCreateWorkspace: async () => {},
     onLogout: explain,
     workspaceRole: 'OWNER',
     modules: [{ id: 'demo-mod', workspaceId: 'demo-ws', name: 'Vận hành', description: '', enabled: true, createdAt: '' }],
     selectedModuleId: 'demo-mod',
-    onSelectModule: () => {},
-    onCreateModule: async () => {},
     workflows: [{ flowId: 'demo-wf', workspaceId: 'demo-ws', moduleId: 'demo-mod', name: 'Đồng bộ đơn hàng', enabled: true, definitionVersion: 1 }],
     selectedWorkflowId: 'demo-wf',
-    onSelectWorkflow: () => {},
-    onCreateWorkflow: async () => {},
-    activeWorkflowName: 'Đồng bộ đơn hàng',
-    activeWorkflowVersion: 1,
   };
 
   return <div className="h-dvh flex flex-col min-h-0 bg-canvas text-primary">

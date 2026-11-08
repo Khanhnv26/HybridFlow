@@ -376,25 +376,26 @@ export interface WorkspaceConnectionResponse {
   usageCount: number;
 }
 
+export interface WorkflowSelection {
+  workspace: Workspace;
+  moduleId: string;
+  workflowId: string;
+  modules: BusinessModule[];
+  workflows: TenantWorkflowSummary[];
+}
+
 export interface StudioNavigation {
-  onNavigate?: (workspaceId: string, moduleId: string, workflowId: string) => void;
+  onNavigate: (selection: WorkflowSelection) => void;
   loadWorkspaceContent?: (workspaceId: string, signal: AbortSignal) => Promise<[BusinessModule[], TenantWorkflowSummary[]]>;
   createModuleInWorkspace?: (workspaceId: string, name: string) => Promise<BusinessModule>;
   createWorkflowInModule?: (workspaceId: string, moduleId: string, name: string) => Promise<TenantWorkflowSummary>;
   workspaces: Workspace[];
   selectedWorkspaceId: string;
-  onSelectWorkspace: (id: string) => void;
-  onCreateWorkspace: (name: string) => Promise<void>;
+  onCreateWorkspace: (name: string) => Promise<Workspace | void>;
   onLogout: () => void;
   workspaceRole?: WorkspaceRole;
   modules: BusinessModule[];
   selectedModuleId: string;
-  onSelectModule: (id: string) => void;
-  onCreateModule: (name: string) => Promise<void>;
   workflows: TenantWorkflowSummary[];
   selectedWorkflowId: string;
-  onSelectWorkflow: (id: string) => void;
-  onCreateWorkflow: (name: string) => Promise<void>;
-  activeWorkflowName?: string;
-  activeWorkflowVersion?: number;
 }

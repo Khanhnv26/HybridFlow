@@ -2,7 +2,6 @@ import React from 'react';
 import ReactDOM from 'react-dom/client';
 import { AuthGate } from './components/auth/AuthGate';
 import { WorkspacePicker } from './components/workspace/WorkspacePicker';
-import { ModuleWorkflowPicker } from './components/workspace/ModuleWorkflowPicker';
 import { LandingPage } from './pages/LandingPage';
 import { OpenWorkspace } from './pages/LoginPage';
 import { resolveRoute, syncOAuthRedirect } from './router';
@@ -19,21 +18,17 @@ ReactDOM.createRoot(document.getElementById('root')!).render(
     {route === 'workspace' ? (
       <AuthGate>
         {user => (
-          <WorkspacePicker key={user.id}>
-            {(workspace, workspaceNav) => (
-              <ModuleWorkflowPicker workspace={workspace} workspaceNavigation={workspaceNav}>
-                {(workflow, fullNav) => (
-                  <App
-                    key={`${user.id}:${workspace.id}:${workflow.id}`}
-                    user={user}
-                    userId={user.id}
-                    workspaceId={workspace.id}
-                    workspaceRole={workspace.role}
-                    workflowId={workflow.id}
-                    navigation={fullNav}
-                  />
-                )}
-              </ModuleWorkflowPicker>
+          <WorkspacePicker key={user.id} user={user}>
+            {navigation => (
+              <App
+                key={`${user.id}:${navigation.selectedWorkspaceId}:${navigation.selectedWorkflowId}`}
+                user={user}
+                userId={user.id}
+                workspaceId={navigation.selectedWorkspaceId}
+                workspaceRole={navigation.workspaceRole}
+                workflowId={navigation.selectedWorkflowId}
+                navigation={navigation}
+              />
             )}
           </WorkspacePicker>
         )}
