@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { ArrowUpRight } from 'lucide-react';
+import { ArrowUpRight, Database, GitBranch, Send, Sheet, Workflow } from 'lucide-react';
 import type { Me, StudioNavigation, WorkflowSelection, Workspace } from '../../types';
 import { authService, workspaceService } from '../../services/api';
 import { errorMessage } from '../../services/errors';
@@ -71,6 +71,7 @@ export function WorkspacePicker({ user, children }: {
         <div className="flex items-center gap-2.5 font-bold text-sm">
           <span className="studio-brand-mark flex h-8 w-8 items-center justify-center rounded-lg"><ArrowUpRight size={20} aria-hidden="true" /></span>
           HybridFlow
+          <span className="workspace-entry-location">Studio</span>
         </div>
         <div className="flex items-center gap-2">
           <ThemeToggle className="toolbar-button" />
@@ -78,26 +79,34 @@ export function WorkspacePicker({ user, children }: {
         </div>
       </header>
       <main className="workspace-entry-main">
-        <section className="workspace-entry-panel bg-surface" aria-labelledby="workspace-entry-title">
-          <div className="switcher-heading">
-            <div>
-              <h1 id="workspace-entry-title">Mở luồng làm việc</h1>
-              <p>Chọn hoặc tạo workspace, module và workflow để vào Studio.</p>
+        <div className="workspace-entry-hero">
+          <div>
+            <span className="workspace-entry-eyebrow"><Workflow size={15} aria-hidden="true" />HybridFlow Studio</span>
+            <h1>Mở luồng làm việc</h1>
+            <p>Chọn workspace, nhóm nghiệp vụ và workflow bạn muốn mở trong Studio.</p>
+          </div>
+          <div className="workspace-entry-map" aria-hidden="true">
+            <span className="workspace-entry-node"><Sheet size={16} />Google Sheets</span>
+            <span className="workspace-entry-wire" />
+            <span className="workspace-entry-node workspace-entry-node--logic"><GitBranch size={16} />Xử lý</span>
+            <span className="workspace-entry-wire" />
+            <div className="workspace-entry-outputs">
+              <span className="workspace-entry-node"><Database size={16} />Vault</span>
+              <span className="workspace-entry-node"><Send size={16} />Telegram</span>
             </div>
           </div>
-          {logoutError && <p role="alert" className="p-3 bg-danger-soft text-danger">{logoutError}</p>}
-          {loading ? <p role="status" className="switcher-empty p-5">Đang tải workspace…</p> : listError ? (
-            <div className="p-5">
-              <p role="alert" className="text-danger">{listError}</p>
-              <button type="button" className="toolbar-button mt-2" onClick={() => {
-                setListError('');
-                setLoading(true);
-                setRevision(value => value + 1);
-              }}>Thử lại</button>
-            </div>
-          ) : <WorkflowColumns workspaces={workspaces} onCreateWorkspace={createWorkspace} onNavigate={setSelection} />}
-          <p className="workspace-entry-footer">Chọn workflow để mở Studio.</p>
-        </section>
+        </div>
+        {logoutError && <p role="alert" className="workspace-entry-notice text-danger">{logoutError}</p>}
+        {loading ? <p role="status" className="workspace-entry-notice text-secondary">Đang tải workspace…</p> : listError ? (
+          <div className="workspace-entry-notice">
+            <p role="alert" className="text-danger">{listError}</p>
+            <button type="button" className="toolbar-button mt-2" onClick={() => {
+              setListError('');
+              setLoading(true);
+              setRevision(value => value + 1);
+            }}>Thử lại</button>
+          </div>
+        ) : <WorkflowColumns workspaces={workspaces} onCreateWorkspace={createWorkspace} onNavigate={setSelection} />}
       </main>
     </div>
   );

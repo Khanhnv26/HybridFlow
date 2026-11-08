@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowRight, Check, Folder, Layers, Plus, Search, Workflow } from 'lucide-react';
+import { ArrowRight, Check, CircleDot, Folder, Layers, LockKeyhole, Plus, Route, Search, Workflow, type LucideIcon } from 'lucide-react';
 import type { BusinessModule, StudioNavigation, TenantWorkflowSummary } from '../../types';
 import { moduleService, tenantWorkflowService } from '../../services/api';
 import { errorMessage } from '../../services/errors';
@@ -9,7 +9,7 @@ const normalize = (value: string) => value.toLowerCase().normalize('NFD').replac
 const loadContent = (workspaceId: string, signal: AbortSignal) =>
   Promise.all([moduleService.list(workspaceId, signal), tenantWorkflowService.list(workspaceId, signal)]);
 
-function CreateItem({ label, context, disabled, inline = false, submitLabel = 'Tạo mới', onCreate }: {
+function CreateItem({ label, context, disabled, inline = false, submitLabel, onCreate }: {
   label: string;
   context: string;
   disabled?: boolean;
@@ -23,7 +23,7 @@ function CreateItem({ label, context, disabled, inline = false, submitLabel = 'T
   const [error, setError] = useState('');
   if (!inline && !open) return (
     <button type="button" className="switcher-create" aria-label={`Tạo ${label.toLowerCase()}`} disabled={disabled} onClick={() => setOpen(true)}>
-      <Plus size={15} aria-hidden="true" />{label}
+      <Plus size={15} aria-hidden="true" />{submitLabel ? `Tạo ${label.toLowerCase()}` : label}
     </button>
   );
   return (
@@ -47,7 +47,7 @@ function CreateItem({ label, context, disabled, inline = false, submitLabel = 'T
         value={name} disabled={busy || disabled} onChange={event => setName(event.target.value)} />
       {error && <p role="alert" className="text-xs text-danger">{error}</p>}
       <div className="flex flex-wrap gap-2">
-        <button type="submit" disabled={busy || disabled || !name.trim()} className="switcher-submit">{busy ? 'Đang tạo…' : submitLabel}</button>
+        <button type="submit" disabled={busy || disabled || !name.trim()} className="switcher-submit">{busy ? 'Đang tạo…' : submitLabel || 'Tạo mới'}</button>
         {open && <button type="button" disabled={busy} className="toolbar-button" onClick={() => { setOpen(false); setError(''); }}>Hủy</button>}
       </div>
     </form>
@@ -89,7 +89,7 @@ export function WorkflowColumns({
   }, []);
 
   useEffect(() => {
-    if (!onboarding || !workspaceId || typeof window === 'undefined' || !window.matchMedia?.('(max-width: 700px)').matches) return;
+    if (!onboarding || !workspaceId || typeof window === 'undefined' || !window.matchMedia?.('(max-width: 760px)').matches) return;
     const column = moduleId ? workflowColumn.current : moduleColumn.current;
     const reducedMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     column?.scrollIntoView({ behavior: reducedMotion ? 'instant' : 'smooth', block: 'start' });
@@ -178,16 +178,35 @@ export function WorkflowColumns({
     );
   }
 
+  function heading(step: string, title: string, count: number, Icon: LucideIcon, state: 'current' | 'done' | 'locked') {
+    if (!onboarding) return <h3><span>{step} · {title}</span><span>{count}</span></h3>;
+    const StatusIcon = state === 'locked' ? LockKeyhole : state === 'current' ? CircleDot : Check;
+    return (
+      <div className="workspace-entry-column-heading">
+        <span className="workspace-entry-column-icon"><Icon size={18} aria-hidden="true" /></span>
+        <div>
+          <p>Bước {step}</p>
+          <h2>{title}</h2>
+        </div>
+        <StatusIcon size={15} className="workspace-entry-column-status" aria-hidden="true" />
+        <span className="sr-only">{state === 'locked' ? 'Chưa đến bước này' : state === 'current' ? 'Bước hiện tại' : 'Đã chọn'}</span>
+      </div>
+    );
+  }
+
   const visibleWorkspaces = workspaces.filter(item => normalize(item.name).includes(normalize(queries[0])));
   const visibleModules = modules.filter(item => normalize(item.name).includes(normalize(queries[1])));
   const visibleWorkflows = matchingWorkflows.filter(item => normalize(item.name).includes(normalize(queries[2])));
   const noResults = <p role="status" className="switcher-empty">Không tìm thấy kết quả.</p>;
   const loadingStatus = <p role="status" className="switcher-empty">Đang tải…</p>;
+  const workspaceState = workspace ? 'done' : 'current';
+  const moduleState = module ? 'done' : workspace ? 'current' : 'locked';
+  const workflowState = module ? 'current' : 'locked';
 
-  return (
+  return <>
     <div className="switcher-columns">
-      <section className="switcher-column" aria-label="Danh sách workspace" data-active={onboarding && !workspace}>
-        <h3><span>01 · Workspace</span><span>{workspaces.length}</span></h3>
+      <section className="switcher-column" aria-label="Danh sách workspace" data-state={workspaceState}>
+        {heading('01', 'Workspace', workspaces.length, Layers, workspaceState)}
         {onboarding && <p className="switcher-parent">Nơi làm việc của bạn</p>}
         {workspaces.length > 0 && search(0, 'workspace')}
         <div className="switcher-list">
@@ -196,7 +215,8 @@ export function WorkflowColumns({
               onClick={() => chooseWorkspace(item.id)}>
               <Layers size={15} className="shrink-0" aria-hidden="true" />
               <span className="min-w-0 flex-1"><span className="block truncate">{item.name}</span><small>{roleNames[item.role]}</small></span>
-              {workspaceId === item.id && <Check size={15} className="shrink-0" aria-hidden="true" />}
+              {workspaceId === item.id ? <Check size={15} className="shrink-0" aria-hidden="true" /> :
+                onboarding && <ArrowRight size={15} className="switcher-open-icon shrink-0" aria-hidden="true" />}
             </button>
           ))}
           {workspaces.length === 0 ? <p className="switcher-empty">Bạn chưa có workspace.</p> : visibleWorkspaces.length === 0 && noResults}
@@ -204,12 +224,14 @@ export function WorkflowColumns({
         <CreateItem label="Workspace" context="Tạo workspace mới" inline={onboarding && workspaces.length === 0}
           submitLabel={onboarding ? 'Tạo workspace' : undefined} onCreate={createWorkspace} />
       </section>
-      <section ref={moduleColumn} className="switcher-column" aria-label="Danh sách module" data-active={onboarding && !!workspace && !module}>
-        <h3><span>02 · Module</span><span>{modules.length}</span></h3>
-        <p className="switcher-parent" title={workspace?.name}>{workspace ? `Trong ${workspace.name}` : 'Chọn workspace để tiếp tục'}</p>
+      <section ref={moduleColumn} className="switcher-column" aria-label="Danh sách module" data-state={moduleState}>
+        {heading('02', 'Module', modules.length, Folder, moduleState)}
+        <p className="switcher-parent" title={workspace?.name}>{workspace ? `Trong ${workspace.name}` : 'Nhóm công việc theo nghiệp vụ'}</p>
         {modules.length > 0 && search(1, 'module')}
-        <div className="switcher-list" aria-busy={loading} key={workspaceId}>
-          {loading ? loadingStatus : error ? (
+        <div className="switcher-list" aria-busy={loading} key={workspaceId} data-entry-ready={Boolean(workspace) && !loading}>
+          {onboarding && !workspace ? (
+            <p className="workspace-entry-wait"><strong>Chọn workspace để tiếp tục</strong>Module thuộc workspace bạn chọn sẽ hiện ở đây.</p>
+          ) : loading ? loadingStatus : error ? (
             <div className="switcher-empty">
               <p role="alert" className="text-danger">{error}</p>
               <button type="button" className="toolbar-button mt-2" onClick={() => {
@@ -222,7 +244,8 @@ export function WorkflowColumns({
             <button type="button" key={item.id} aria-pressed={moduleId === item.id} className="switcher-item" onClick={() => chooseModule(item.id)}>
               <Folder size={15} className="shrink-0" aria-hidden="true" />
               <span className="truncate flex-1">{item.name}{!item.enabled && ' (tắt)'}</span>
-              {moduleId === item.id && <Check size={15} className="shrink-0" aria-hidden="true" />}
+              {moduleId === item.id ? <Check size={15} className="shrink-0" aria-hidden="true" /> :
+                onboarding && <ArrowRight size={15} className="switcher-open-icon shrink-0" aria-hidden="true" />}
             </button>
           ))}
           {workspace && !loading && !error && (modules.length === 0
@@ -234,11 +257,14 @@ export function WorkflowColumns({
             inline={onboarding && modules.length === 0} submitLabel={onboarding ? 'Tạo module' : undefined} onCreate={createModule} />
         )}
       </section>
-      <section ref={workflowColumn} className="switcher-column" aria-label="Danh sách workflow" data-active={onboarding && !!module}>
-        <h3><span>03 · Workflow</span><span>{matchingWorkflows.length}</span></h3>
-        <p className="switcher-parent" title={module?.name}>{module ? `Trong ${module.name}` : 'Chọn module để tiếp tục'}</p>
+      <section ref={workflowColumn} className="switcher-column" aria-label="Danh sách workflow" data-state={workflowState}>
+        {heading('03', 'Workflow', matchingWorkflows.length, Workflow, workflowState)}
+        <p className="switcher-parent" title={module?.name}>{module ? `Trong ${module.name}` : 'Mở hoặc tạo luồng'}</p>
         {matchingWorkflows.length > 0 && search(2, 'workflow')}
-        <div className="switcher-list" aria-busy={loading} key={`${workspaceId}:${moduleId}`}>
+        <div className="switcher-list" aria-busy={loading} key={`${workspaceId}:${moduleId}`} data-entry-ready={Boolean(module) && !loading}>
+          {onboarding && !module && (
+            <p className="workspace-entry-wait"><strong>Chọn module để tiếp tục</strong>Chọn một workflow để mở Studio.</p>
+          )}
           {module && !loading && !error && visibleWorkflows.map(item => {
             const active = initial?.workspaceId === workspaceId && initial.workflowId === item.flowId;
             return (
@@ -261,5 +287,16 @@ export function WorkflowColumns({
         )}
       </section>
     </div>
-  );
+    {onboarding && (
+      <nav className="workspace-entry-footer" aria-label="Đường dẫn Studio" aria-live="polite">
+        <Route size={16} aria-hidden="true" />
+        <span>Đường dẫn</span>
+        <ol>
+          <li>{workspace ? <strong>{workspace.name}</strong> : 'Workspace'}</li>
+          <li>{module ? <strong>{module.name}</strong> : 'Module'}</li>
+          <li>Workflow</li>
+        </ol>
+      </nav>
+    )}
+  </>;
 }

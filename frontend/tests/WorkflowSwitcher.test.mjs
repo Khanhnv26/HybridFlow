@@ -111,14 +111,23 @@ async function mountEntry() {
 
 test('the entry page searches each level and opens only the explicitly selected workflow', async () => {
   await mountEntry();
+  const column = label => renderer.root.findByProps({ 'aria-label': `Danh sách ${label}` });
+  assert.equal(column('workspace').props['data-state'], 'current');
+  assert.equal(column('module').props['data-state'], 'locked');
+  assert.equal(column('workflow').props['data-state'], 'locked');
   assert.equal(renderer.root.findAllByProps({ 'data-workflow': 'f2' }).length, 0);
   assert.equal(field('Tìm module'), undefined);
   await act(async () => field('Tìm workspace').props.onChange({ target: { value: 'tai chinh' } }));
   assert.equal(entryButton('Kinh doanh'), undefined);
   await act(async () => entryButton('Tài chính').props.onClick());
+  assert.equal(column('workspace').props['data-state'], 'done');
+  assert.equal(column('module').props['data-state'], 'current');
   assert.equal(field('Tìm workflow'), undefined);
   await act(async () => field('Tìm module').props.onChange({ target: { value: 'ke toan' } }));
   await act(async () => entryButton('Kế toán').props.onClick());
+  assert.equal(column('workflow').props['data-state'], 'current');
+  const breadcrumb = renderer.root.findByProps({ 'aria-label': 'Đường dẫn Studio' });
+  assert.deepEqual(breadcrumb.findAllByType('li').map(text), ['Tài chính', 'Kế toán', 'Workflow']);
   assert.equal(renderer.root.findAllByProps({ 'data-workflow': 'f2' }).length, 0);
   await act(async () => field('Tìm workflow').props.onChange({ target: { value: 'bao cao' } }));
   await act(async () => entryButton('Báo cáo').props.onClick());
