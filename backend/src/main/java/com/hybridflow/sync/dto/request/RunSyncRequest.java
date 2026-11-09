@@ -40,4 +40,5 @@ public class RunSyncRequest {
     private List<RouterPlan> routers;
     private List<ActionPlan> actions;
     private List<String> conflictActionIds;
+    private SheetWriteTargetPlan sheetWriteTargetPlan;
 }

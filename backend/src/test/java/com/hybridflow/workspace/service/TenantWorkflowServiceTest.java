@@ -27,7 +27,9 @@ import com.hybridflow.workspace.repository.MembershipRepository;
 import com.hybridflow.workspace.repository.ModuleRepository;
 import com.hybridflow.workspace.repository.TenantWorkflowRepository;
 import com.hybridflow.workspace.repository.WorkspaceConnectionRepository;
+import com.hybridflow.connector.google.service.GoogleSheetsService;
 import com.hybridflow.workspace.service.impl.TenantWorkflowServiceImpl;
+import com.hybridflow.workspace.support.SheetWritePlanner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -95,13 +97,16 @@ class TenantWorkflowServiceTest {
     private final UUID userId = UUID.randomUUID();
     private final String workflowId = "flow-uuid-1";
     @Mock private SyncStateService syncState;
+    @Mock private GoogleSheetsService googleSheetsService;
+    private final SheetWritePlanner sheetWritePlanner = new SheetWritePlanner();
 
     @BeforeEach
     void setup() {
         service = new TenantWorkflowServiceImpl(
                 workflows, workspaces, access, members, modules, connections,
                 currentUser, audit, planService, syncExecutionService,
-                syncConflictService, credentials, parser, clock, mapper, syncState);
+                syncConflictService, credentials, parser, clock, mapper, syncState,
+                googleSheetsService, sheetWritePlanner);
     }
 
     @Test
@@ -110,12 +115,55 @@ class TenantWorkflowServiceTest {
         request.setModuleId(moduleId);
         request.setName("Daily Sync");
 
+        when(workspaces.requireMember(workspaceId)).thenReturn(WorkspaceRole.ADMIN);
         when(modules.find(workspaceId, moduleId)).thenReturn(Optional.empty());
 
         ApplicationException ex = assertThrows(ApplicationException.class,
                 () -> service.create(workspaceId, request));
         assertEquals(ErrorCode.RESOURCE_NOT_FOUND, ex.getErrorCode());
-        verify(workspaces).requireManager(workspaceId);
+        verify(workspaces).requireMember(workspaceId);
+    }
+
+    @Test
+    void createThrowsAccessDeniedForViewer() {
+        CreateWorkflowRequest request = new CreateWorkflowRequest();
+        request.setModuleId(moduleId);
+        request.setName("Daily Sync");
+
+        when(workspaces.requireMember(workspaceId)).thenReturn(WorkspaceRole.VIEWER);
+
+        ApplicationException ex = assertThrows(ApplicationException.class,
+                () -> service.create(workspaceId, request));
+        assertEquals(ErrorCode.ACCESS_DENIED, ex.getErrorCode());
+    }
+
+    @Test
+    void createForEditorGrantsEditAndRunPermissions() {
+        CreateWorkflowRequest request = new CreateWorkflowRequest();
+        request.setModuleId(moduleId);
+        request.setName("Daily Sync");
+
+        when(workspaces.requireMember(workspaceId)).thenReturn(WorkspaceRole.EDITOR);
+        when(modules.find(workspaceId, moduleId)).thenReturn(Optional.of(
+                new ModuleResponse(moduleId, workspaceId, "Daily Sync", "", true, Instant.now())));
+        when(currentUser.requireUserId()).thenReturn(userId);
+
+        TenantWorkflowRow createdRow = TenantWorkflowRow.builder()
+                .flowId("new-id")
+                .workspaceId(workspaceId)
+                .moduleId(moduleId)
+                .name("Daily Sync")
+                .enabled(true)
+                .definitionVersion(1L)
+                .definitionJson("{\"nodes\":[],\"edges\":[]}")
+                .build();
+        when(workflows.findWorkflow(eq(workspaceId), any())).thenReturn(Optional.of(createdRow));
+
+        TenantWorkflowResponse response = service.create(workspaceId, request);
+
+        assertNotNull(response);
+        verify(workflows).upsertPermission(eq(workspaceId), anyString(), eq(userId), eq(true), eq(true));
+        verify(audit).append(eq(workspaceId), eq(userId), eq("WORKFLOW_CREATED"), anyString());
     }
 
     @Test
@@ -124,6 +172,7 @@ class TenantWorkflowServiceTest {
         request.setModuleId(moduleId);
         request.setName("Daily Sync");
 
+        when(workspaces.requireMember(workspaceId)).thenReturn(WorkspaceRole.ADMIN);
         when(modules.find(workspaceId, moduleId)).thenReturn(Optional.of(
                 new ModuleResponse(moduleId, workspaceId, "Daily Sync", "", true, Instant.now())));
         when(currentUser.requireUserId()).thenReturn(userId);
@@ -365,5 +414,51 @@ class TenantWorkflowServiceTest {
         verify(access).requireEdit(workspaceId, workflowId);
         verify(syncConflictService).resolveConflict(99L, "val-1", "workspace-token");
         verify(audit).append(workspaceId, userId, "CONFLICT_RESOLVED", "99");
+    }
+
+    @Test
+    void resolveConflictThrowsAccessDeniedForViewer() {
+        when(workspaces.requireMember(workspaceId)).thenReturn(WorkspaceRole.VIEWER);
+        SyncConflict conflict = SyncConflict.builder().id(99L).flowId("ctx-1").build();
+        when(workflows.findConflict(workspaceId, workflowId, "ctx-1", 99L)).thenReturn(Optional.of(conflict));
+
+        ResolveConflictRequest request = new ResolveConflictRequest();
+        request.setResolvedValue("val-1");
+        ApplicationException ex = assertThrows(ApplicationException.class,
+                () -> service.resolveConflict(workspaceId, workflowId, "ctx-1", 99L, request));
+        assertEquals(ErrorCode.ACCESS_DENIED, ex.getErrorCode());
+    }
+
+    @Test
+    void resolveConflictThrowsAccessDeniedForEditorWithoutConnectionGrant() {
+        when(workspaces.requireMember(workspaceId)).thenReturn(WorkspaceRole.EDITOR);
+        when(connections.hasEditorGrant(workspaceId, "owned")).thenReturn(false);
+        SyncConflict conflict = SyncConflict.builder().id(99L).flowId("ctx-1").build();
+        when(workflows.findConflict(workspaceId, workflowId, "ctx-1", 99L)).thenReturn(Optional.of(conflict));
+        when(workflows.findBindings(workspaceId, workflowId)).thenReturn(List.of(new ConnectionBindingItem("sheet", "owned")));
+
+        ResolveConflictRequest request = new ResolveConflictRequest();
+        request.setResolvedValue("val-1");
+        ApplicationException ex = assertThrows(ApplicationException.class,
+                () -> service.resolveConflict(workspaceId, workflowId, "ctx-1", 99L, request));
+        assertEquals(ErrorCode.ACCESS_DENIED, ex.getErrorCode());
+    }
+
+    @Test
+    void previewSheetWriteThrowsAccessDeniedForViewer() {
+        when(workspaces.requireMember(workspaceId)).thenReturn(WorkspaceRole.VIEWER);
+
+        com.hybridflow.workspace.dto.request.SheetWritePreviewRequest request =
+                new com.hybridflow.workspace.dto.request.SheetWritePreviewRequest();
+        request.setSourceSpreadSheetId("src-id");
+        request.setSourceSheetName("src-sheet");
+        request.setTargetSpreadSheetId("tgt-id");
+        request.setTargetSheetName("tgt-sheet");
+        request.setSourceKeyColumn("id");
+        request.setTargetKeyColumn("id");
+
+        ApplicationException ex = assertThrows(ApplicationException.class,
+                () -> service.previewSheetWrite(workspaceId, workflowId, request));
+        assertEquals(ErrorCode.ACCESS_DENIED, ex.getErrorCode());
     }
 }

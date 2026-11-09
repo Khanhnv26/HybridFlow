@@ -4,10 +4,8 @@ import com.hybridflow.sync.dto.request.ResolveConflictRequest;
 import com.hybridflow.sync.dto.response.RunSyncResponse;
 import com.hybridflow.sync.entity.SyncConflict;
 import com.hybridflow.sync.model.NotificationOutboxItem;
-import com.hybridflow.workspace.dto.request.CreateWorkflowRequest;
-import com.hybridflow.workspace.dto.request.GrantWorkflowPermissionRequest;
-import com.hybridflow.workspace.dto.request.SaveWorkflowRequest;
-import com.hybridflow.workspace.dto.request.UpdateWorkflowStatusRequest;
+import com.hybridflow.workspace.dto.request.*;
+import com.hybridflow.workspace.dto.response.SheetWritePreviewResponse;
 import com.hybridflow.workspace.dto.response.TenantWorkflowResponse;
 import com.hybridflow.workspace.dto.response.WorkflowPermissionResponse;
 import com.hybridflow.workspace.service.TenantWorkflowService;
@@ -156,4 +154,12 @@ public class TenantWorkflowController {
                                         @Valid @RequestBody ResolveConflictRequest request) {
         return service.resolveConflict(workspaceId, workflowId, contextId, conflictId, request);
     }
+
+    @PostMapping("/{workflowId}/sheet-write/preview")
+    public SheetWritePreviewResponse previewSheetWrite(@PathVariable UUID workspaceId,
+                                                       @PathVariable String workflowId,
+                                                       @Valid @RequestBody SheetWritePreviewRequest request) {
+        return service.previewSheetWrite(workspaceId, workflowId, request);
+    }
+
 }

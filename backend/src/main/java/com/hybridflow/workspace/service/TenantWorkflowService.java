@@ -7,6 +7,8 @@ import com.hybridflow.sync.model.NotificationOutboxItem;
 import com.hybridflow.workspace.dto.request.CreateWorkflowRequest;
 import com.hybridflow.workspace.dto.request.GrantWorkflowPermissionRequest;
 import com.hybridflow.workspace.dto.request.SaveWorkflowRequest;
+import com.hybridflow.workspace.dto.request.SheetWritePreviewRequest;
+import com.hybridflow.workspace.dto.response.SheetWritePreviewResponse;
 import com.hybridflow.workspace.dto.response.TenantWorkflowResponse;
 import com.hybridflow.workspace.dto.response.WorkflowPermissionResponse;
 
@@ -34,4 +36,5 @@ public interface TenantWorkflowService {
     void clearExecutions(UUID workspaceId, String workflowId);
     List<SyncConflict> conflicts(UUID workspaceId, String workflowId, String contextId);
     SyncConflict resolveConflict(UUID workspaceId, String workflowId, String contextId, Long conflictId, ResolveConflictRequest request);
+    SheetWritePreviewResponse previewSheetWrite(UUID workspaceId, String workflowId, SheetWritePreviewRequest request);
 }

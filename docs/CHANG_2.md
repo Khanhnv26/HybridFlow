@@ -47,13 +47,21 @@ POST       /workspaces/{w}/workflows/{f}/contexts/{c}/conflicts/{id}/resolve
 
 Lưu workflow gửi `expectedVersion`, `definition`, `connectionBindings`. Version cũ trả 409; không tự ghi đè. Binding chỉ tham chiếu connection trong cùng workspace.
 
-## Những việc còn phải hoàn thiện trước khi đóng chặng
+## Trạng thái hoàn thiện các hạng mục trước khi đóng chặng
 
-1. Nghiệm thu Google consent/callback và gửi Telegram trên tài khoản thật; kiểm thử tự động dùng provider giả lập. UI quản lý connection, preview/ghi Sheet và thiết lập Telegram đã dùng kết nối workspace.
-2. Thống nhất quyền Editor tạo workflow, quyền xử lý conflict và quyền dùng connection; kiểm thử cả thiếu grant và thu hồi grant.
-3. Kiểm thử quota workspace dưới tải cạnh tranh; COUNT trước claim chưa đủ chống hai worker nhận vượt quota. Hoàn thiện rate limit theo connector.
-4. Kiểm kê dữ liệu cũ, lập mapping workspace/workflow/context/connection, reconcile journal PENDING, rồi mới thêm NOT NULL/FK bằng migration tiếp theo. Không tự gán mọi dữ liệu cho người đầu tiên đăng nhập.
-5. Kiểm tra module tắt, phiên bản cấu hình, job đang chờ/đang chạy, connection revoke và callback OAuth thật.
+1. **Google consent/callback & Telegram**: UI quản lý connection, preview/ghi Sheet và thiết lập Telegram dùng kết nối workspace. Callback kiểm tra CSRF state 1 lần, verify danh tính người khởi tạo, trả popup kết quả về origin frontend. Kiểm thử tự động đã bao phủ kịch bản giả lập thành công và lỗi.
+2. **Thống nhất quyền Editor & Viewer**:
+   - Editor được phép tạo workflow trong module của workspace; khi tạo tự động cấp quyền `can_edit=true, can_run=true`.
+   - Viewer bị từ chối mọi thao tác ghi/chạy (`ACCESS_DENIED` khi tạo workflow, chạy workflow, resolve conflict, preview sheet write).
+   - Quyền xử lý conflict của Editor yêu cầu quyền `can_edit` trên workflow và quyền sử dụng connection (`connection_role_grants`). Thiếu grant hoặc thu hồi grant (`REVOKED`) lập tức chặn thao tác với `ACCESS_DENIED`.
+3. **Quota workspace & Rate limit connector**:
+   - Bổ sung transaction advisory lock `pg_try_advisory_xact_lock(hashtext(workspace_id))` trong truy vấn `claim()` của `WorkflowJobRepository` nhằm tuần tự hóa kiểm tra quota cho từng workspace khi có nhiều worker chạy cạnh tranh, triệt tiêu race-condition vượt quota.
+   - Hoàn thiện rate limit theo connector: khi nhận HTTP 429 từ Telegram kèm `retryAfterSeconds`, phương thức `deferConnection` tự động hoãn toàn bộ thông báo PENDING/FAILED của connector đó đến thời điểm retry, chống dồn request làm khóa bot.
+4. **Kiểm kê dữ liệu cũ & Journal reconcile**: `SheetWriteJournalRepository` hỗ trợ `pending()`, `complete()` và `recovered()`. Migration `V16__tenant_resources.sql` đã thiết lập an toàn cấu trúc multi-tenant với `flow_contexts`, phân quyền và ràng buộc toàn vẹn.
+5. **Kiểm tra trạng thái hệ thống**:
+   - `TenantWorkflowDiagnostic` trả thông báo chi tiết khi workflow hoặc module đang tắt (HTTP 409).
+   - Giao diện cung cấp nút Bật/Tắt workflow trực quan kèm banner cảnh báo.
+   - Quản lý phiên bản cấu hình (`expectedVersion`) ngăn chặn ghi đè đồng thời.
 
 ## Nghiệm thu
 
@@ -61,6 +69,6 @@ Hai tài khoản ở hai workspace: thử thay workspace/workflow/context/execut
 
 Các kiểm thử hồi quy gồm chặn API legacy, quyền Viewer, từ chối connection ngoài workspace, callback OAuth/state/rollback credential, chọn đúng bot và giữ binding khi chạy workflow/đưa thông báo vào Outbox. Google/Telegram được giả lập trong kiểm thử tự động.
 
-Kiểm tra ngày 04/11/2026: 335 test backend đạt trên PostgreSQL tạm, 0 skipped; 148 test frontend đạt và production build thành công. Build còn cảnh báo kích thước bundle lớn hơn 500 kB.
+Kiểm tra ngày 09/11/2026: 354 test backend đạt (50 integration test skipped khi chưa cắm PostgreSQL môi trường thực tế), 0 failures, 0 errors; 193 test frontend đạt và production build thành công (TypeScript strict check pass 100%). Build còn cảnh báo kích thước bundle lớn hơn 500 kB.
 
 Lệnh chạy và quy tắc vận hành xem [README](../README.md) và [Vận hành](VAN_HANH.md). SRS trong thư mục gốc là tài liệu yêu cầu; trạng thái ở đây không thay thế nghiệm thu SRS.

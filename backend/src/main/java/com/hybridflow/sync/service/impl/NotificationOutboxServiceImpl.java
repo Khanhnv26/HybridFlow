@@ -162,7 +162,11 @@ public class NotificationOutboxServiceImpl implements NotificationOutboxService 
         if (result.isSuccess()) {
             repository.markSent(item.getId(), item.getOwner(), now);
         } else if (result.getRetryAfterSeconds() > 0) {
-            repository.deferRateLimited(item.getId(), item.getOwner(), result.getError(), now.plusSeconds(result.getRetryAfterSeconds()));
+            Instant next = now.plusSeconds(result.getRetryAfterSeconds());
+            repository.deferRateLimited(item.getId(), item.getOwner(), result.getError(), next);
+            if (item.getConnectionId() != null) {
+                repository.deferConnection(item.getConnectionId(), next);
+            }
         } else {
             boolean dead = !result.isRetryable() || item.getAttempts() >= MAX_ATTEMPTS;
             long delay = BACKOFF_SECONDS[Math.max(0, Math.min(item.getAttempts() - 1, BACKOFF_SECONDS.length - 1))];

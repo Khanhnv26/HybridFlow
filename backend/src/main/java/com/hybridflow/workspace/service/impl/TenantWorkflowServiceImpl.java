@@ -7,20 +7,22 @@ import com.hybridflow.common.exception.ApplicationException;
 import com.hybridflow.common.exception.ErrorCode;
 import com.hybridflow.common.exception.ValidationException;
 import com.hybridflow.connection.service.GoogleCredentialService;
+import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
+import com.hybridflow.connector.google.dto.response.SheetDataResponse;
+import com.hybridflow.connector.google.service.GoogleSheetsService;
 import com.hybridflow.sync.dto.request.ResolveConflictRequest;
 import com.hybridflow.sync.dto.request.RunSyncRequest;
 import com.hybridflow.sync.dto.response.RunSyncResponse;
 import com.hybridflow.sync.entity.SyncConflict;
 import com.hybridflow.sync.model.NotificationOutboxItem;
 import com.hybridflow.sync.model.ParsedSchedule;
+import com.hybridflow.sync.model.SheetWritePlan;
 import com.hybridflow.sync.service.SyncConflictService;
 import com.hybridflow.sync.service.SyncExecutionService;
 import com.hybridflow.sync.service.SyncStateService;
 import com.hybridflow.sync.support.WorkflowGraphParser;
-import com.hybridflow.workspace.dto.request.ConnectionBindingItem;
-import com.hybridflow.workspace.dto.request.CreateWorkflowRequest;
-import com.hybridflow.workspace.dto.request.GrantWorkflowPermissionRequest;
-import com.hybridflow.workspace.dto.request.SaveWorkflowRequest;
+import com.hybridflow.workspace.dto.request.*;
+import com.hybridflow.workspace.dto.response.SheetWritePreviewResponse;
 import com.hybridflow.workspace.dto.response.TenantWorkflowResponse;
 import com.hybridflow.workspace.dto.response.WorkflowPermissionResponse;
 import com.hybridflow.workspace.model.TenantWorkflowRow;
@@ -34,6 +36,7 @@ import com.hybridflow.workspace.service.TenantRunPlanService;
 import com.hybridflow.workspace.service.TenantWorkflowService;
 import com.hybridflow.workspace.service.WorkflowAccessService;
 import com.hybridflow.workspace.service.WorkspaceAccessService;
+import com.hybridflow.workspace.support.SheetWritePlanner;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -65,17 +68,25 @@ public class TenantWorkflowServiceImpl implements TenantWorkflowService {
     private final Clock clock;
     private final ObjectMapper mapper;
     private final SyncStateService syncState;
+    private final GoogleSheetsService googleSheetsService;
+    private final SheetWritePlanner sheetWritePlanner;
 
     @Override
     @Transactional
     public TenantWorkflowResponse create(UUID workspaceId, CreateWorkflowRequest request) {
-        workspaces.requireManager(workspaceId);
+        WorkspaceRole callerRole = workspaces.requireMember(workspaceId);
+        if (callerRole == WorkspaceRole.VIEWER) {
+            throw new ApplicationException(ErrorCode.ACCESS_DENIED);
+        }
         if (modules.find(workspaceId, request.getModuleId()).isEmpty()) {
             throw new ApplicationException(ErrorCode.RESOURCE_NOT_FOUND);
         }
         String workflowId = UUID.randomUUID().toString();
         String defaultDefinition = "{\"nodes\":[],\"edges\":[]}";
         workflows.insertWorkflow(workspaceId, request.getModuleId(), workflowId, request.getName().trim(), defaultDefinition, true);
+        if (callerRole == WorkspaceRole.EDITOR) {
+            workflows.upsertPermission(workspaceId, workflowId, currentUser.requireUserId(), true, true);
+        }
         audit.append(workspaceId, currentUser.requireUserId(), "WORKFLOW_CREATED", workflowId);
         return get(workspaceId, workflowId);
     }
@@ -359,8 +370,39 @@ public class TenantWorkflowServiceImpl implements TenantWorkflowService {
         return resolved;
     }
 
+    @Override
+    @Transactional(readOnly = true)
+    public SheetWritePreviewResponse previewSheetWrite(UUID workspaceId, String workflowId, SheetWritePreviewRequest request) {
+        access.requireRead(workspaceId, workflowId);
+        String accessToken = googleAccessForWorkflow(workspaceId, workflowId);
+
+        SheetDataResponse sourceSheet = googleSheetsService.readSheet(ReadSheetRequest.builder()
+                .accessToken(accessToken)
+                .spreadsheetId(request.getSourceSpreadSheetId().trim())
+                .sheetName(request.getSourceSheetName().trim())
+                .build());
+
+        SheetDataResponse targetSheet = googleSheetsService.readSheet(ReadSheetRequest.builder()
+                .accessToken(accessToken)
+                .spreadsheetId(request.getTargetSpreadSheetId().trim())
+                .sheetName(request.getTargetSheetName().trim())
+                .build());
+
+        return sheetWritePlanner.plan(
+                sourceSheet.getRows(),
+                sourceSheet.getHeaders(),
+                targetSheet,
+                request.getSourceKeyColumn().trim(),
+                request.getTargetKeyColumn().trim(),
+                request.getColumnMappings()
+        );
+    }
+
     private String googleAccessForWorkflow(UUID workspaceId, String workflowId) {
         WorkspaceRole role = workspaces.requireMember(workspaceId);
+        if (role == WorkspaceRole.VIEWER) {
+            throw new ApplicationException(ErrorCode.ACCESS_DENIED);
+        }
         String reference = null;
         for (ConnectionBindingItem binding : workflows.findBindings(workspaceId, workflowId)) {
             if (role == WorkspaceRole.EDITOR && !connections.hasEditorGrant(workspaceId, binding.getConnectionId())) {

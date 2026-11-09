@@ -3,7 +3,6 @@ package com.hybridflow.workspace.dto.response;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
-import lombok.Setter;
 
 import java.util.List;
 
@@ -18,9 +17,9 @@ public class SheetWritePreviewResponse {
     private final List<Integer> missingSourceKeyRows;
     private final List<DuplicateKeyItem> duplicateTargetKeys;
 
-    @AllArgsConstructor
     @Getter
-    @Setter
+    @Builder
+    @AllArgsConstructor
     public static class CellChangePreview {
         private final String key;
         private final int targetRowNumber;
@@ -31,9 +30,9 @@ public class SheetWritePreviewResponse {
         private final String newValue;
     }
 
-    @AllArgsConstructor
-    @Setter
     @Getter
+    @Builder
+    @AllArgsConstructor
     public static class UnmatchedRowItem {
         private final String key;
         private final int sourceRowNumber;

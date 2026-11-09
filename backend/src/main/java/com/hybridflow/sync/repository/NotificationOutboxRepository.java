@@ -142,6 +142,15 @@ public class NotificationOutboxRepository {
                 """, error, Timestamp.from(nextAvailable), id, owner);
     }
 
+    public void deferConnection(String connectionId, Instant nextAvailable) {
+        if (connectionId == null || connectionId.isBlank()) return;
+        jdbc.update("""
+                UPDATE notification_outbox
+                SET available_at = GREATEST(available_at, ?)
+                WHERE connection_id = ? AND state IN ('PENDING', 'FAILED')
+                """, Timestamp.from(nextAvailable), connectionId);
+    }
+
     public List<NotificationOutboxItem> findByFlowId(String flowId, String executionId, int limit) {
         return findByFlowId(flowId, executionId, limit, 0);
     }

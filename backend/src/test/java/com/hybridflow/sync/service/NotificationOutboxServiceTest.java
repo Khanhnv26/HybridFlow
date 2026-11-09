@@ -151,6 +151,19 @@ class NotificationOutboxServiceTest {
         verify(repository, never()).markFailed(any(), any(), any(), any(), anyBoolean());
     }
 
+    @Test void rateLimitingDefersAllPendingItemsForSameConnection() {
+        NotificationOutboxItem item = NotificationOutboxItem.builder().id("n").owner("o").channel("TELEGRAM")
+                .destination("123").message("stored rendered message").attempts(1).connectionId("conn-telegram-1").build();
+        when(repository.claim(any(), eq(60), eq(5))).thenReturn(Optional.of(item));
+        when(sender.channel()).thenReturn("TELEGRAM");
+        when(sender.send("123", "stored rendered message")).thenReturn(TelegramDeliveryResult.builder().retryable(true).retryAfterSeconds(25).error("429").build());
+
+        service.processNext();
+
+        verify(repository).deferRateLimited(eq("n"), eq("o"), eq("429"), any());
+        verify(repository).deferConnection(eq("conn-telegram-1"), any());
+    }
+
     @Test void retriesServerErrorsAndMakesTheFifthFailureDead() {
         claimed(1, TelegramDeliveryResult.builder().retryable(true).error("500").build());
         Instant before = Instant.now(); service.processNext();

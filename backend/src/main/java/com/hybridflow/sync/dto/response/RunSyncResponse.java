@@ -29,4 +29,7 @@ public class RunSyncResponse {
     private int notificationsQueued;
     private boolean bootstrapRequired;
     private String sheetName;
+    private int targetCellsUpdated;
+    private int targetRowsUpdated;
+    private int targetRowsSkipped;
 }

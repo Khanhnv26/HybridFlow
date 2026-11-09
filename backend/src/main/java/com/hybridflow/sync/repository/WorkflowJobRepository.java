@@ -48,9 +48,12 @@ public class WorkflowJobRepository {
                         OR (j.state='RUNNING' AND j.lease_until <= ?))
                       AND (d.workspace_id IS NULL OR (d.enabled AND (d.module_id IS NULL OR m.enabled) AND (j.workspace_id IS NULL OR j.workspace_id = d.workspace_id)))
                       AND (j.workspace_id IS NULL OR (
-                          SELECT COUNT(*) FROM workflow_jobs active
-                          WHERE active.workspace_id = j.workspace_id AND active.state = 'RUNNING' AND active.lease_until > ?
-                      ) < 2)
+                          pg_try_advisory_xact_lock(hashtext(j.workspace_id::text))
+                          AND (
+                              SELECT COUNT(*) FROM workflow_jobs active
+                              WHERE active.workspace_id = j.workspace_id AND active.state = 'RUNNING' AND active.lease_until > ?
+                          ) < 2
+                      ))
                     ORDER BY j.available_at LIMIT 1 FOR UPDATE OF j,d SKIP LOCKED
                 )
                 UPDATE workflow_jobs j SET state='RUNNING',owner=?,lease_until=?,attempts=attempts+1

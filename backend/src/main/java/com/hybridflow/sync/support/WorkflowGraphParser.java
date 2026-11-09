@@ -15,6 +15,7 @@ import com.hybridflow.sync.dto.request.RunSyncRequest;
 import com.hybridflow.sync.dto.request.SheetEndpointRequest;
 import com.hybridflow.sync.model.ParsedSchedule;
 import com.hybridflow.sync.util.RuleOperators;
+import com.hybridflow.workspace.dto.request.SheetWritePreviewRequest;
 import org.springframework.stereotype.Component;
 
 import java.security.MessageDigest;
@@ -122,7 +123,7 @@ public class WorkflowGraphParser {
         JsonNode nodes = definition.path("nodes");
         JsonNode edges = definition.path("edges");
         if (!nodes.isArray() || !edges.isArray()) throw new ValidationException("Cấu hình luồng không hợp lệ.");
-        Set<String> supported = Set.of("sheetsTrigger", "scheduleTrigger", "diffEngine", "storageAction", "telegramAction", "routerCondition");
+        Set<String> supported = Set.of("sheetsTrigger", "scheduleTrigger", "diffEngine", "storageAction", "telegramAction", "routerCondition", "sheetWriteAction");
         Set<String> ids = new LinkedHashSet<>();
         for (JsonNode node : nodes) {
             if (!supported.contains(node.path("type").asText()) || node.path("id").asText().isBlank()
@@ -190,13 +191,29 @@ public class WorkflowGraphParser {
         boolean multi = connectedSheets.size() >= 2;
         if (!diffData.path("sharedColumns").asText("").isBlank() && syncColumns.isEmpty())
             throw new ValidationException("Chọn ít nhất một cột dữ liệu ngoài cột khóa.");
+
         Set<String> endpoints = new LinkedHashSet<>();
         for (SheetEndpointRequest sheet : connectedSheets) {
             if (!endpoints.add(sheet.getSpreadsheetId() + "\n" + sheet.getSheetName()))
                 throw new ValidationException("Không được nối hai khối vào cùng file và trang tính.");
         }
+
         if (multi && (storageNode != null || syncColumns.isEmpty()))
             throw new ValidationException("Luồng nhiều Sheet cần chọn cột chia sẻ và không có khối Kho.");
+        JsonNode sheetWriteNode = findFirstByType(nodes, "sheetWriteAction");
+
+        if(count(nodes, "sheetWriteAction") > 1)
+            throw new ValidationException("Chỉ hỗ trợ một khối Ghi Sheet trong mỗi luồng.");
+
+        if(sheetWriteNode != null) {
+            if(hasEdge(edges, diffId, "clean", sheetWriteNode.path("id").asText(), "in")) {
+                String targetSpreadsheetId = sheetWriteNode.path("data").path("spreadsheetId").asText("").trim();
+                String targetSheetName = sheetWriteNode.path("data").path("sheetName").asText("").trim();
+                List<SheetWritePreviewRequest.ColumnMappingItem> columnMappings = sheetWriteNode.path("data").path("columnMappings").isArray() ? new ArrayList<>() : null;
+
+            }
+        }
+
         if (!multi && (count(nodes, "storageAction") != 1 || storageName.isBlank()
                 || !hasEdge(edges, connectedSheets.get(0).getNodeId(), "out", diffId, "in")
                 || !hasEdge(edges, diffId, "clean", storageNode.path("id").asText(), "in")))
