@@ -36,6 +36,7 @@ interface Props {
   sourceSpreadsheetId?: string;
   sourceSheetName?: string;
   sourceConnectionId?: string;
+  sheetWriteInput?: { id: string; label: string };
   defaultKeyColumn?: string;
   onPreviewSheetWrite?: (request: SheetWritePreviewRequest, signal?: AbortSignal) => Promise<SheetWritePreviewResponse>;
   onApplySheetWrite?: (previewToken: string) => Promise<void>;
@@ -80,6 +81,7 @@ export function NaturalLanguageConfigModal(props: Props) {
       sourceSpreadsheetId={sourceSpreadsheetId}
       sourceSheetName={sourceSheetName}
       sourceConnectionId={props.sourceConnectionId}
+      upstream={props.sheetWriteInput}
       defaultKeyColumn={defaultKey}
       onClose={onClose}
       onSave={settings => props.onSaveSource(node.id, settings)}

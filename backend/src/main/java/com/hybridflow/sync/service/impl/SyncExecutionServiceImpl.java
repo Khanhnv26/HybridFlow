@@ -337,8 +337,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             }
         }
         List<String> clean = new ArrayList<>();
-        List<Map<String, String>> resolvedRows = new ArrayList<>();
-        Map<Integer, Integer> sourceRowNumbers = new LinkedHashMap<>();
+        Map<String, Map<String, String>> resolvedRows = new LinkedHashMap<>();
         List<SyncConflict> detected = new ArrayList<>();
         List<RecordChangeEvent> recordEvents = new ArrayList<>();
 
@@ -352,8 +351,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
                 vaultWrites.put(id, new LinkedHashMap<>(rowA));
                 snapshotWrites.put(id, new LinkedHashMap<>(rowA));
                 clean.add(id);
-                sourceRowNumbers.put(resolvedRows.size(), entry.getValue() + 2);
-                resolvedRows.add(rowA);
+                resolvedRows.put(id, rowA);
                 if (!initial) {
                     recordEvents.add(RecordChangeEvent.builder()
                             .recordId(id)
@@ -397,8 +395,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
                 clean.add(id);
                 Map<String, String> resolved = new LinkedHashMap<>(rowA);
                 resolved.putAll(updatesA);
-                sourceRowNumbers.put(resolvedRows.size(), entry.getValue() + 2);
-                resolvedRows.add(resolved);
+                resolvedRows.put(id, resolved);
             }
             if (!initial) addRecordEvent(recordEvents, id, base, checkpoint, columns, unresolved);
         }
@@ -425,43 +422,72 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         int targetRowsUpdated = 0;
         int targetRowsSkipped = 0;
         if (target != null) {
-            SheetDataResponse liveTarget = googleSheetsService.readSheet(ReadSheetRequest.builder()
-                    .accessToken(request.getAccessToken())
-                    .spreadsheetId(target.getTargetSpreadSheetId())
-                    .sheetname(target.getTargetSheetName())
-                    .build());
-            if (request.getSpreadsheetId().equals(target.getTargetSpreadSheetId())
-                    && sheet.getSheetName().equals(liveTarget.getSheetName())) {
-                throw new ValidationException("Khối Ghi về bảng tính cần dùng tab khác tab nguồn.");
+            RouterPlan router = request.getRouters() == null ? null : request.getRouters().stream()
+                    .filter(candidate -> target.getNodeId() != null && target.getNodeId().equals(candidate.getSheetWriteNodeId()))
+                    .findFirst().orElse(null);
+            Set<String> matchedIds = new LinkedHashSet<>();
+            if (router == null) {
+                matchedIds.addAll(resolvedRows.keySet());
+            } else {
+                phase(request, executionId, "router:" + router.getNodeId(), "ROUTE", "Đang lọc dòng ghi về bảng tính");
+                for (RecordChangeEvent event : recordEvents) {
+                    if (resolvedRows.containsKey(event.getRecordId()) && ruleEvaluationService.matches(router, event))
+                        matchedIds.add(event.getRecordId());
+                }
             }
-            SheetWritePreviewResponse preview = sheetWritePlanner.plan(resolvedRows, sheet.getHeaders(), liveTarget,
-                    target.getSourceKeyColumn(), target.getTargetKeyColumn(), target.getColumnMappings(), sourceRowNumbers);
+            List<Map<String, String>> rowsToWrite = new ArrayList<>();
+            Map<Integer, Integer> sourceRowNumbers = new LinkedHashMap<>();
+            for (String id : matchedIds) {
+                sourceRowNumbers.put(rowsToWrite.size(), index.get(id) + 2);
+                rowsToWrite.add(resolvedRows.get(id));
+            }
+            SheetWritePreviewResponse preview;
+            if (router != null && rowsToWrite.isEmpty()) {
+                preview = SheetWritePreviewResponse.builder().valid(true).matchedRows(0)
+                        .changes(List.of()).errors(List.of()).unmatchedRows(List.of())
+                        .missingSourceKeyRows(List.of()).duplicateTargetKeys(List.of()).build();
+            } else {
+                SheetDataResponse liveTarget = googleSheetsService.readSheet(ReadSheetRequest.builder()
+                        .accessToken(request.getAccessToken())
+                        .spreadsheetId(target.getTargetSpreadSheetId())
+                        .sheetname(target.getTargetSheetName())
+                        .build());
+                if (request.getSpreadsheetId().equals(target.getTargetSpreadSheetId())
+                        && sheet.getSheetName().equals(liveTarget.getSheetName())) {
+                    throw new ValidationException("Khối Ghi về bảng tính cần dùng tab khác tab nguồn.");
+                }
+                preview = sheetWritePlanner.plan(rowsToWrite, sheet.getHeaders(), liveTarget,
+                        target.getSourceKeyColumn(), target.getTargetKeyColumn(), target.getColumnMappings(), sourceRowNumbers);
+                if (router != null) preview = preview.toBuilder().matchedRows(rowsToWrite.size()).build();
+                List<SheetCellChange> targetChanges = preview.getChanges().stream()
+                        .map(cell -> new SheetCellChange(cell.getTargetRowIndex(), cell.getTargetColumn(),
+                                liveTarget.getRows().get(cell.getTargetRowIndex()).get(target.getTargetKeyColumn()),
+                                cell.getCurrentValue(), cell.getNewValue()))
+                        .toList();
+                plans.add(new SheetWritePlan(target.getTargetSpreadSheetId(), liveTarget.getSheetName(),
+                        target.getTargetKeyColumn(), liveTarget.getHeaders(), targetChanges, Map.of()));
+            }
             if (!preview.isValid()) {
                 if (previewOnly) return new SheetToVaultResult(null, preview);
                 if (request.getSheetWritePreviewToken() != null) throw stalePreview();
                 throw new ValidationException(String.join("; ", preview.getErrors()));
             }
 
-            List<SheetCellChange> targetChanges = preview.getChanges().stream()
-                    .map(cell -> new SheetCellChange(cell.getTargetRowIndex(), cell.getTargetColumn(),
-                            liveTarget.getRows().get(cell.getTargetRowIndex()).get(target.getTargetKeyColumn()),
-                            cell.getCurrentValue(), cell.getNewValue()))
-                    .toList();
-            plans.add(new SheetWritePlan(target.getTargetSpreadSheetId(), liveTarget.getSheetName(),
-                    target.getTargetKeyColumn(), liveTarget.getHeaders(), targetChanges, Map.of()));
-
             if (previewOnly || request.getSheetWritePreviewToken() != null) {
-                String fingerprint = codec.encode(List.of(flow, request.getAccessToken(), request.getConflictPolicy(), target.getSourceKeyColumn(),
-                        target.getColumnMappings(), plans, preview.getUnmatchedRows(), preview.getMissingSourceKeyRows()));
+                String fingerprint = codec.encode(List.of(flow, request.getAccessToken(), request.getConflictPolicy(), target,
+                        router == null ? List.of() : List.of(router), matchedIds, plans,
+                        preview.getUnmatchedRows(), preview.getMissingSourceKeyRows()));
                 String token = FlowContextIds.scoped(request.getWorkspaceId(), request.getWorkflowId(), fingerprint);
                 if (previewOnly) return new SheetToVaultResult(null, preview.toBuilder().previewToken(token).build());
                 if (!token.equals(request.getSheetWritePreviewToken())) throw stalePreview();
             }
 
-            targetCellsUpdated = targetChanges.size();
-            targetRowsUpdated = (int) targetChanges.stream().map(SheetCellChange::getRowIndex).distinct().count();
+            targetCellsUpdated = preview.getChanges().size();
+            targetRowsUpdated = (int) preview.getChanges().stream()
+                    .map(SheetWritePreviewResponse.CellChangePreview::getTargetRowIndex).distinct().count();
             targetRowsSkipped = preview.getUnmatchedRows().size() + preview.getMissingSourceKeyRows().size();
-            phase(request, executionId, "sheetWrite", "WRITE", "Đang ghi về bảng tính đích");
+            if (router == null || !matchedIds.isEmpty())
+                phase(request, executionId, "sheetWrite", "WRITE", "Đang ghi về bảng tính đích");
         }
         store.bind(flow, request.getSpreadsheetId(), sheet.getSheetName(), idColumn, sheet.getHeaders(), request.getStorageName());
         writes.apply(request.getAccessToken(), plans);
@@ -541,8 +567,10 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
     private int enqueueNotifications(RunSyncRequest request, String flow, String executionId,
                                      List<RecordChangeEvent> events, Set<String> columns, List<SyncConflict> conflicts) {
         if (request.getRouters() != null && !events.isEmpty()) {
-            for (RouterPlan router : request.getRouters())
-                phase(request, executionId, "router:" + router.getNodeId(), "ROUTE", "Đang kiểm tra điều kiện rẽ nhánh");
+            for (RouterPlan router : request.getRouters()) {
+                if (router.getSheetWriteNodeId() == null)
+                    phase(request, executionId, "router:" + router.getNodeId(), "ROUTE", "Đang kiểm tra điều kiện rẽ nhánh");
+            }
         }
         for (RecordChangeEvent event : events) {
             event.setRevision(store.getSnapshotRevision(flow, event.getRecordId()));

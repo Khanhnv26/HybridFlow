@@ -12,6 +12,7 @@ import java.util.List;
 public class SheetWritePreviewResponse {
     private final boolean valid;
     private final String previewToken;
+    private final Integer matchedRows;
     private final List<String> errors;
     private final List<CellChangePreview> changes;
     private final List<UnmatchedRowItem> unmatchedRows;

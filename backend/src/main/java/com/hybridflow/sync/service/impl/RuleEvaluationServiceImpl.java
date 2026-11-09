@@ -43,8 +43,10 @@ public class RuleEvaluationServiceImpl implements RuleEvaluationService {
             if (action.getChannel() != null && !"TELEGRAM".equals(action.getChannel())) throw new ValidationException("Kênh thông báo không hợp lệ.");
         }
         for (RouterPlan router : routers) {
-            if (router.getActionNodeIds() == null || router.getActionNodeIds().isEmpty()
-                    || !actionIds.containsAll(router.getActionNodeIds())) throw new ValidationException("Rẽ nhánh cần đích thông báo hợp lệ.");
+            List<String> notificationTargets = router.getActionNodeIds() == null ? List.of() : router.getActionNodeIds();
+            if (!actionIds.containsAll(notificationTargets)
+                    || (notificationTargets.isEmpty() && router.getSheetWriteNodeId() == null))
+                throw new ValidationException("Rẽ nhánh cần đích Telegram hoặc Ghi về bảng tính hợp lệ.");
             String triggerOn = router.getTriggerOn() == null ? "CHANGED" : router.getTriggerOn();
             if (!ALLOWED_TRIGGERS.contains(triggerOn)) {
                 throw new ValidationException("Điều kiện kích hoạt KHI không hợp lệ: " + triggerOn);

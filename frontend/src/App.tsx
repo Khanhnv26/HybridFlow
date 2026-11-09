@@ -608,8 +608,23 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
     [tableSource, tableState.data, nodes, token, workspaceId, fetchData, showToast],
   );
   const onConnect = useCallback(
-    (connection: Connection) => setEdges((items) => addEdge(connection, items)),
-    [setEdges],
+    (connection: Connection) => {
+      if (nodes.some(node => node.id === connection.target && node.type === 'sheetWriteAction')) {
+        const sourceType = nodes.find(node => node.id === connection.source)?.type;
+        const fromDiff = sourceType === 'diffEngine' && connection.sourceHandle === 'clean';
+        const fromRouter = sourceType === 'routerCondition' && connection.sourceHandle === 'out';
+        if (connection.targetHandle !== 'in' || (!fromDiff && !fromRouter)) {
+          showToast('Nối cổng Hành động của So khớp hoặc đầu ra Rẽ nhánh vào khối Ghi về bảng tính.');
+          return;
+        }
+        if (edges.some(edge => edge.target === connection.target)) {
+          showToast('Khối Ghi về bảng tính chỉ nhận một dây vào. Hãy gỡ dây cũ để đổi nhánh.');
+          return;
+        }
+      }
+      setEdges(items => addEdge(connection, items));
+    },
+    [edges, nodes, setEdges, showToast],
   );
   const pendingExecution = manualRunning && latestExecution?.id === manualBaseline;
   const recentlyCompleted = useExecutionCompletion(flowId, latestExecution, observedRunData.current?.flowId === flowId);
@@ -712,6 +727,15 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
     if (fitCanvas.current) requestAnimationFrame(() => requestAnimationFrame(() => fitCanvas.current?.()));
   };
   const activeNode = nodes.find((n) => n.id === activeNodeId) || null;
+  const sheetWriteInputs = activeNode?.type === 'sheetWriteAction'
+    ? edges.filter(edge => edge.target === activeNode.id)
+    : [];
+  const sheetWriteEdge = sheetWriteInputs.length === 1 ? sheetWriteInputs[0] : undefined;
+  const sheetWriteInput = sheetWriteEdge?.targetHandle === 'in'
+    ? nodes.find(node => node.id === sheetWriteEdge.source &&
+        (node.type === 'diffEngine' && sheetWriteEdge.sourceHandle === 'clean' ||
+         node.type === 'routerCondition' && sheetWriteEdge.sourceHandle === 'out'))
+    : undefined;
   const transformInputs = activeNode?.type === 'dataTransform'
     ? edges.filter(edge => edge.target === activeNode.id && edge.sourceHandle === 'out' && edge.targetHandle === 'in')
     : [];
@@ -1044,8 +1068,10 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
           idColumn={nodes.find(node => node.type === 'diffEngine')?.data.uniqueKey || 'id'}
           actionNames={edges.filter(edge => edge.source === activeNode.id && edge.sourceHandle === 'out')
             .map(edge => nodes.find(node => node.id === edge.target))
-            .filter((node): node is Node<OrchestrationNodeData> => !!node && node.type === 'telegramAction')
-            .map(node => node.data.telegramRecipientName || node.data.label || 'Telegram')}
+            .filter((node): node is Node<OrchestrationNodeData> => !!node && ['telegramAction', 'sheetWriteAction'].includes(node.type || ''))
+            .map(node => node.type === 'sheetWriteAction'
+              ? node.data.targetSheetName ? `Ghi về bảng tính · ${node.data.targetSheetName}` : 'Ghi về bảng tính'
+              : node.data.telegramRecipientName || node.data.label || 'Telegram')}
           reading={configReading}
           readErrors={configReadErrors}
           onRetryRead={() => setConfigReadRetry(value => value + 1)}
@@ -1086,6 +1112,10 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
         sourceSpreadsheetId={diffUpstreamSheets[0]?.data.spreadsheetId}
         sourceSheetName={diffUpstreamSheets[0]?.data.sheetName}
         sourceConnectionId={diffUpstreamSheets[0]?.data.connectionId}
+        sheetWriteInput={sheetWriteInput && {
+          id: sheetWriteInput.id,
+          label: sheetWriteInput.data.label || (sheetWriteInput.type === 'routerCondition' ? 'Rẽ nhánh điều kiện' : 'So khớp'),
+        }}
         defaultKeyColumn={nodes.find(node => node.type === 'diffEngine')?.data.uniqueKey || 'id'}
         onPreviewSheetWrite={tenant?.sync.previewSheetWrite}
         onApplySheetWrite={tenant ? previewToken => runWorkflow(true, previewToken) : undefined}

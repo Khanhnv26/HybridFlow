@@ -239,3 +239,25 @@ test('sheetWriteAction does not alter flowId so Vault snapshots remain stable', 
   const flowIdAfter = await flowIdFor(workflowConfig(withWrite.nodes, withWrite.edges));
   assert.equal(flowIdAfter, flowIdBefore, 'Flow ID must be preserved when adding sheet write action');
 });
+
+test('Rẽ nhánh can feed Sheet Write without Telegram, and the writer rejects two inputs', () => {
+  const { nodes, edges } = baseGraph();
+  nodes.push({
+    id: 'router', type: 'routerCondition',
+    data: { routerTriggerOn: 'UPDATED', routerConditions: [{ columnName: 'status', operator: 'CHANGED_TO', value: 'DELIVERED' }] },
+  }, {
+    id: 'writer', type: 'sheetWriteAction',
+    data: { targetSpreadsheetId: 'target', targetSheetName: 'Destination', targetKeyColumn: 'id',
+      columnMappings: [{ sourceColumn: 'status', targetColumn: 'status' }] },
+  });
+  edges.push(
+    { source: 'diff-1', sourceHandle: 'clean', target: 'router', targetHandle: 'in' },
+    { source: 'router', sourceHandle: 'out', target: 'writer', targetHandle: 'in' },
+  );
+  const plan = workflowConfig(nodes, edges);
+  assert.equal(plan.routers[0].sheetWriteNodeId, 'writer');
+  assert.deepEqual(plan.routers[0].actionNodeIds, []);
+  assert.equal(plan.sheetWriteTargetPlan.nodeId, 'writer');
+  edges.push({ source: 'diff-1', sourceHandle: 'clean', target: 'writer', targetHandle: 'in' });
+  assert.throws(() => workflowConfig(nodes, edges), /đúng một dây vào/);
+});

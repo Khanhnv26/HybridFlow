@@ -50,6 +50,8 @@ Lưu workflow gửi `expectedVersion`, `definition`, `connectionBindings`. Versi
 
 Sheet Write dùng kết nối Google của Sheet nguồn. Khi chạy thủ công, lưu cấu hình và gọi preview để lấy `previewToken`, rồi gửi mã đó trong header `X-Sheet-Write-Preview` của `POST .../run`. Backend trả `409 STATE_CONFLICT` nếu kế hoạch đã thay đổi. Lịch chạy tự lập kế hoạch ở mỗi lượt.
 
+Sheet Write nhận một đầu vào từ So khớp hoặc Rẽ nhánh. Với đầu vào Rẽ nhánh, cả preview lẫn lúc chạy dùng điều kiện Khi/Nếu trên các sự kiện đã đối soát. Request preview có thể gửi `upstreamNodeId` để kiểm tra dây nối đã lưu. Response `matchedRows` đếm dòng qua nhánh trước khi đối chiếu khóa đích.
+
 ## Trạng thái hoàn thiện các hạng mục trước khi đóng chặng
 
 1. **Google consent/callback & Telegram**: UI quản lý connection, preview/ghi Sheet và thiết lập Telegram dùng kết nối workspace. Callback kiểm tra CSRF state 1 lần, verify danh tính người khởi tạo, trả popup kết quả về origin frontend. Kiểm thử tự động đã bao phủ kịch bản giả lập thành công và lỗi.

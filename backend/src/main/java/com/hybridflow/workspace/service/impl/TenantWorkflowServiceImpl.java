@@ -12,7 +12,6 @@ import com.hybridflow.common.exception.ValidationException;
 import com.hybridflow.connection.service.GoogleCredentialService;
 import com.hybridflow.sync.dto.request.ResolveConflictRequest;
 import com.hybridflow.sync.dto.request.RunSyncRequest;
-import com.hybridflow.sync.dto.request.SheetWriteTargetPlan;
 import com.hybridflow.sync.dto.response.RunSyncResponse;
 import com.hybridflow.sync.entity.SyncConflict;
 import com.hybridflow.sync.model.NotificationOutboxItem;
@@ -396,36 +395,57 @@ public class TenantWorkflowServiceImpl implements TenantWorkflowService {
         JsonNode definition = readDefinition(row);
         Set<String> writeNodes = sheetWriteNodeIds(definition);
         String accessToken = googleAccessForWorkflow(workspaceId, workflowId, writeNodes);
-        if (definition instanceof ObjectNode draft && !writeNodes.isEmpty()) {
-            ArrayNode nodes = mapper.createArrayNode();
-            definition.path("nodes").forEach(node -> {
-                if (!writeNodes.contains(node.path("id").asText())) nodes.add(node);
-            });
-            ArrayNode edges = mapper.createArrayNode();
-            definition.path("edges").forEach(edge -> {
-                if (!writeNodes.contains(edge.path("source").asText())
-                        && !writeNodes.contains(edge.path("target").asText())) edges.add(edge);
-            });
-            draft.set("nodes", nodes);
-            draft.set("edges", edges);
-        }
+        applySheetWritePreviewDraft(definition, request);
         RunSyncRequest plan = planService.createPreviewPlan(workspaceId, workflowId, definition, accessToken);
         if ((plan.getSheets() != null && plan.getSheets().size() > 1)
                 || !Objects.equals(plan.getSpreadsheetId(), request.getSourceSpreadSheetId().trim())
                 || !Objects.equals(plan.getSheetName(), request.getSourceSheetName().trim())) {
             throw new ValidationException("Lưu luồng một Sheet nguồn trước khi xem trước khối Ghi về bảng tính.");
         }
-        plan.setSheetWriteTargetPlan(SheetWriteTargetPlan.builder()
-                .targetSpreadSheetId(request.getTargetSpreadSheetId().trim())
-                .targetSheetName(request.getTargetSheetName().trim())
-                .sourceKeyColumn(request.getSourceKeyColumn().trim())
-                .targetKeyColumn(request.getTargetKeyColumn().trim())
-                .columnMappings(request.getColumnMappings().stream()
-                        .map(mapping -> new SheetWritePreviewRequest.ColumnMappingItem(
-                                mapping.getSourceColumn().trim(), mapping.getTargetColumn().trim()))
-                        .toList())
-                .build());
         return syncExecutionService.previewSheetWrite(plan);
+    }
+
+    private void applySheetWritePreviewDraft(JsonNode definition, SheetWritePreviewRequest request) {
+        if (!(definition.path("nodes") instanceof ArrayNode nodes) || !(definition.path("edges") instanceof ArrayNode edges)) {
+            throw new ValidationException("Lưu cấu hình luồng trước khi xem trước.");
+        }
+        ObjectNode writer = null;
+        String diffId = null;
+        for (JsonNode node : nodes) {
+            String type = node.path("type").asText();
+            if ("diffEngine".equals(type)) diffId = node.path("id").asText();
+            if ("sheetWriteAction".equals(type) && node instanceof ObjectNode action) writer = action;
+        }
+
+        String expectedSource = request.getUpstreamNodeId();
+        if (writer == null) {
+            if (diffId == null || (expectedSource != null && !expectedSource.equals(diffId))) {
+                throw new ValidationException("Lưu dây nối vào khối Ghi về bảng tính trước khi xem trước.");
+            }
+            String writerId = UUID.randomUUID().toString();
+            writer = nodes.addObject().put("id", writerId).put("type", "sheetWriteAction");
+            edges.addObject().put("source", diffId).put("sourceHandle", "clean")
+                    .put("target", writerId).put("targetHandle", "in");
+        } else if (expectedSource != null) {
+            boolean matchesSavedInput = false;
+            for (JsonNode edge : edges) {
+                if (writer.path("id").asText().equals(edge.path("target").asText())
+                        && expectedSource.equals(edge.path("source").asText())) {
+                    matchesSavedInput = true;
+                    break;
+                }
+            }
+            if (!matchesSavedInput) {
+                throw new ValidationException("Lưu dây nối vào khối Ghi về bảng tính trước khi xem trước.");
+            }
+        }
+        ObjectNode settings = mapper.createObjectNode()
+                .put("targetSpreadsheetId", request.getTargetSpreadSheetId())
+                .put("targetSheetName", request.getTargetSheetName())
+                .put("sourceKeyColumn", request.getSourceKeyColumn())
+                .put("targetKeyColumn", request.getTargetKeyColumn());
+        settings.set("columnMappings", mapper.valueToTree(request.getColumnMappings()));
+        writer.set("data", settings);
     }
 
     private JsonNode readDefinition(TenantWorkflowRow row) {

@@ -19,4 +19,5 @@ public class RouterPlan {
     private String matchMode;
     private List<RouterConditionItem> conditions;
     private List<String> actionNodeIds;
+    private String sheetWriteNodeId;
 }

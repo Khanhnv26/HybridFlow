@@ -14,6 +14,7 @@ import java.util.List;
 @AllArgsConstructor
 @Builder
 public class SheetWritePreviewRequest {
+    private String upstreamNodeId;
     @NotBlank
     private String sourceSpreadSheetId;
     @NotBlank

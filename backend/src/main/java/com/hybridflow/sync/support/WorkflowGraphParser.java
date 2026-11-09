@@ -202,6 +202,8 @@ public class WorkflowGraphParser {
         if (multi && (storageNode != null || syncColumns.isEmpty()))
             throw new ValidationException("Luồng nhiều Sheet cần chọn cột chia sẻ và không có khối Kho.");
         JsonNode sheetWriteNode = findFirstByType(nodes, "sheetWriteAction");
+        String sheetWriteId = sheetWriteNode == null ? null : sheetWriteNode.path("id").asText();
+        String sheetWriteRouterId = null;
 
         if (count(nodes, "sheetWriteAction") > 1)
             throw new ValidationException("Chỉ hỗ trợ một khối Ghi Sheet trong mỗi luồng.");
@@ -209,10 +211,23 @@ public class WorkflowGraphParser {
         SheetWriteTargetPlan sheetWriteTargetPlan = null;
         if (sheetWriteNode != null) {
             if (multi) throw new ValidationException("Khối Ghi về bảng tính cần luồng một Sheet nguồn và Kho.");
-            String swId = sheetWriteNode.path("id").asText();
-            if (!hasEdge(edges, diffId, "clean", swId, "in")) {
-                throw new ValidationException("Khối Ghi về bảng tính phải được nối từ cổng Hành động (clean) của khối So khớp.");
+            List<JsonNode> inputs = new ArrayList<>();
+            edges.forEach(edge -> {
+                if (sheetWriteId.equals(edge.path("target").asText())) inputs.add(edge);
+            });
+            if (inputs.size() != 1) {
+                throw new ValidationException("Khối Ghi về bảng tính cần đúng một dây vào từ So khớp hoặc Rẽ nhánh.");
             }
+            JsonNode input = inputs.getFirst();
+            String inputId = input.path("source").asText();
+            String output = input.path("sourceHandle").asText();
+            JsonNode inputNode = findById(nodes, inputId);
+            boolean fromDiff = diffId.equals(inputId) && "clean".equals(output);
+            boolean fromRouter = inputNode != null && "routerCondition".equals(inputNode.path("type").asText()) && "out".equals(output);
+            if (!"in".equals(input.path("targetHandle").asText()) || (!fromDiff && !fromRouter)) {
+                throw new ValidationException("Nối cổng Hành động của So khớp hoặc đầu ra Rẽ nhánh vào khối Ghi về bảng tính.");
+            }
+            if (fromRouter) sheetWriteRouterId = inputId;
             JsonNode data = sheetWriteNode.path("data");
             String targetSpreadsheetId = data.path("targetSpreadsheetId").asText(data.path("spreadsheetId").asText("")).trim();
             String targetSheetName = data.path("targetSheetName").asText(data.path("sheetName").asText("")).trim();
@@ -236,7 +251,7 @@ public class WorkflowGraphParser {
                 throw new ValidationException("Khối Ghi về bảng tính chưa được cấu hình đầy đủ (file đích, tab đích, khóa đích, ánh xạ cột).");
             }
             sheetWriteTargetPlan = SheetWriteTargetPlan.builder()
-                    .nodeId(swId)
+                    .nodeId(sheetWriteId)
                     .targetSpreadSheetId(targetSpreadsheetId)
                     .targetSheetName(targetSheetName)
                     .sourceKeyColumn(sourceKey)
@@ -293,21 +308,23 @@ public class WorkflowGraphParser {
                 }
             }
             List<String> actionTargets = new ArrayList<>();
+            boolean writesToSheet = rId.equals(sheetWriteRouterId);
             for (JsonNode edge : edges) {
                 if (rId.equals(edge.path("source").asText(""))) {
                     if (!"out".equals(edge.path("sourceHandle").asText("")) || !"in".equals(edge.path("targetHandle").asText())) {
                         throw new ValidationException("Đường ra khối Rẽ Nhánh Điều Kiện không hợp lệ.");
                     }
                     String targetId = edge.path("target").asText("");
+                    if (writesToSheet && targetId.equals(sheetWriteId)) continue;
                     boolean isTelegram = telegramNodes.stream().anyMatch(t -> t.path("id").asText("").equals(targetId));
                     if (!isTelegram) {
-                        throw new ValidationException("Khối Rẽ Nhánh Điều Kiện chỉ được nối tới khối thông báo.");
+                        throw new ValidationException("Đầu ra Rẽ nhánh chỉ nối tới Telegram hoặc Ghi về bảng tính.");
                     }
                     actionTargets.add(targetId);
                 }
             }
-            if (actionTargets.isEmpty()) {
-                throw new ValidationException("Khối Rẽ Nhánh Điều Kiện cần nối tới ít nhất một khối thông báo.");
+            if (actionTargets.isEmpty() && !writesToSheet) {
+                throw new ValidationException("Nối Rẽ nhánh tới Telegram hoặc Ghi về bảng tính.");
             }
 
             JsonNode rData = rNode.path("data");
@@ -338,6 +355,7 @@ public class WorkflowGraphParser {
                     .matchMode(matchMode)
                     .conditions(conditions)
                     .actionNodeIds(actionTargets)
+                    .sheetWriteNodeId(writesToSheet ? sheetWriteId : null)
                     .build());
         }
 
@@ -385,9 +403,8 @@ public class WorkflowGraphParser {
         if (chatId != null && chatId.isBlank()) chatId = null;
 
         for (JsonNode edge : edges) {
-            JsonNode source = null;
-            for (JsonNode node : nodes) if (node.path("id").asText().equals(edge.path("source").asText())) source = node;
             String from = edge.path("source").asText();
+            JsonNode source = findById(nodes, from);
             String to = edge.path("target").asText();
             String port = edge.path("sourceHandle").asText();
             String targetPort = edge.path("targetHandle").asText();
@@ -404,7 +421,7 @@ public class WorkflowGraphParser {
                         : (storageNode != null && storageNode.path("id").asText().equals(to)) || isRouter
                           || (sheetWriteNode != null && sheetWriteNode.path("id").asText().equals(to)))
                     || diffId.equals(from) && "conflict".equals(port) && isTelegram
-                    || fromRouter && "out".equals(port) && isTelegram));
+                    || fromRouter && "out".equals(port) && (isTelegram || to.equals(sheetWriteId))));
             if (!allowed) throw new ValidationException("Có dây nối không được hỗ trợ trong luồng.");
         }
         JsonNode timer = findFirstByType(nodes, "scheduleTrigger");
@@ -571,6 +588,13 @@ public class WorkflowGraphParser {
             if (type.equals(node.path("type").asText(""))) {
                 return node;
             }
+        }
+        return null;
+    }
+
+    private JsonNode findById(JsonNode nodes, String id) {
+        for (JsonNode node : nodes) {
+            if (id.equals(node.path("id").asText())) return node;
         }
         return null;
     }

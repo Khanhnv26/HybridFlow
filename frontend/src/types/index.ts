@@ -109,6 +109,7 @@ export interface RouterPlanPayload {
   matchMode: RouterMatchMode;
   conditions: RouterConditionItem[];
   actionNodeIds: string[];
+  sheetWriteNodeId?: string;
 }
 
 export interface ActionPlanPayload {
@@ -154,6 +155,7 @@ export interface SheetWriteTargetPlanPayload {
 }
 
 export interface SheetWritePreviewRequest {
+  upstreamNodeId?: string;
   sourceSpreadSheetId: string;
   sourceSheetName: string;
   sourceKeyColumn: string;
@@ -186,6 +188,7 @@ export interface SheetWriteDuplicateKey {
 export interface SheetWritePreviewResponse {
   valid: boolean;
   previewToken?: string | null;
+  matchedRows?: number | null;
   errors: string[];
   changes: SheetCellChangePreview[];
   missingSourceKeyRows: number[];

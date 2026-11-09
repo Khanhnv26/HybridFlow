@@ -100,6 +100,9 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
 
   const routerNodes = nodes.filter((n) => n.type === 'routerCondition');
   const telegramNodes = nodes.filter((n) => n.type === 'telegramAction');
+  const sheetWriteNodes = nodes.filter((n) => n.type === 'sheetWriteAction');
+  if (sheetWriteNodes.length > 1) throw new Error('Chỉ hỗ trợ một khối Ghi Sheet trong mỗi luồng.');
+  const sheetWriteNode = sheetWriteNodes[0];
 
   const routerPlans: RouterPlanPayload[] = [];
   for (const rNode of routerNodes) {
@@ -112,19 +115,24 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
       }
     }
     const actionTargets: string[] = [];
+    let sheetWriteNodeId: string | undefined;
     for (const e of edges) {
       if (e.source === rNode.id) {
         if (e.sourceHandle !== 'out' || e.targetHandle !== 'in') {
           throw new Error('Đường ra khối Rẽ Nhánh Điều Kiện không hợp lệ.');
         }
+        if (e.target === sheetWriteNode?.id) {
+          sheetWriteNodeId = e.target;
+          continue;
+        }
         if (!telegramNodes.some((t) => t.id === e.target)) {
-          throw new Error('Khối Rẽ Nhánh Điều Kiện chỉ được nối tới khối thông báo.');
+          throw new Error('Đầu ra Rẽ nhánh chỉ nối tới Telegram hoặc Ghi về bảng tính.');
         }
         actionTargets.push(e.target);
       }
     }
-    if (actionTargets.length === 0) {
-      throw new Error('Khối Rẽ Nhánh Điều Kiện cần nối tới ít nhất một khối thông báo.');
+    if (actionTargets.length === 0 && !sheetWriteNodeId) {
+      throw new Error('Nối Rẽ nhánh tới Telegram hoặc Ghi về bảng tính.');
     }
     const conditions = (rNode.data.routerConditions || rNode.data.conditions || []);
     if (conditions.length === 0) {
@@ -148,6 +156,7 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
       matchMode: mode,
       conditions,
       actionNodeIds: actionTargets,
+      ...(sheetWriteNodeId ? { sheetWriteNodeId } : {}),
     });
   }
 
@@ -221,6 +230,7 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
 
   // Chế độ Multi-Sheet: Nối từ 2 khối Google Sheet trở lên (2, 3, 4... N bảng) với khối So Khớp
   if (sheetNodes.length >= 2 && storages.length === 0) {
+    if (sheetWriteNode) throw new Error('Khối Ghi về bảng tính cần luồng một Sheet nguồn và Kho.');
     const sheetIds = new Set(sheetNodes.map((s) => s.id));
     for (const sNode of sheetNodes) {
       const connectedIn = connects(sNode.id, diff.id, 'out');
@@ -316,16 +326,18 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
   if (!connects(source.id, diff.id, 'out') || !connects(diff.id, storage.id, 'clean'))
     throw new Error('Nối Google Sheet → So khớp → Kho lưu trữ trước khi chạy.');
 
-  const sheetWriteNodes = nodes.filter((n) => n.type === 'sheetWriteAction');
-  if (sheetWriteNodes.length > 1) {
-    throw new Error('Chỉ hỗ trợ một khối Ghi Sheet trong mỗi luồng.');
-  }
-
   let sheetWritePlan: SheetWriteTargetPlanPayload | undefined;
-  if (sheetWriteNodes.length === 1) {
-    const swn = sheetWriteNodes[0];
-    if (!edges.some((e) => e.source === diff.id && e.sourceHandle === 'clean' && e.target === swn.id && e.targetHandle === 'in')) {
-      throw new Error('Khối Ghi về bảng tính phải được nối từ cổng Hành động của khối So khớp.');
+  if (sheetWriteNode) {
+    const swn = sheetWriteNode;
+    const inputs = edges.filter(edge => edge.target === swn.id);
+    if (inputs.length !== 1) {
+      throw new Error('Khối Ghi về bảng tính cần đúng một dây vào từ So khớp hoặc Rẽ nhánh.');
+    }
+    const [input] = inputs;
+    const fromDiff = input.source === diff.id && input.sourceHandle === 'clean';
+    const fromRouter = routerNodes.some(router => router.id === input.source) && input.sourceHandle === 'out';
+    if (input.targetHandle !== 'in' || (!fromDiff && !fromRouter)) {
+      throw new Error('Khối Ghi về bảng tính phải được nối từ cổng Hành động của khối So khớp hoặc đầu ra Rẽ nhánh.');
     }
     const targetSpreadsheetId = (swn.data.targetSpreadsheetId || swn.data.spreadsheetId || '').toString().trim();
     const targetSheetName = (swn.data.targetSheetName || swn.data.sheetName || '').toString().trim();
@@ -356,7 +368,7 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
         (edge.source === diff.id && edge.target === storage.id && edge.sourceHandle === 'clean') ||
         (edge.source === diff.id &&
           edge.sourceHandle === 'clean' &&
-          sheetWriteNodes.some((swn) => swn.id === edge.target)) ||
+          sheetWriteNode?.id === edge.target) ||
         (edge.source === diff.id &&
           edge.sourceHandle === 'clean' &&
           routerNodes.some((rn) => rn.id === edge.target)) ||
@@ -365,7 +377,7 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
           telegramNodes.some((tn) => tn.id === edge.target)) ||
         (routerNodes.some((rn) => rn.id === edge.source) &&
           edge.sourceHandle === 'out' &&
-          telegramNodes.some((tn) => tn.id === edge.target))));
+          (telegramNodes.some((tn) => tn.id === edge.target) || sheetWriteNode?.id === edge.target))));
   if (edges.some((e) => !allowed(e)))
     throw new Error('Có dây nối không được hỗ trợ trong luồng đồng bộ.');
 

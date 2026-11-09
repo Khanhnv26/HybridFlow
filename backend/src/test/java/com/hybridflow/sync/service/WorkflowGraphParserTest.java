@@ -128,6 +128,35 @@ class WorkflowGraphParserTest {
         assertEquals(List.of("t3"), request.getExecutionNodes().get("telegram"));
     }
 
+    @Test void routerCanFeedSheetWriteWithoutTelegramAndWriterRejectsTwoInputs() throws Exception {
+        var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+        var graph = mapper.readTree("""
+            {"nodes":[
+              {"id":"s","type":"sheetsTrigger","data":{"spreadsheetId":"source","sheetName":"Orders"}},
+              {"id":"diff","type":"diffEngine","data":{"uniqueKey":"id","conflictPolicy":"ASK_TELEGRAM"}},
+              {"id":"vault","type":"storageAction","data":{"tableName":"vault"}},
+              {"id":"route","type":"routerCondition","data":{"routerConditions":[{"columnName":"status","operator":"EQUALS","value":"OK"}]}},
+              {"id":"writer","type":"sheetWriteAction","data":{"targetSpreadsheetId":"target","targetSheetName":"Orders","targetKeyColumn":"id",
+                "columnMappings":[{"sourceColumn":"status","targetColumn":"status"}]}}
+            ],"edges":[
+              {"source":"s","target":"diff","sourceHandle":"out","targetHandle":"in"},
+              {"source":"diff","target":"vault","sourceHandle":"clean","targetHandle":"in"},
+              {"source":"diff","target":"route","sourceHandle":"clean","targetHandle":"in"},
+              {"source":"route","target":"writer","sourceHandle":"out","targetHandle":"in"}
+            ]}
+            """);
+        var request = parser.buildSyncRequest("flow-test", graph, "token").orElseThrow();
+        assertEquals("writer", request.getRouters().getFirst().getSheetWriteNodeId());
+        assertEquals("writer", request.getSheetWriteTargetPlan().getNodeId());
+        assertTrue(request.getRouters().getFirst().getActionNodeIds().isEmpty());
+        new com.hybridflow.sync.service.impl.RuleEvaluationServiceImpl().validate(
+                request.getRouters(), request.getActions(), java.util.Set.of("id", "status"));
+
+        ((com.fasterxml.jackson.databind.node.ArrayNode) graph.path("edges")).addObject()
+                .put("source", "diff").put("sourceHandle", "clean").put("target", "writer").put("targetHandle", "in");
+        assertThrows(IllegalArgumentException.class, () -> parser.buildSyncRequest("flow-test", graph, "token"));
+    }
+
     @Test void routerValidationRejectsChainingAndOrphanNodes() throws Exception {
         var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
         // Chained router r1 -> r2

@@ -37,6 +37,7 @@ interface SheetWriteConfigModalProps {
   sourceSpreadsheetId?: string;
   sourceSheetName?: string;
   sourceConnectionId?: string;
+  upstream?: { id: string; label: string };
   defaultKeyColumn?: string;
   onClose: () => void;
   onSave: (data: Partial<OrchestrationNodeData>) => Promise<void>;
@@ -52,6 +53,7 @@ export function SheetWriteConfigModal({
   sourceSpreadsheetId,
   sourceSheetName,
   sourceConnectionId: selectedConnectionId,
+  upstream,
   defaultKeyColumn = 'id',
   onClose,
   onSave,
@@ -114,7 +116,7 @@ export function SheetWriteConfigModal({
       && mapping.targetColumn === savedMappings[i].targetColumn);
   const hasTargetAccess = !!selectedConnectionId && !!metadata && targetHeaders.includes(targetKeyColumn);
   const busy = saving || applying;
-  const canApply = settingsSaved && !!previewResult?.valid && !!previewResult.previewToken;
+  const canApply = !!upstream && settingsSaved && !!previewResult?.valid && !!previewResult.previewToken;
 
   useEffect(() => {
     setPreviewResult(null);
@@ -122,7 +124,7 @@ export function SheetWriteConfigModal({
     setPreviewLoading(false);
     return () => previewRequest.current?.abort();
   }, [workspaceId, workflowId, sourceSpreadsheetId, sourceSheetName, selectedConnectionId, spreadsheetId,
-    selectedTab, sourceKeyColumn, targetKeyColumn, columnMappings]);
+    selectedTab, sourceKeyColumn, targetKeyColumn, columnMappings, upstream?.id]);
 
   // 1. Tải danh sách Google Connections trong workspace
   useEffect(() => {
@@ -231,6 +233,10 @@ export function SheetWriteConfigModal({
   }
 
   async function handlePreview() {
+    if (!upstream) {
+      setPreviewError('Nối đầu vào từ So khớp hoặc Rẽ nhánh trước khi xem trước.');
+      return;
+    }
     if (!onPreview || !workspaceId || !workflowId || !spreadsheetId || !selectedTab) {
       setPreviewError('Vui lòng chọn đầy đủ bảng tính đích và tab trước khi xem trước.');
       return;
@@ -252,6 +258,7 @@ export function SheetWriteConfigModal({
     }
 
     const previewReq: SheetWritePreviewRequest = {
+      upstreamNodeId: upstream.id,
       sourceSpreadSheetId: srcId,
       sourceSheetName: srcTab,
       sourceKeyColumn,
@@ -280,7 +287,7 @@ export function SheetWriteConfigModal({
 
   async function handleApply() {
     const token = previewResult?.previewToken;
-    if (!onApply || !token || !settingsSaved || busy) return;
+    if (!onApply || !token || !canApply || busy) return;
     setApplying(true);
     setPreviewError('');
     try {
@@ -346,6 +353,9 @@ export function SheetWriteConfigModal({
               <h2 id="sheet-write-title" className="font-semibold">Ghi về bảng tính</h2>
               <p className="mt-1 text-sm text-secondary">
                 Tìm dòng theo cột khóa và cập nhật các cột được ánh xạ.
+              </p>
+              <p className="mt-1 text-xs text-secondary">
+                {upstream ? `Nhận dữ liệu từ ${upstream.label}` : 'Nối đầu vào từ So khớp hoặc Rẽ nhánh.'}
               </p>
             </div>
           </div>
@@ -597,7 +607,7 @@ export function SheetWriteConfigModal({
               <button
                 type="button"
                 onClick={handlePreview}
-                disabled={previewLoading || !onPreview || !hasTargetAccess || columnMappings.length === 0}
+                disabled={previewLoading || !onPreview || !upstream || !hasTargetAccess || columnMappings.length === 0}
                 className={secondaryButton}
               >
                 <RefreshCw size={14} className={previewLoading ? 'animate-spin' : ''} />
@@ -613,6 +623,11 @@ export function SheetWriteConfigModal({
 
             {previewResult && (
               <div className="space-y-4">
+                {previewResult.matchedRows != null && (
+                  <p className="text-sm text-secondary">
+                    <span className="font-semibold text-primary">{previewResult.matchedRows}</span> dòng khớp điều kiện rẽ nhánh
+                  </p>
+                )}
                 {previewResult.errors.length > 0 && (
                   <ul role="alert" className="list-disc pl-5 text-xs text-danger">
                     {previewResult.errors.map((issue, index) => <li key={index}>{issue}</li>)}

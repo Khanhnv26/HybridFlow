@@ -19,8 +19,10 @@ import com.hybridflow.sync.entity.SyncConflict;
 import com.hybridflow.sync.model.RecordChangeEvent;
 import com.hybridflow.sync.model.SheetWritePlan;
 import com.hybridflow.sync.service.impl.DataTransformerServiceImpl;
+import com.hybridflow.sync.service.impl.RuleEvaluationServiceImpl;
 import com.hybridflow.sync.service.impl.SyncExecutionServiceImpl;
 import com.hybridflow.sync.support.SyncJsonCodec;
+import com.hybridflow.workspace.dto.response.SheetWritePreviewResponse;
 import com.hybridflow.workspace.support.SheetWritePlanner;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -601,5 +603,69 @@ class SyncExecutionServiceTest {
         assertEquals("order_status", targetSheetPlan.getChanges().get(0).getColumn());
         assertEquals("PENDING", targetSheetPlan.getChanges().get(0).getBefore());
         assertEquals("DELIVERED", targetSheetPlan.getChanges().get(0).getAfter());
+    }
+
+    @ParameterizedTest
+    @ValueSource(strings = {"MATCHED", "NO_MATCH", "STALE"})
+    void sheetWriteUsesTheSameRouterForPreviewAndApply(String scenario) {
+        boolean noMatch = "NO_MATCH".equals(scenario);
+        List<Map<String, String>> sourceRows = List.of(
+                Map.of("id", "A", "status", "DELIVERED"),
+                Map.of("id", "B", "status", "CANCELLED"),
+                Map.of("id", "C", "status", "DELIVERED"));
+        SheetDataResponse source = SheetDataResponse.builder().sheetName("Orders")
+                .headers(List.of("id", "status")).rows(sourceRows).build();
+        SheetDataResponse target = SheetDataResponse.builder().sheetName("Destination")
+                .headers(List.of("id", "status"))
+                .rows(List.of("A", "B", "C").stream().map(id -> Map.of("id", id, "status", "OLD")).toList()).build();
+        when(sheets.readSheet(any())).thenAnswer(call -> {
+            ReadSheetRequest read = call.getArgument(0);
+            return "source".equals(read.getSpreadsheetId()) ? source : target;
+        });
+        Map<String, Map<String, String>> baseline = Map.of(
+                "A", Map.of("id", "A", "status", "PENDING"),
+                "B", Map.of("id", "B", "status", "PENDING"),
+                "C", Map.of("id", "C", "status", "DELIVERED"));
+        when(store.hasSnapshots("route-flow")).thenReturn(true);
+        when(store.getSnapshot(eq("route-flow"), anyString())).thenAnswer(call -> baseline.get(call.getArgument(1)));
+        when(store.getVaultRecord(eq("route-flow"), anyString())).thenAnswer(call -> baseline.get(call.getArgument(1)));
+
+        RouterPlan router = RouterPlan.builder().nodeId("route").sheetWriteNodeId("writer")
+                .triggerOn(noMatch ? "CREATED" : "UPDATED").matchMode("ALL").actionNodeIds(List.of())
+                .conditions(List.of(RouterConditionItem.builder().columnName("status")
+                        .operator("CHANGED_TO").value("DELIVERED").build())).build();
+        RuleEvaluationService evaluator = new RuleEvaluationServiceImpl();
+        when(ruleEvaluationService.matches(eq(router), any())).thenAnswer(call -> evaluator.matches(router, call.getArgument(1)));
+        RunSyncRequest request = RunSyncRequest.builder().flowId("route-flow").accessToken("token")
+                .spreadsheetId("source").sheetName("Orders").routers(List.of(router))
+                .sheetWriteTargetPlan(com.hybridflow.sync.dto.request.SheetWriteTargetPlan.builder()
+                        .nodeId("writer").targetSpreadSheetId("target").targetSheetName("Destination")
+                        .sourceKeyColumn("id").targetKeyColumn("id")
+                        .columnMappings(List.of(new com.hybridflow.workspace.dto.request.SheetWritePreviewRequest.ColumnMappingItem(
+                                "status", "status"))).build()).build();
+
+        SheetWritePreviewResponse preview = service.previewSheetWrite(request);
+        assertEquals(noMatch ? 0 : 1, preview.getMatchedRows());
+        assertEquals(noMatch ? List.of() : List.of("A"),
+                preview.getChanges().stream().map(SheetWritePreviewResponse.CellChangePreview::getKey).toList());
+        verifyNoInteractions(writes);
+
+        request.setSheetWritePreviewToken(preview.getPreviewToken());
+        if ("STALE".equals(scenario)) {
+            router.setMatchMode("ANY");
+            assertEquals(ErrorCode.STATE_CONFLICT, assertThrows(ApplicationException.class,
+                    () -> service.executeSync(request)).getErrorCode());
+            verify(writes, never()).apply(any(), any());
+            return;
+        }
+
+        RunSyncResponse response = service.executeSync(request);
+        assertEquals(noMatch ? 0 : 1, response.getTargetCellsUpdated());
+        if (noMatch) {
+            verify(sheets, never()).readSheet(argThat(read -> "target".equals(read.getSpreadsheetId())));
+        } else {
+            verify(writes).apply(eq("token"), argThat(plans -> plans.get(1).getChanges().size() == 1
+                    && "A".equals(plans.get(1).getChanges().getFirst().getRecordId())));
+        }
     }
 }

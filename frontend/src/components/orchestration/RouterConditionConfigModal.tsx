@@ -64,7 +64,7 @@ export function RouterConditionConfigModal({
   const sampleColumns = [...new Set([idColumn, ...conditions.map(item => item.columnName)])].filter(Boolean).slice(0, 4);
   const sentence = conditions.map(item => item.columnName + ' ' + (operators.find(operator => operator.value === item.operator)?.sentence || '')
     + (!requiresConditionValue(item.operator) ? '' : ' “' + (item.value || '…') + '”')).join(mode === 'ALL' ? ' và ' : ' hoặc ');
-  const destinations = actionNames.length ? actionNames.join(', ') : 'các khối thông báo được nối';
+  const destinations = actionNames.length ? actionNames.join(', ') : 'các khối được nối';
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -102,7 +102,7 @@ export function RouterConditionConfigModal({
       <header className="hf-modal-header flex shrink-0 items-start justify-between gap-4 border-b border-line px-5 py-4 sm:px-4">
         <div className="flex gap-3"><Split size={22} className="mt-1 text-violet" /><div>
           <h2 id="router-modal-title" className="text-base font-semibold">Rẽ Nhánh Điều Kiện</h2>
-          <p className="mt-1 text-sm text-secondary">Chọn những dòng được chuyển đến khối thông báo.</p>
+          <p className="mt-1 text-sm text-secondary">Chọn những dòng được chuyển đến các khối tiếp theo.</p>
         </div></div>
         <button type="button" aria-label="Đóng" disabled={saving} onClick={onClose} className="rounded-lg p-2 text-secondary hover:bg-elevated hover:text-primary"><X size={20} /></button>
       </header>
@@ -146,7 +146,7 @@ export function RouterConditionConfigModal({
         <section className="space-y-2 rounded-xl border border-line bg-surface p-3">
           <h3 className="text-sm font-medium">Bộ lọc của bạn</h3>
           <p className="text-sm leading-relaxed text-secondary">Khi {triggers.find(item => item.value === trigger)?.sentence}, nếu {sentence}, chuyển dòng tới {destinations}.</p>
-          {!actionNames.length && <p className="text-xs text-secondary">Nối đầu ra của khối này với Telegram để chọn nơi nhận.</p>}
+          {!actionNames.length && <p className="text-xs text-secondary">Nối đầu ra với Telegram hoặc Ghi về bảng tính.</p>}
         </section>
         <details className="space-y-3 border-t border-line pt-4">
           <summary className="cursor-pointer font-semibold">Thử điều kiện với dữ liệu hiện tại</summary>
@@ -158,7 +158,7 @@ export function RouterConditionConfigModal({
             <p role="status" className="text-sm text-primary">{source ? source.name + ': ' : ''}{matching.length}/{rows.length} dòng phù hợp với điều kiện.</p>
             {matching.length > 0 && <div className="overflow-x-auto rounded-lg border border-line"><table className="w-full text-left text-xs"><thead><tr>{sampleColumns.map(column => <th key={column} className="border-b border-line p-2 font-medium text-secondary">{column}</th>)}</tr></thead><tbody>{matching.slice(0, 5).map((row, index) => <tr key={index}>{sampleColumns.map(column => <td key={column} className="max-w-48 truncate border-b border-line p-2">{row[column] || '—'}</td>)}</tr>)}</tbody></table></div>}
           </> : !reading && !needsEvent && <p className="text-sm text-secondary">Chưa có dòng mẫu. Đọc dữ liệu từ bảng tính đã nối để thử điều kiện.</p>}
-          <p className="text-xs text-secondary">Số dòng phù hợp chỉ phản ánh giá trị hiện tại, không phải số thông báo sẽ gửi. Thông báo chỉ được xếp hàng cho sự kiện mới hoặc cập nhật đã xác minh, không còn xung đột.</p>
+          <p className="text-xs text-secondary">Số dòng phù hợp phản ánh giá trị hiện tại. Khi chạy, khối chỉ chuyển các dòng mới hoặc đã sửa theo mục Khi, sau khi đối soát xong.</p>
         </details>
         {readErrors.map((message, index) => <p key={index} role="alert" className="text-xs text-warning">{message}</p>)}
       </div>

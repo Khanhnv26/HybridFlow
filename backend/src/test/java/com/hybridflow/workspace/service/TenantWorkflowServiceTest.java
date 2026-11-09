@@ -1,9 +1,11 @@
 package com.hybridflow.workspace.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.hybridflow.auth.service.CurrentUserService;
 import com.hybridflow.common.exception.ApplicationException;
 import com.hybridflow.common.exception.ErrorCode;
+import com.hybridflow.common.exception.ValidationException;
 import com.hybridflow.connection.service.GoogleCredentialService;
 import com.hybridflow.sync.dto.request.ResolveConflictRequest;
 import com.hybridflow.sync.dto.request.RunSyncRequest;
@@ -19,6 +21,7 @@ import com.hybridflow.workspace.dto.request.ConnectionBindingItem;
 import com.hybridflow.workspace.dto.request.CreateWorkflowRequest;
 import com.hybridflow.workspace.dto.request.GrantWorkflowPermissionRequest;
 import com.hybridflow.workspace.dto.request.SaveWorkflowRequest;
+import com.hybridflow.workspace.dto.request.SheetWritePreviewRequest;
 import com.hybridflow.workspace.dto.response.ModuleResponse;
 import com.hybridflow.workspace.dto.response.TenantWorkflowResponse;
 import com.hybridflow.workspace.model.TenantWorkflowRow;
@@ -455,5 +458,45 @@ class TenantWorkflowServiceTest {
         ApplicationException ex = assertThrows(ApplicationException.class,
                 () -> service.previewSheetWrite(workspaceId, workflowId, request));
         assertEquals(ErrorCode.ACCESS_DENIED, ex.getErrorCode());
+    }
+
+    @Test
+    void sheetWritePreviewUsesSavedRouterAndRejectsAnUnsavedRewire() {
+        String definition = """
+            {"nodes":[
+              {"id":"s","type":"sheetsTrigger","data":{"spreadsheetId":"src","sheetName":"Orders"}},
+              {"id":"diff","type":"diffEngine","data":{"uniqueKey":"id","conflictPolicy":"ASK_TELEGRAM"}},
+              {"id":"vault","type":"storageAction","data":{"tableName":"vault"}},
+              {"id":"route","type":"routerCondition","data":{"routerConditions":[{"columnName":"status","operator":"EQUALS","value":"OK"}]}},
+              {"id":"writer","type":"sheetWriteAction","data":{}}
+            ],"edges":[
+              {"source":"s","target":"diff","sourceHandle":"out","targetHandle":"in"},
+              {"source":"diff","target":"vault","sourceHandle":"clean","targetHandle":"in"},
+              {"source":"diff","target":"route","sourceHandle":"clean","targetHandle":"in"},
+              {"source":"route","target":"writer","sourceHandle":"out","targetHandle":"in"}
+            ]}
+            """;
+        when(workspaces.requireMember(workspaceId)).thenReturn(WorkspaceRole.OWNER);
+        when(workflows.findWorkflow(workspaceId, workflowId))
+                .thenReturn(Optional.of(TenantWorkflowRow.builder().definitionJson(definition).build()));
+        when(workflows.findBindings(workspaceId, workflowId)).thenReturn(List.of(new ConnectionBindingItem("s", "owned")));
+        when(connections.findGoogleConnectionId(workspaceId, "owned")).thenReturn(Optional.of("owned"));
+        when(credentials.resolveAccessToken("owned")).thenReturn("token");
+        WorkflowGraphParser actualParser = new WorkflowGraphParser();
+        when(planService.createPreviewPlan(eq(workspaceId), eq(workflowId), any(JsonNode.class), eq("token")))
+                .thenAnswer(call -> actualParser.buildSyncRequest(workflowId, call.getArgument(2), "token").orElseThrow());
+
+        SheetWritePreviewRequest draft = SheetWritePreviewRequest.builder()
+                .upstreamNodeId("route").sourceSpreadSheetId("src").sourceSheetName("Orders")
+                .targetSpreadSheetId("draft-target").targetSheetName("Results")
+                .sourceKeyColumn("id").targetKeyColumn("id")
+                .columnMappings(List.of(new SheetWritePreviewRequest.ColumnMappingItem("status", "status"))).build();
+        service.previewSheetWrite(workspaceId, workflowId, draft);
+        verify(syncExecutionService).previewSheetWrite(argThat(plan ->
+                "writer".equals(plan.getRouters().getFirst().getSheetWriteNodeId())
+                        && "draft-target".equals(plan.getSheetWriteTargetPlan().getTargetSpreadSheetId())));
+
+        draft.setUpstreamNodeId("diff");
+        assertThrows(ValidationException.class, () -> service.previewSheetWrite(workspaceId, workflowId, draft));
     }
 }
