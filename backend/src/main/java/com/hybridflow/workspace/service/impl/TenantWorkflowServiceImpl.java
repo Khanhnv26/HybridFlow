@@ -2,21 +2,21 @@ package com.hybridflow.workspace.service.impl;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
+import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.hybridflow.auth.service.CurrentUserService;
 import com.hybridflow.common.exception.ApplicationException;
 import com.hybridflow.common.exception.ErrorCode;
 import com.hybridflow.common.exception.ValidationException;
 import com.hybridflow.connection.service.GoogleCredentialService;
-import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
-import com.hybridflow.connector.google.dto.response.SheetDataResponse;
-import com.hybridflow.connector.google.service.GoogleSheetsService;
 import com.hybridflow.sync.dto.request.ResolveConflictRequest;
 import com.hybridflow.sync.dto.request.RunSyncRequest;
+import com.hybridflow.sync.dto.request.SheetWriteTargetPlan;
 import com.hybridflow.sync.dto.response.RunSyncResponse;
 import com.hybridflow.sync.entity.SyncConflict;
 import com.hybridflow.sync.model.NotificationOutboxItem;
 import com.hybridflow.sync.model.ParsedSchedule;
-import com.hybridflow.sync.model.SheetWritePlan;
 import com.hybridflow.sync.service.SyncConflictService;
 import com.hybridflow.sync.service.SyncExecutionService;
 import com.hybridflow.sync.service.SyncStateService;
@@ -36,17 +36,18 @@ import com.hybridflow.workspace.service.TenantRunPlanService;
 import com.hybridflow.workspace.service.TenantWorkflowService;
 import com.hybridflow.workspace.service.WorkflowAccessService;
 import com.hybridflow.workspace.service.WorkspaceAccessService;
-import com.hybridflow.workspace.support.SheetWritePlanner;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Clock;
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 @Service
@@ -68,8 +69,6 @@ public class TenantWorkflowServiceImpl implements TenantWorkflowService {
     private final Clock clock;
     private final ObjectMapper mapper;
     private final SyncStateService syncState;
-    private final GoogleSheetsService googleSheetsService;
-    private final SheetWritePlanner sheetWritePlanner;
 
     @Override
     @Transactional
@@ -275,12 +274,26 @@ public class TenantWorkflowServiceImpl implements TenantWorkflowService {
     @Override
     @Transactional
     public RunSyncResponse run(UUID workspaceId, String workflowId, boolean bootstrapConfirmed) {
+        return run(workspaceId, workflowId, bootstrapConfirmed, null);
+    }
+
+    @Override
+    @Transactional
+    public RunSyncResponse applySheetWrite(UUID workspaceId, String workflowId, String previewToken) {
+        return run(workspaceId, workflowId, true, previewToken);
+    }
+
+    private RunSyncResponse run(UUID workspaceId, String workflowId, boolean bootstrapConfirmed, String previewToken) {
         access.requireRun(workspaceId, workflowId);
         TenantWorkflowRow row = workflows.findWorkflow(workspaceId, workflowId)
                 .orElseThrow(() -> new ApplicationException(ErrorCode.RESOURCE_NOT_FOUND));
-        String accessToken = googleAccessForWorkflow(workspaceId, workflowId);
+        String accessToken = googleAccessForWorkflow(workspaceId, workflowId, sheetWriteNodeIds(readDefinition(row)));
         RunSyncRequest plan = planService.createPlan(workspaceId, workflowId, row.getDefinitionJson(), accessToken);
+        if ((plan.getSheetWriteTargetPlan() != null) != (previewToken != null)) {
+            throw new ApplicationException(ErrorCode.STATE_CONFLICT, "Xem trước cấu hình Ghi về bảng tính trước khi áp dụng.");
+        }
         plan.setBootstrapConfirmed(bootstrapConfirmed);
+        plan.setSheetWritePreviewToken(previewToken);
         RunSyncResponse response = syncExecutionService.executeSync(plan);
         audit.append(workspaceId, currentUser.requireUserId(), "WORKFLOW_RUN", workflowId);
         return response;
@@ -374,37 +387,73 @@ public class TenantWorkflowServiceImpl implements TenantWorkflowService {
     @Transactional(readOnly = true)
     public SheetWritePreviewResponse previewSheetWrite(UUID workspaceId, String workflowId, SheetWritePreviewRequest request) {
         access.requireRead(workspaceId, workflowId);
-        String accessToken = googleAccessForWorkflow(workspaceId, workflowId);
-
-        SheetDataResponse sourceSheet = googleSheetsService.readSheet(ReadSheetRequest.builder()
-                .accessToken(accessToken)
-                .spreadsheetId(request.getSourceSpreadSheetId().trim())
-                .sheetName(request.getSourceSheetName().trim())
+        if (workspaces.requireMember(workspaceId) == WorkspaceRole.VIEWER)
+            throw new ApplicationException(ErrorCode.ACCESS_DENIED);
+        TenantWorkflowRow row = workflows.findWorkflow(workspaceId, workflowId)
+                .orElseThrow(() -> new ApplicationException(ErrorCode.RESOURCE_NOT_FOUND));
+        JsonNode definition = readDefinition(row);
+        Set<String> writeNodes = sheetWriteNodeIds(definition);
+        String accessToken = googleAccessForWorkflow(workspaceId, workflowId, writeNodes);
+        if (definition instanceof ObjectNode draft && !writeNodes.isEmpty()) {
+            ArrayNode nodes = mapper.createArrayNode();
+            definition.path("nodes").forEach(node -> {
+                if (!writeNodes.contains(node.path("id").asText())) nodes.add(node);
+            });
+            ArrayNode edges = mapper.createArrayNode();
+            definition.path("edges").forEach(edge -> {
+                if (!writeNodes.contains(edge.path("source").asText())
+                        && !writeNodes.contains(edge.path("target").asText())) edges.add(edge);
+            });
+            draft.set("nodes", nodes);
+            draft.set("edges", edges);
+        }
+        RunSyncRequest plan = planService.createPreviewPlan(workspaceId, workflowId, definition, accessToken);
+        if ((plan.getSheets() != null && plan.getSheets().size() > 1)
+                || !Objects.equals(plan.getSpreadsheetId(), request.getSourceSpreadSheetId().trim())
+                || !Objects.equals(plan.getSheetName(), request.getSourceSheetName().trim())) {
+            throw new ValidationException("Lưu luồng một Sheet nguồn trước khi xem trước khối Ghi về bảng tính.");
+        }
+        plan.setSheetWriteTargetPlan(SheetWriteTargetPlan.builder()
+                .targetSpreadSheetId(request.getTargetSpreadSheetId().trim())
+                .targetSheetName(request.getTargetSheetName().trim())
+                .sourceKeyColumn(request.getSourceKeyColumn().trim())
+                .targetKeyColumn(request.getTargetKeyColumn().trim())
+                .columnMappings(request.getColumnMappings().stream()
+                        .map(mapping -> new SheetWritePreviewRequest.ColumnMappingItem(
+                                mapping.getSourceColumn().trim(), mapping.getTargetColumn().trim()))
+                        .toList())
                 .build());
+        return syncExecutionService.previewSheetWrite(plan);
+    }
 
-        SheetDataResponse targetSheet = googleSheetsService.readSheet(ReadSheetRequest.builder()
-                .accessToken(accessToken)
-                .spreadsheetId(request.getTargetSpreadSheetId().trim())
-                .sheetName(request.getTargetSheetName().trim())
-                .build());
+    private JsonNode readDefinition(TenantWorkflowRow row) {
+        try {
+            return mapper.readTree(row.getDefinitionJson());
+        } catch (JsonProcessingException exception) {
+            throw new ValidationException("Cấu hình luồng không đúng định dạng JSON.");
+        }
+    }
 
-        return sheetWritePlanner.plan(
-                sourceSheet.getRows(),
-                sourceSheet.getHeaders(),
-                targetSheet,
-                request.getSourceKeyColumn().trim(),
-                request.getTargetKeyColumn().trim(),
-                request.getColumnMappings()
-        );
+    private Set<String> sheetWriteNodeIds(JsonNode definition) {
+        Set<String> ids = new HashSet<>();
+        definition.path("nodes").forEach(node -> {
+            if ("sheetWriteAction".equals(node.path("type").asText())) ids.add(node.path("id").asText());
+        });
+        return ids;
     }
 
     private String googleAccessForWorkflow(UUID workspaceId, String workflowId) {
+        return googleAccessForWorkflow(workspaceId, workflowId, Set.of());
+    }
+
+    private String googleAccessForWorkflow(UUID workspaceId, String workflowId, Set<String> ignoredBindings) {
         WorkspaceRole role = workspaces.requireMember(workspaceId);
         if (role == WorkspaceRole.VIEWER) {
             throw new ApplicationException(ErrorCode.ACCESS_DENIED);
         }
         String reference = null;
         for (ConnectionBindingItem binding : workflows.findBindings(workspaceId, workflowId)) {
+            if (ignoredBindings.contains(binding.getNodeId())) continue;
             if (role == WorkspaceRole.EDITOR && !connections.hasEditorGrant(workspaceId, binding.getConnectionId())) {
                 throw new ApplicationException(ErrorCode.ACCESS_DENIED);
             }

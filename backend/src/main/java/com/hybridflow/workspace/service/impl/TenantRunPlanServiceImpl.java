@@ -34,6 +34,16 @@ public class TenantRunPlanServiceImpl implements TenantRunPlanService {
 
     @Override
     public RunSyncRequest createPlan(UUID workspaceId, String workflowId, JsonNode definition, String connectionReference) {
+        return buildPlan(workspaceId, workflowId, definition, connectionReference, true);
+    }
+
+    @Override
+    public RunSyncRequest createPreviewPlan(UUID workspaceId, String workflowId, JsonNode definition, String connectionReference) {
+        return buildPlan(workspaceId, workflowId, definition, connectionReference, false);
+    }
+
+    private RunSyncRequest buildPlan(UUID workspaceId, String workflowId, JsonNode definition,
+                                    String connectionReference, boolean ensureContext) {
         Map<String, String> bindings = new LinkedHashMap<>();
         for (ConnectionBindingItem binding : workflows.findBindings(workspaceId, workflowId)) {
             bindings.put(binding.getNodeId(), binding.getConnectionId());
@@ -55,7 +65,7 @@ public class TenantRunPlanServiceImpl implements TenantRunPlanService {
                 .orElseThrow(() -> new ValidationException("Cấu hình luồng chưa hợp lệ."));
         String fingerprint = request.getFlowId();
         String contextId = FlowContextIds.scoped(workspaceId, workflowId, fingerprint);
-        contextRepository.ensure(workspaceId, workflowId, fingerprint, contextId);
+        if (ensureContext) contextRepository.ensure(workspaceId, workflowId, fingerprint, contextId);
         request.setFlowId(contextId);
         request.setWorkspaceId(workspaceId);
         request.setWorkflowId(workflowId);

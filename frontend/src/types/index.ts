@@ -185,6 +185,7 @@ export interface SheetWriteDuplicateKey {
 
 export interface SheetWritePreviewResponse {
   valid: boolean;
+  previewToken?: string | null;
   errors: string[];
   changes: SheetCellChangePreview[];
   missingSourceKeyRows: number[];

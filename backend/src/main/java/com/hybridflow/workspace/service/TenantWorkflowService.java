@@ -27,6 +27,7 @@ public interface TenantWorkflowService {
     List<WorkflowPermissionResponse> permissions(UUID workspaceId, String workflowId);
     RunSyncResponse run(UUID workspaceId, String workflowId);
     RunSyncResponse run(UUID workspaceId, String workflowId, boolean bootstrapConfirmed);
+    RunSyncResponse applySheetWrite(UUID workspaceId, String workflowId, String previewToken);
     List<SyncConflict> conflicts(UUID workspaceId, String workflowId);
     List<Map<String, String>> vault(UUID workspaceId, String workflowId, String contextId);
     Map<String, Object> schedule(UUID workspaceId, String workflowId);

@@ -16,6 +16,16 @@ public class SheetWritePlanner {
                                           String sourceKeyColumn,
                                           String targetKeyColumn,
                                           List<SheetWritePreviewRequest.ColumnMappingItem> columnMappings) {
+        return plan(sourceRows, sourceHeaders, targetSheet, sourceKeyColumn, targetKeyColumn, columnMappings, Map.of());
+    }
+
+    public SheetWritePreviewResponse plan(List<Map<String, String>> sourceRows,
+                                          List<String> sourceHeaders,
+                                          SheetDataResponse targetSheet,
+                                          String sourceKeyColumn,
+                                          String targetKeyColumn,
+                                          List<SheetWritePreviewRequest.ColumnMappingItem> columnMappings,
+                                          Map<Integer, Integer> sourceRowNumbers) {
         List<String> errors = new ArrayList<>();
         List<String> safeSourceHeaders = sourceHeaders != null ? sourceHeaders : List.of();
         List<String> targetHeaders = (targetSheet != null && targetSheet.getHeaders() != null)
@@ -105,14 +115,22 @@ public class SheetWritePlanner {
         List<SheetWritePreviewResponse.CellChangePreview> changes = new ArrayList<>();
         List<SheetWritePreviewResponse.UnmatchedRowItem> unmatchedRows = new ArrayList<>();
         List<Integer> missingSourceKeyRows = new ArrayList<>();
+        Map<String, Integer> firstSourceRows = new HashMap<>();
 
         for (int i = 0; i < safeSourceRows.size(); i++) {
+            int rowNumber = sourceRowNumbers.getOrDefault(i, i + 2);
             Map<String, String> sRow = safeSourceRows.get(i);
             String rawKey = sRow != null && sourceKeyColumn != null ? sRow.get(sourceKeyColumn) : null;
             String key = rawKey != null ? rawKey.trim() : "";
 
             if (key.isEmpty()) {
-                missingSourceKeyRows.add(i + 2);
+                missingSourceKeyRows.add(rowNumber);
+                continue;
+            }
+
+            Integer firstRow = firstSourceRows.putIfAbsent(key, rowNumber);
+            if (firstRow != null) {
+                errors.add("Khóa nguồn '" + key + "' bị trùng ở dòng " + firstRow + " và " + rowNumber + ".");
                 continue;
             }
 
@@ -121,7 +139,7 @@ public class SheetWritePlanner {
             if (matchedIndices == null || matchedIndices.isEmpty()) {
                 unmatchedRows.add(SheetWritePreviewResponse.UnmatchedRowItem.builder()
                         .key(key)
-                        .sourceRowNumber(i + 2)
+                        .sourceRowNumber(rowNumber)
                         .build());
                 continue;
             }
@@ -154,9 +172,9 @@ public class SheetWritePlanner {
         }
 
         return SheetWritePreviewResponse.builder()
-                .valid(true)
-                .errors(List.of())
-                .changes(changes)
+                .valid(errors.isEmpty())
+                .errors(errors)
+                .changes(errors.isEmpty() ? changes : List.of())
                 .missingSourceKeyRows(missingSourceKeyRows)
                 .duplicateTargetKeys(duplicateKeyItems)
                 .unmatchedRows(unmatchedRows)

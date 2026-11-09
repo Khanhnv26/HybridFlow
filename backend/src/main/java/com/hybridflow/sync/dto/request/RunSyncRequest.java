@@ -41,4 +41,6 @@ public class RunSyncRequest {
     private List<ActionPlan> actions;
     private List<String> conflictActionIds;
     private SheetWriteTargetPlan sheetWriteTargetPlan;
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private String sheetWritePreviewToken;
 }

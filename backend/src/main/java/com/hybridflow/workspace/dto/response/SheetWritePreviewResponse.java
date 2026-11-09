@@ -7,10 +7,11 @@ import lombok.Getter;
 import java.util.List;
 
 @Getter
-@Builder
+@Builder(toBuilder = true)
 @AllArgsConstructor
 public class SheetWritePreviewResponse {
     private final boolean valid;
+    private final String previewToken;
     private final List<String> errors;
     private final List<CellChangePreview> changes;
     private final List<UnmatchedRowItem> unmatchedRows;

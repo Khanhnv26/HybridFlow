@@ -19,6 +19,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -87,7 +88,9 @@ public class TenantWorkflowController {
     @PostMapping("/{workflowId}/run")
     public RunSyncResponse run(@PathVariable UUID workspaceId,
                                @PathVariable String workflowId,
-                               @RequestParam(defaultValue = "false") boolean bootstrapConfirmed) {
+                               @RequestParam(defaultValue = "false") boolean bootstrapConfirmed,
+                               @RequestHeader(value = "X-Sheet-Write-Preview", required = false) String previewToken) {
+        if (previewToken != null) return service.applySheetWrite(workspaceId, workflowId, previewToken);
         return service.run(workspaceId, workflowId, bootstrapConfirmed);
     }
 

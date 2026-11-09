@@ -48,8 +48,8 @@ export function createTenantEditorApi(client: Pick<AxiosInstance, 'get' | 'post'
         if (version === undefined) await load();
         const graph = definition as { nodes: unknown[]; edges: unknown[] };
         const extractedBindings = Array.isArray(graph.nodes)
-          ? (graph.nodes as Array<{ id?: string; data?: { connectionId?: string } }>)
-              .filter(n => n?.id && n?.data?.connectionId)
+          ? (graph.nodes as Array<{ id?: string; type?: string; data?: { connectionId?: string } }>)
+              .filter(n => n?.id && n.type !== 'sheetWriteAction' && n.data?.connectionId)
               .map(n => ({ nodeId: n.id as string, connectionId: n.data!.connectionId as string }))
           : [];
         const { data } = await client.put(base, {
@@ -60,8 +60,11 @@ export function createTenantEditorApi(client: Pick<AxiosInstance, 'get' | 'post'
         version = data.definitionVersion;
         bindings = data.connectionBindings || [];
       },
-      run: async (_id: string, bootstrapConfirmed: boolean): Promise<RunSyncResponse> => {
-        const { data } = await client.post<RunSyncResponse>(base + '/run', null, { params: { bootstrapConfirmed } });
+      run: async (_id: string, bootstrapConfirmed: boolean, previewToken?: string): Promise<RunSyncResponse> => {
+        const { data } = await client.post<RunSyncResponse>(base + '/run', null, {
+          params: { bootstrapConfirmed },
+          ...(previewToken ? { headers: { 'X-Sheet-Write-Preview': previewToken } } : {}),
+        });
         if (data.executionId && data.flowId) executionContexts.set(data.executionId, data.flowId);
         latestContext = data.flowId || latestContext;
         return data;

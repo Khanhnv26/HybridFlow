@@ -33,6 +33,8 @@ import com.hybridflow.sync.service.SheetWriteService;
 import com.hybridflow.sync.service.SyncConflictService;
 import com.hybridflow.sync.service.SyncExecutionService;
 import com.hybridflow.sync.service.SyncStateService;
+import com.hybridflow.sync.support.SyncJsonCodec;
+import com.hybridflow.sync.util.FlowContextIds;
 import com.hybridflow.sync.util.SheetEndpointUtils;
 import com.hybridflow.sync.util.SheetRowUtils;
 import lombok.RequiredArgsConstructor;
@@ -68,6 +70,16 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
     private final NotificationTemplateService notificationTemplateService;
     private final NotificationOutboxService notificationOutboxService;
     private final SheetWritePlanner sheetWritePlanner;
+    private final SyncJsonCodec codec;
+
+    private record SheetToVaultResult(RunSyncResponse run, SheetWritePreviewResponse preview) {}
+
+    @Override
+    @Transactional(readOnly = true)
+    public SheetWritePreviewResponse previewSheetWrite(RunSyncRequest request) {
+        request.setBootstrapConfirmed(true);
+        return executeSheetToVaultSync(request, request.getFlowId(), request.getIdColumn(), null, 0, true).preview();
+    }
 
     @Override
     @Transactional
@@ -99,7 +111,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             if (request.getSheets() != null && request.getSheets().size() >= 2) {
                 return executeMultiSheetSync(request, flow, idColumn, executionId, start);
             }
-            return executeSheetToVaultSync(request, flow, idColumn, executionId, start);
+            return executeSheetToVaultSync(request, flow, idColumn, executionId, start, false).run();
         } catch (RuntimeException ex) {
             history.fail(executionId, ex);
             throw ex;
@@ -254,18 +266,25 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         return result;
     }
 
-    private RunSyncResponse executeSheetToVaultSync(
+    private SheetToVaultResult executeSheetToVaultSync(
             RunSyncRequest request,
             String flow,
             String idColumn,
             String executionId,
-            long start
+            long start,
+            boolean previewOnly
     ) {
         require(request.getSpreadsheetId(), "Spreadsheet ID");
         require(request.getStorageName(), "Vùng lưu trữ");
-        store.lock("sheet:" + request.getSpreadsheetId());
-        phase(request, executionId, "sheets", "RECOVER", "Đang kiểm tra lần ghi trước");
-        writes.recover(request.getAccessToken(), List.of(request.getSpreadsheetId()));
+        SheetWriteTargetPlan target = request.getSheetWriteTargetPlan();
+        if (!previewOnly) {
+            Set<String> files = new TreeSet<>();
+            files.add(request.getSpreadsheetId());
+            if (target != null) files.add(target.getTargetSpreadSheetId());
+            files.forEach(file -> store.lock("sheet:" + file));
+            phase(request, executionId, "sheets", "RECOVER", "Đang kiểm tra lần ghi trước");
+            writes.recover(request.getAccessToken(), List.copyOf(files));
+        }
         phase(request, executionId, "sheets", "READ", "Đang đọc trang tính");
         SheetDataResponse sheet = googleSheetsService.readSheet(ReadSheetRequest.builder()
                 .accessToken(request.getAccessToken()).spreadsheetId(request.getSpreadsheetId())
@@ -287,8 +306,6 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         boundColumnsSet.add(idColumn);
         boundColumnsSet.addAll(columns);
         List<String> boundColumns = new ArrayList<>(boundColumnsSet);
-        store.bind(flow, request.getSpreadsheetId(), sheet.getSheetName(), idColumn, sheet.getHeaders(), request.getStorageName());
-
         validateColumnTypes(request, boundColumnsSet, List.of(sheet));
         validateNotifications(request, boundColumnsSet);
 
@@ -298,8 +315,9 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
                     .bootstrapRequired(true).sheetName(sheet.getSheetName()).totalRowsProcessed(0)
                     .cleanRecordIds(List.of()).conflicts(List.of()).comparedColumns(columns)
                     .latency((System.currentTimeMillis() - start) + " ms").build();
+            store.bind(flow, request.getSpreadsheetId(), sheet.getSheetName(), idColumn, sheet.getHeaders(), request.getStorageName());
             completeAfterCommit(executionId, result);
-            return result;
+            return new SheetToVaultResult(result, null);
         }
         for (Map<String, String> old : store.getVaultRecords(flow)) {
             if (!index.containsKey(old.get(idColumn))) throw new ValidationException(
@@ -317,6 +335,8 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             }
         }
         List<String> clean = new ArrayList<>();
+        List<Map<String, String>> resolvedRows = new ArrayList<>();
+        Map<Integer, Integer> sourceRowNumbers = new LinkedHashMap<>();
         List<SyncConflict> detected = new ArrayList<>();
         List<RecordChangeEvent> recordEvents = new ArrayList<>();
 
@@ -330,6 +350,8 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
                 vaultWrites.put(id, new LinkedHashMap<>(rowA));
                 snapshotWrites.put(id, new LinkedHashMap<>(rowA));
                 clean.add(id);
+                sourceRowNumbers.put(resolvedRows.size(), entry.getValue() + 2);
+                resolvedRows.add(rowA);
                 if (!initial) {
                     recordEvents.add(RecordChangeEvent.builder()
                             .recordId(id)
@@ -361,7 +383,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
                 if (unresolved.contains(conflict.getColumn())) openDiff.addConflict(conflict.getColumn(),
                         conflict.getBaseValue(), conflict.getValueA(), conflict.getValueB());
             }
-            detected.addAll(syncConflictService.saveConflicts(openDiff, request, sheet.getSheetName()));
+            if (!previewOnly) detected.addAll(syncConflictService.saveConflicts(openDiff, request, sheet.getSheetName()));
             updatesA.forEach((column, value) -> sheetWrites.put(SheetRowUtils.range(sheet, entry.getValue(), column), value));
             Map<String, String> checkpoint = new LinkedHashMap<>(base);
             for (String column : columns) {
@@ -369,7 +391,13 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             }
             vaultWrites.put(id, merged);
             snapshotWrites.put(id, checkpoint);
-            if (unresolved.isEmpty()) clean.add(id);
+            if (unresolved.isEmpty()) {
+                clean.add(id);
+                Map<String, String> resolved = new LinkedHashMap<>(rowA);
+                resolved.putAll(updatesA);
+                sourceRowNumbers.put(resolvedRows.size(), entry.getValue() + 2);
+                resolvedRows.add(resolved);
+            }
             if (!initial) addRecordEvent(recordEvents, id, base, checkpoint, columns, unresolved);
         }
         if (request.getColumnTypes() != null) for (Map.Entry<String, Integer> row : index.entrySet()) {
@@ -388,77 +416,55 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
                     || SheetRowUtils.requiresTypeWrite(sheet, row, column, sheetWrites.get(range), request.getColumnTypes())))
                 changes.add(new SheetCellChange(row, column, rawRows.get(row).get(idColumn), rawRows.get(row).getOrDefault(column, ""), sheetWrites.get(range)));
         }
-        writes.apply(request.getAccessToken(), List.of(new SheetWritePlan(request.getSpreadsheetId(), sheet.getSheetName(), idColumn, sheet.getHeaders(), changes, request.getColumnTypes())));
-        phase(request, executionId, "storage", "WRITE", "Đang lưu Vault và checkpoint");
-        vaultWrites.forEach((id, row) -> store.saveVaultRecord(flow, id, row));
-        snapshotWrites.forEach((id, row) -> store.saveSnapshot(flow, id, row));
-
+        List<SheetWritePlan> plans = new ArrayList<>();
+        plans.add(new SheetWritePlan(request.getSpreadsheetId(), sheet.getSheetName(), idColumn,
+                sheet.getHeaders(), changes, request.getColumnTypes()));
         int targetCellsUpdated = 0;
         int targetRowsUpdated = 0;
         int targetRowsSkipped = 0;
-
-        if (request.getSheetWriteTargetPlan() != null) {
-            phase(request, executionId, "sheetWrite", "WRITE", "Đang ghi về bảng tính đích");
-            SheetWriteTargetPlan targetPlanConfig = request.getSheetWriteTargetPlan();
-            store.lock("sheet:" + targetPlanConfig.getTargetSpreadSheetId());
-            writes.recover(request.getAccessToken(), List.of(targetPlanConfig.getTargetSpreadSheetId()));
-
+        if (target != null) {
             SheetDataResponse liveTarget = googleSheetsService.readSheet(ReadSheetRequest.builder()
                     .accessToken(request.getAccessToken())
-                    .spreadsheetId(targetPlanConfig.getTargetSpreadSheetId())
-                    .sheetname(targetPlanConfig.getTargetSheetName())
+                    .spreadsheetId(target.getTargetSpreadSheetId())
+                    .sheetname(target.getTargetSheetName())
                     .build());
-
-            List<Map<String, String>> cleanSourceRows = new ArrayList<>();
-            for (String cleanId : clean) {
-                Integer sourceRowIdx = index.get(cleanId);
-                if (sourceRowIdx != null && sourceRowIdx < sheet.getRows().size()) {
-                    cleanSourceRows.add(sheet.getRows().get(sourceRowIdx));
-                }
+            if (request.getSpreadsheetId().equals(target.getTargetSpreadSheetId())
+                    && sheet.getSheetName().equals(liveTarget.getSheetName())) {
+                throw new ValidationException("Khối Ghi về bảng tính cần dùng tab khác tab nguồn.");
             }
-
-            SheetWritePreviewResponse preview = sheetWritePlanner.plan(
-                    cleanSourceRows,
-                    sheet.getHeaders(),
-                    liveTarget,
-                    targetPlanConfig.getSourceKeyColumn(),
-                    targetPlanConfig.getTargetKeyColumn(),
-                    targetPlanConfig.getColumnMappings()
-            );
-
+            SheetWritePreviewResponse preview = sheetWritePlanner.plan(resolvedRows, sheet.getHeaders(), liveTarget,
+                    target.getSourceKeyColumn(), target.getTargetKeyColumn(), target.getColumnMappings(), sourceRowNumbers);
             if (!preview.isValid()) {
+                if (previewOnly) return new SheetToVaultResult(null, preview);
+                if (request.getSheetWritePreviewToken() != null) throw stalePreview();
                 throw new ValidationException(String.join("; ", preview.getErrors()));
             }
 
-            targetRowsSkipped = preview.getUnmatchedRows().size() + preview.getMissingSourceKeyRows().size();
+            List<SheetCellChange> targetChanges = preview.getChanges().stream()
+                    .map(cell -> new SheetCellChange(cell.getTargetRowIndex(), cell.getTargetColumn(), cell.getKey(),
+                            cell.getCurrentValue(), cell.getNewValue()))
+                    .toList();
+            plans.add(new SheetWritePlan(target.getTargetSpreadSheetId(), liveTarget.getSheetName(),
+                    target.getTargetKeyColumn(), liveTarget.getHeaders(), targetChanges, Map.of()));
 
-            if (!preview.getChanges().isEmpty()) {
-                List<SheetCellChange> targetChanges = preview.getChanges().stream()
-                        .map(c -> new SheetCellChange(
-                                c.getTargetRowIndex(),
-                                c.getTargetColumn(),
-                                c.getKey(),
-                                c.getCurrentValue(),
-                                c.getNewValue()
-                        ))
-                        .toList();
-
-                SheetWritePlan sheetWritePlan = new SheetWritePlan(
-                        targetPlanConfig.getTargetSpreadSheetId(),
-                        liveTarget.getSheetName(),
-                        targetPlanConfig.getTargetKeyColumn(),
-                        liveTarget.getHeaders(),
-                        targetChanges,
-                        Map.of()
-                );
-
-                writes.apply(request.getAccessToken(), List.of(sheetWritePlan));
-                targetCellsUpdated = targetChanges.size();
-                Set<Integer> uniqueRows = new HashSet<>();
-                targetChanges.forEach(c -> uniqueRows.add(c.getRowIndex()));
-                targetRowsUpdated = uniqueRows.size();
+            if (previewOnly || request.getSheetWritePreviewToken() != null) {
+                String fingerprint = codec.encode(List.of(flow, request.getConflictPolicy(), target.getSourceKeyColumn(),
+                        target.getColumnMappings(), plans, preview.getUnmatchedRows(), preview.getMissingSourceKeyRows()));
+                String token = FlowContextIds.scoped(request.getWorkspaceId(), request.getWorkflowId(), fingerprint);
+                if (previewOnly) return new SheetToVaultResult(null, preview.toBuilder().previewToken(token).build());
+                if (!token.equals(request.getSheetWritePreviewToken())) throw stalePreview();
             }
+
+            targetCellsUpdated = targetChanges.size();
+            targetRowsUpdated = (int) targetChanges.stream().map(SheetCellChange::getRowIndex).distinct().count();
+            targetRowsSkipped = preview.getUnmatchedRows().size() + preview.getMissingSourceKeyRows().size();
+            phase(request, executionId, "sheetWrite", "WRITE", "Đang ghi về bảng tính đích");
         }
+        store.bind(flow, request.getSpreadsheetId(), sheet.getSheetName(), idColumn, sheet.getHeaders(), request.getStorageName());
+        writes.apply(request.getAccessToken(), plans);
+        phase(request, executionId, "storage", "WRITE", "Đang lưu Vault và checkpoint");
+        vaultWrites.forEach((id, row) -> store.saveVaultRecord(flow, id, row));
+        snapshotWrites.forEach((id, row) -> store.saveSnapshot(flow, id, row));
 
         int queued = enqueueNotifications(request, flow, executionId, recordEvents, columns, initial ? List.of() : detected);
         int sent = 0, failed = 0;
@@ -471,7 +477,11 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
                 .targetRowsSkipped(targetRowsSkipped)
                 .latency((System.currentTimeMillis() - start) + " ms").build();
         completeAfterCommit(executionId, result);
-        return result;
+        return new SheetToVaultResult(result, null);
+    }
+
+    private ApplicationException stalePreview() {
+        return new ApplicationException(ErrorCode.STATE_CONFLICT, "Dữ liệu đã thay đổi. Xem trước lại trước khi áp dụng.");
     }
 
     private void validateColumnTypes(RunSyncRequest request, Set<String> columns, List<SheetDataResponse> sheets) {

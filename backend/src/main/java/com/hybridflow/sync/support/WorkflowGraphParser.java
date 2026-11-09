@@ -208,6 +208,7 @@ public class WorkflowGraphParser {
 
         SheetWriteTargetPlan sheetWriteTargetPlan = null;
         if (sheetWriteNode != null) {
+            if (multi) throw new ValidationException("Khối Ghi về bảng tính cần luồng một Sheet nguồn và Kho.");
             String swId = sheetWriteNode.path("id").asText();
             if (!hasEdge(edges, diffId, "clean", swId, "in")) {
                 throw new ValidationException("Khối Ghi về bảng tính phải được nối từ cổng Hành động (clean) của khối So khớp.");

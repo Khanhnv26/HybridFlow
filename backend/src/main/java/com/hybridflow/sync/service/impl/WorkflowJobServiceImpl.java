@@ -18,9 +18,7 @@ import com.hybridflow.sync.repository.WorkflowJobRepository;
 import com.hybridflow.sync.service.SyncExecutionService;
 import com.hybridflow.sync.service.WorkflowJobService;
 import com.hybridflow.sync.support.WorkflowGraphParser;
-import com.hybridflow.workspace.dto.request.ConnectionBindingItem;
 import com.hybridflow.workspace.repository.TenantWorkflowRepository;
-import com.hybridflow.workspace.repository.WorkspaceConnectionRepository;
 import com.hybridflow.workspace.service.TenantRunPlanService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
@@ -31,7 +29,6 @@ import org.springframework.transaction.support.TransactionTemplate;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.List;
-import java.util.Optional;
 
 @Service @RequiredArgsConstructor
 public class WorkflowJobServiceImpl implements WorkflowJobService {
@@ -44,7 +41,6 @@ public class WorkflowJobServiceImpl implements WorkflowJobService {
     private final PlatformTransactionManager transactions;
     private final Clock clock;
     private final TenantWorkflowRepository tenantWorkflowRepository;
-    private final WorkspaceConnectionRepository workspaceConnectionRepository;
     private final TenantRunPlanService tenantRunPlanService;
     @Value("${hybridflow.scheduler.lease-seconds:120}") private int leaseSeconds = 120;
     @Value("${hybridflow.scheduler.max-attempts:3}") private int maxAttempts = 3;
@@ -103,16 +99,7 @@ public class WorkflowJobServiceImpl implements WorkflowJobService {
         }
         RunSyncRequest request;
         if (job.getWorkspaceId() != null) {
-            String accessToken = null;
-            List<ConnectionBindingItem> bindings = tenantWorkflowRepository.findBindings(job.getWorkspaceId(), job.getWorkflowId());
-            for (ConnectionBindingItem b : bindings) {
-                Optional<String> googleConnId = workspaceConnectionRepository.findGoogleConnectionId(job.getWorkspaceId(), b.getConnectionId());
-                if (googleConnId.isPresent()) {
-                    accessToken = credentials.resolveAccessToken(googleConnId.get());
-                    break;
-                }
-            }
-            request = tenantRunPlanService.createPlan(job.getWorkspaceId(), job.getWorkflowId(), job.getDefinition(), accessToken);
+            request = tenantRunPlanService.createPlan(job.getWorkspaceId(), job.getWorkflowId(), job.getDefinition(), null);
         } else {
             String connection = definitions.findConnection(job.getWorkflowId()).orElseThrow(GoogleReconnectRequiredException::new);
             try {

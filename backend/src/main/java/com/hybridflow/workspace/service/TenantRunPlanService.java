@@ -8,4 +8,5 @@ import java.util.UUID;
 public interface TenantRunPlanService {
     RunSyncRequest createPlan(UUID workspaceId, String workflowId, JsonNode definition, String connectionReference);
     RunSyncRequest createPlan(UUID workspaceId, String workflowId, String definitionJson, String connectionReference);
+    RunSyncRequest createPreviewPlan(UUID workspaceId, String workflowId, JsonNode definition, String connectionReference);
 }
