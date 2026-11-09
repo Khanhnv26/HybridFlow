@@ -90,8 +90,7 @@ public class TenantWorkflowController {
                                @PathVariable String workflowId,
                                @RequestParam(defaultValue = "false") boolean bootstrapConfirmed,
                                @RequestHeader(value = "X-Sheet-Write-Preview", required = false) String previewToken) {
-        if (previewToken != null) return service.applySheetWrite(workspaceId, workflowId, previewToken);
-        return service.run(workspaceId, workflowId, bootstrapConfirmed);
+        return service.run(workspaceId, workflowId, bootstrapConfirmed, previewToken);
     }
 
     @GetMapping("/{workflowId}/conflicts")

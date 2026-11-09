@@ -35,8 +35,10 @@ interface Props {
   onReadComparisonSource?: (id: string, types: Record<string, 'TEXT' | 'NUMBER'>, signal: AbortSignal) => Promise<SheetDataResponse>;
   sourceSpreadsheetId?: string;
   sourceSheetName?: string;
+  sourceConnectionId?: string;
   defaultKeyColumn?: string;
   onPreviewSheetWrite?: (request: SheetWritePreviewRequest, signal?: AbortSignal) => Promise<SheetWritePreviewResponse>;
+  onApplySheetWrite?: (previewToken: string) => Promise<void>;
 }
 
 export function NaturalLanguageConfigModal(props: Props) {
@@ -77,10 +79,12 @@ export function NaturalLanguageConfigModal(props: Props) {
       sourceHeaders={props.availableColumns || []}
       sourceSpreadsheetId={sourceSpreadsheetId}
       sourceSheetName={sourceSheetName}
+      sourceConnectionId={props.sourceConnectionId}
       defaultKeyColumn={defaultKey}
       onClose={onClose}
       onSave={settings => props.onSaveSource(node.id, settings)}
       onPreview={props.onPreviewSheetWrite}
+      onApply={props.onApplySheetWrite}
     />;
   }
 

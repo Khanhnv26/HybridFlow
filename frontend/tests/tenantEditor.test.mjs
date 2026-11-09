@@ -54,6 +54,26 @@ test('version conflict is returned to the editor without retrying or overwriting
   assert.equal(calls.filter(call => call[0] === 'put').length, 1);
 });
 
+test('Sheet Write saves only the source binding and forwards its preview token to Run', async () => {
+  const { editor, calls } = fixture((method, url) => {
+    if (method === 'get') return { definitionVersion: 3, definition: { nodes: [], edges: [] } };
+    if (url.endsWith('/sheet-write/preview')) return { valid: true, previewToken: 'expected-plan' };
+    return {};
+  });
+  const nodes = [
+    { id: 'source', type: 'sheetsTrigger', data: { connectionId: 'google-source' } },
+    { id: 'target', type: 'sheetWriteAction', data: { connectionId: 'obsolete-binding' } },
+  ];
+  await editor.workflow.save('ignored', { nodes, edges: [] });
+  assert.deepEqual(calls[1][2].connectionBindings, [{ nodeId: 'source', connectionId: 'google-source' }]);
+  const request = { targetSpreadSheetId: 'target-file' };
+  const preview = await editor.sync.previewSheetWrite(request);
+  await editor.workflow.run('ignored', true, preview.previewToken);
+  assert.deepEqual(calls[2].slice(0, 3), ['post', base + '/sheet-write/preview', request]);
+  assert.equal(calls[3][1], base + '/run');
+  assert.deepEqual(calls[3][3].headers, { 'X-Sheet-Write-Preview': 'expected-plan' });
+});
+
 test('conflict resolution uses server context and never sends a caller credential', async () => {
   const { editor, calls } = fixture((_method, url) => url.endsWith('/conflicts') ? [{ id: 42, flowId: 'context-old' }] : {});
   await editor.sync.getOpenConflicts('browser-fingerprint');

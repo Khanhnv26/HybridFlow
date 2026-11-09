@@ -113,8 +113,10 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             }
             return executeSheetToVaultSync(request, flow, idColumn, executionId, start, false).run();
         } catch (RuntimeException ex) {
-            history.fail(executionId, ex);
-            throw ex;
+            RuntimeException failure = request.getSheetWritePreviewToken() != null && ex instanceof ValidationException
+                    ? stalePreview() : ex;
+            history.fail(executionId, failure);
+            throw failure;
         }
     }
 
@@ -441,14 +443,15 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
             }
 
             List<SheetCellChange> targetChanges = preview.getChanges().stream()
-                    .map(cell -> new SheetCellChange(cell.getTargetRowIndex(), cell.getTargetColumn(), cell.getKey(),
+                    .map(cell -> new SheetCellChange(cell.getTargetRowIndex(), cell.getTargetColumn(),
+                            liveTarget.getRows().get(cell.getTargetRowIndex()).get(target.getTargetKeyColumn()),
                             cell.getCurrentValue(), cell.getNewValue()))
                     .toList();
             plans.add(new SheetWritePlan(target.getTargetSpreadSheetId(), liveTarget.getSheetName(),
                     target.getTargetKeyColumn(), liveTarget.getHeaders(), targetChanges, Map.of()));
 
             if (previewOnly || request.getSheetWritePreviewToken() != null) {
-                String fingerprint = codec.encode(List.of(flow, request.getConflictPolicy(), target.getSourceKeyColumn(),
+                String fingerprint = codec.encode(List.of(flow, request.getAccessToken(), request.getConflictPolicy(), target.getSourceKeyColumn(),
                         target.getColumnMappings(), plans, preview.getUnmatchedRows(), preview.getMissingSourceKeyRows()));
                 String token = FlowContextIds.scoped(request.getWorkspaceId(), request.getWorkflowId(), fingerprint);
                 if (previewOnly) return new SheetToVaultResult(null, preview.toBuilder().previewToken(token).build());

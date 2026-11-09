@@ -37,6 +37,7 @@ GET/POST   /workspaces/{w}/modules
 GET/POST   /workspaces/{w}/workflows
 GET/PUT    /workspaces/{w}/workflows/{f}
 POST       /workspaces/{w}/workflows/{f}/run?bootstrapConfirmed=false
+POST       /workspaces/{w}/workflows/{f}/sheet-write/preview
 GET/DELETE /workspaces/{w}/workflows/{f}/history
 GET        /workspaces/{w}/workflows/{f}/conflicts
 GET        /workspaces/{w}/workflows/{f}/contexts/{c}/vault
@@ -46,6 +47,8 @@ POST       /workspaces/{w}/workflows/{f}/contexts/{c}/conflicts/{id}/resolve
 ```
 
 Lưu workflow gửi `expectedVersion`, `definition`, `connectionBindings`. Version cũ trả 409; không tự ghi đè. Binding chỉ tham chiếu connection trong cùng workspace.
+
+Sheet Write dùng kết nối Google của Sheet nguồn. Khi chạy thủ công, lưu cấu hình và gọi preview để lấy `previewToken`, rồi gửi mã đó trong header `X-Sheet-Write-Preview` của `POST .../run`. Backend trả `409 STATE_CONFLICT` nếu kế hoạch đã thay đổi. Lịch chạy tự lập kế hoạch ở mỗi lượt.
 
 ## Trạng thái hoàn thiện các hạng mục trước khi đóng chặng
 

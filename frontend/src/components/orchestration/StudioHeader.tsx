@@ -25,6 +25,7 @@ interface StudioHeaderProps {
   onManageConnections?: () => void;
   connected: boolean;
   autoActive: boolean;
+  requiresPreview?: boolean;
   onAutoChange: (active: boolean) => void;
   intervalMs: number;
   onIntervalChange: (interval: number) => void;
@@ -44,6 +45,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
   onManageConnections,
   connected,
   autoActive: isAutoActive,
+  requiresPreview,
   onAutoChange,
   intervalMs,
   onIntervalChange,
@@ -97,10 +99,12 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
           </summary>
           <div className="toolbar-popover space-y-3">
             <p className="text-sm font-semibold text-primary">Lịch chạy tự động</p>
-            <p className="text-xs text-secondary">Chỉ hoạt động khi trang này đang mở.</p>
+            <p className="text-xs text-secondary">
+              {requiresPreview ? 'Dùng khối Lịch chạy để tự động hóa luồng Ghi về bảng tính.' : 'Chỉ hoạt động khi trang này đang mở.'}
+            </p>
             <button
               type="button"
-              disabled={!connected}
+              disabled={!connected || requiresPreview}
               onClick={() => onAutoChange(!isAutoActive)}
               aria-pressed={isAutoActive}
               className="toolbar-button w-full justify-between disabled:opacity-50"
@@ -114,6 +118,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
               Chu kỳ
               <select
                 aria-label="Chu kỳ chạy tự động"
+                disabled={requiresPreview}
                 value={intervalMs}
                 onChange={(e) => onIntervalChange(Number(e.target.value))}
                 className="rounded-md border border-line bg-elevated p-2 text-primary focus:outline-none"

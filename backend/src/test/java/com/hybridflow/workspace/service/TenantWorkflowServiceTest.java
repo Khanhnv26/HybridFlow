@@ -27,9 +27,7 @@ import com.hybridflow.workspace.repository.MembershipRepository;
 import com.hybridflow.workspace.repository.ModuleRepository;
 import com.hybridflow.workspace.repository.TenantWorkflowRepository;
 import com.hybridflow.workspace.repository.WorkspaceConnectionRepository;
-import com.hybridflow.connector.google.service.GoogleSheetsService;
 import com.hybridflow.workspace.service.impl.TenantWorkflowServiceImpl;
-import com.hybridflow.workspace.support.SheetWritePlanner;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -97,16 +95,13 @@ class TenantWorkflowServiceTest {
     private final UUID userId = UUID.randomUUID();
     private final String workflowId = "flow-uuid-1";
     @Mock private SyncStateService syncState;
-    @Mock private GoogleSheetsService googleSheetsService;
-    private final SheetWritePlanner sheetWritePlanner = new SheetWritePlanner();
 
     @BeforeEach
     void setup() {
         service = new TenantWorkflowServiceImpl(
                 workflows, workspaces, access, members, modules, connections,
                 currentUser, audit, planService, syncExecutionService,
-                syncConflictService, credentials, parser, clock, mapper, syncState,
-                googleSheetsService, sheetWritePlanner);
+                syncConflictService, credentials, parser, clock, mapper, syncState);
     }
 
     @Test

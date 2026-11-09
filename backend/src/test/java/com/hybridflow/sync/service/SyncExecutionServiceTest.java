@@ -1,6 +1,8 @@
 package com.hybridflow.sync.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hybridflow.common.exception.ApplicationException;
+import com.hybridflow.common.exception.ErrorCode;
 import com.hybridflow.connector.google.dto.request.ReadSheetRequest;
 import com.hybridflow.connector.google.dto.response.SheetDataResponse;
 import com.hybridflow.connector.google.service.GoogleSheetsService;
@@ -18,6 +20,7 @@ import com.hybridflow.sync.model.RecordChangeEvent;
 import com.hybridflow.sync.model.SheetWritePlan;
 import com.hybridflow.sync.service.impl.DataTransformerServiceImpl;
 import com.hybridflow.sync.service.impl.SyncExecutionServiceImpl;
+import com.hybridflow.sync.support.SyncJsonCodec;
 import com.hybridflow.workspace.support.SheetWritePlanner;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -70,6 +73,7 @@ class SyncExecutionServiceTest {
     @Spy ThreeWayDiffEngine engine = new ThreeWayDiffEngine();
     @Spy DataTransformerServiceImpl transformer = new DataTransformerServiceImpl();
     @Spy SheetWritePlanner sheetWritePlanner = new SheetWritePlanner();
+    @Spy SyncJsonCodec codec = new SyncJsonCodec(new ObjectMapper());
     @InjectMocks SyncExecutionServiceImpl service;
 
     private RunSyncRequest eventRequest(boolean multi, boolean initial, Map<String, String> base,
@@ -521,12 +525,13 @@ class SyncExecutionServiceTest {
         verify(notificationOutboxService).enqueue(eq("router-flow"), any(), eq(List.of(router)), eq(List.of(action)), argThat(events -> events.size() == 1 && events.getFirst().getKind().equals("UPDATED")), any(), any(), any());
     }
 
-    @Test
-    void syncExecutesSheetWriteTargetPlanWhenPresent() {
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void sheetWriteAppliesOnlyThePreviewedResolvedValues(boolean editedAfterPreview) {
         SheetDataResponse sourceSheet = SheetDataResponse.builder()
                 .sheetName("Source")
                 .headers(List.of("id", "status"))
-                .rows(List.of(Map.of("id", "ORD-1", "status", "DELIVERED")))
+                .rows(List.of(Map.of("id", "ORD-1", "status", "PENDING")))
                 .totalRows(1)
                 .build();
         SheetDataResponse targetSheet = SheetDataResponse.builder()
@@ -537,15 +542,15 @@ class SyncExecutionServiceTest {
                 .build();
 
         when(sheets.readSheet(argThat(req -> req != null && "sheet".equals(req.getSpreadsheetId())))).thenReturn(sourceSheet);
-        when(sheets.readSheet(argThat(req -> req != null && "target-sheet".equals(req.getSpreadsheetId())))).thenReturn(targetSheet);
+        when(sheets.readSheet(argThat(req -> req != null && "a-target".equals(req.getSpreadsheetId())))).thenReturn(targetSheet);
 
         when(store.hasSnapshots("write-flow")).thenReturn(true);
         when(store.getSnapshot("write-flow", "ORD-1")).thenReturn(Map.of("id", "ORD-1", "status", "PENDING"));
-        when(store.getVaultRecord("write-flow", "ORD-1")).thenReturn(Map.of("id", "ORD-1", "status", "PENDING"));
+        when(store.getVaultRecord("write-flow", "ORD-1")).thenReturn(Map.of("id", "ORD-1", "status", "DELIVERED"));
 
         com.hybridflow.sync.dto.request.SheetWriteTargetPlan targetPlan = com.hybridflow.sync.dto.request.SheetWriteTargetPlan.builder()
                 .nodeId("sheetWrite-1")
-                .targetSpreadSheetId("target-sheet")
+                .targetSpreadSheetId("a-target")
                 .targetSheetName("Orders")
                 .sourceKeyColumn("id")
                 .targetKeyColumn("order_id")
@@ -561,6 +566,19 @@ class SyncExecutionServiceTest {
                 .sheetWriteTargetPlan(targetPlan)
                 .build();
 
+        var preview = service.previewSheetWrite(request);
+        assertEquals("DELIVERED", preview.getChanges().getFirst().getNewValue());
+        verifyNoInteractions(writes, history, conflicts);
+        request.setSheetWritePreviewToken(preview.getPreviewToken());
+        if (editedAfterPreview) {
+            targetSheet.setRows(List.of(Map.of("order_id", "ORD-1", "order_status", "MANUAL", "formula_col", "=SUM(A1:B1)")));
+            ApplicationException error = assertThrows(ApplicationException.class, () -> service.executeSync(request));
+            assertEquals(ErrorCode.STATE_CONFLICT, error.getErrorCode());
+            verify(writes, never()).apply(any(), any());
+            verify(store, never()).saveSnapshot(any(), any(), any());
+            return;
+        }
+
         RunSyncResponse response = service.executeSync(request);
 
         assertEquals("SUCCESS", response.getStatus());
@@ -569,11 +587,15 @@ class SyncExecutionServiceTest {
         assertEquals(0, response.getTargetRowsSkipped());
 
         ArgumentCaptor<List<SheetWritePlan>> captor = ArgumentCaptor.forClass(List.class);
-        verify(writes, org.mockito.Mockito.times(2)).apply(eq("test-token"), captor.capture());
-        List<List<SheetWritePlan>> allInvocations = captor.getAllValues();
-        assertEquals(2, allInvocations.size());
-        SheetWritePlan targetSheetPlan = allInvocations.get(1).get(0);
-        assertEquals("target-sheet", targetSheetPlan.getSpreadsheetId());
+        InOrder order = inOrder(store, writes);
+        order.verify(store).lock("sheet:a-target");
+        order.verify(store).lock("sheet:sheet");
+        order.verify(writes).recover("test-token", List.of("a-target", "sheet"));
+        order.verify(writes).apply(eq("test-token"), captor.capture());
+        assertEquals(2, captor.getValue().size());
+        assertEquals("DELIVERED", captor.getValue().getFirst().getChanges().getFirst().getAfter());
+        SheetWritePlan targetSheetPlan = captor.getValue().get(1);
+        assertEquals("a-target", targetSheetPlan.getSpreadsheetId());
         assertEquals("Orders", targetSheetPlan.getSheetName());
         assertEquals(1, targetSheetPlan.getChanges().size());
         assertEquals("order_status", targetSheetPlan.getChanges().get(0).getColumn());

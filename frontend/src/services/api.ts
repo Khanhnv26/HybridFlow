@@ -18,8 +18,6 @@ import type {
   BusinessModule,
   TenantWorkflowSummary,
   WorkspaceConnectionResponse,
-  SheetWritePreviewRequest,
-  SheetWritePreviewResponse,
 } from '../types';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '');
@@ -134,12 +132,6 @@ export const tenantWorkflowService = {
     (await apiClient.post<TenantWorkflowSummary>(`/workspaces/${encodeURIComponent(workspaceId)}/workflows`, { moduleId, name })).data,
   updateStatus: async (workspaceId: string, workflowId: string, enabled: boolean) =>
     (await apiClient.put<TenantWorkflowSummary>(`/workspaces/${encodeURIComponent(workspaceId)}/workflows/${encodeURIComponent(workflowId)}/status`, { enabled })).data,
-  previewSheetWrite: async (workspaceId: string, workflowId: string, request: SheetWritePreviewRequest, signal?: AbortSignal) =>
-    (await apiClient.post<SheetWritePreviewResponse>(
-      `/workspaces/${encodeURIComponent(workspaceId)}/workflows/${encodeURIComponent(workflowId)}/sheet-write/preview`,
-      request,
-      { signal }
-    )).data,
 };
 
 export const workspaceConnectionService = {

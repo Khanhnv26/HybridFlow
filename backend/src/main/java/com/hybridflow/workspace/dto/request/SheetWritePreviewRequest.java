@@ -2,6 +2,7 @@ package com.hybridflow.workspace.dto.request;
 
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotEmpty;
+import jakarta.validation.constraints.NotNull;
 import jakarta.validation.Valid;
 import lombok.*;
 
@@ -26,7 +27,7 @@ public class SheetWritePreviewRequest {
     @NotBlank
     private String targetKeyColumn;
     @NotEmpty
-    private List<@jakarta.validation.constraints.NotNull @Valid ColumnMappingItem> columnMappings;
+    private List<@NotNull @Valid ColumnMappingItem> columnMappings;
 
     @Getter
     @Setter

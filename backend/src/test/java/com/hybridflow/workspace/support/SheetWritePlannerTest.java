@@ -202,4 +202,21 @@ class SheetWritePlannerTest {
         assertEquals(List.of(2, 4), response.getDuplicateTargetKeys().get(0).getTargetRowNumbers());
         assertTrue(response.getErrors().stream().anyMatch(e -> e.contains("trùng lặp")));
     }
+
+    @Test
+    void plan_rejectsDuplicateSourceKeysWithOriginalSheetRowNumbers() {
+        SheetDataResponse target = SheetDataResponse.builder()
+                .headers(List.of("id", "name"))
+                .rows(List.of(Map.of("id", "1", "name", "Current")))
+                .build();
+
+        SheetWritePreviewResponse response = planner.plan(
+                List.of(Map.of("id", "1", "name", "First"), Map.of("id", " 1 ", "name", "Second")),
+                List.of("id", "name"), target, "id", "id",
+                List.of(new SheetWritePreviewRequest.ColumnMappingItem("name", "name")), Map.of(0, 3, 1, 8));
+
+        assertFalse(response.isValid());
+        assertTrue(response.getChanges().isEmpty());
+        assertEquals(List.of("Khóa nguồn '1' bị trùng ở dòng 3 và 8."), response.getErrors());
+    }
 }

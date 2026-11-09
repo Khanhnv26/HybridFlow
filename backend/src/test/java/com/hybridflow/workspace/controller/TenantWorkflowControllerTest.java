@@ -1,6 +1,8 @@
 package com.hybridflow.workspace.controller;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.hybridflow.common.exception.ApplicationException;
+import com.hybridflow.common.exception.ErrorCode;
 import com.hybridflow.common.exception.GlobalExceptionHandler;
 import com.hybridflow.sync.dto.request.ResolveConflictRequest;
 import com.hybridflow.sync.dto.response.RunSyncResponse;
@@ -194,11 +196,22 @@ class TenantWorkflowControllerTest {
                 .flowId("flow-1")
                 .totalRowsProcessed(5)
                 .build();
-        when(service.run(workspaceId, workflowId, false)).thenReturn(response);
+        when(service.run(workspaceId, workflowId, false, null)).thenReturn(response);
 
         mvc.perform(post("/api/v1/workspaces/" + workspaceId + "/workflows/" + workflowId + "/run"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.totalRowsProcessed").value(5));
+    }
+
+    @Test
+    void runReturnsConflictWhenSheetWritePreviewIsStale() throws Exception {
+        when(service.run(workspaceId, workflowId, false, "old-plan"))
+                .thenThrow(new ApplicationException(ErrorCode.STATE_CONFLICT));
+
+        mvc.perform(post("/api/v1/workspaces/" + workspaceId + "/workflows/" + workflowId + "/run")
+                        .header("X-Sheet-Write-Preview", "old-plan"))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("STATE_CONFLICT"));
     }
 
     @Test

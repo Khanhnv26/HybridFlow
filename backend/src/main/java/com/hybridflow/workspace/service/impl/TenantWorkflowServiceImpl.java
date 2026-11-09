@@ -279,20 +279,22 @@ public class TenantWorkflowServiceImpl implements TenantWorkflowService {
 
     @Override
     @Transactional
-    public RunSyncResponse applySheetWrite(UUID workspaceId, String workflowId, String previewToken) {
-        return run(workspaceId, workflowId, true, previewToken);
-    }
-
-    private RunSyncResponse run(UUID workspaceId, String workflowId, boolean bootstrapConfirmed, String previewToken) {
+    public RunSyncResponse run(UUID workspaceId, String workflowId, boolean bootstrapConfirmed, String previewToken) {
         access.requireRun(workspaceId, workflowId);
         TenantWorkflowRow row = workflows.findWorkflow(workspaceId, workflowId)
                 .orElseThrow(() -> new ApplicationException(ErrorCode.RESOURCE_NOT_FOUND));
         String accessToken = googleAccessForWorkflow(workspaceId, workflowId, sheetWriteNodeIds(readDefinition(row)));
-        RunSyncRequest plan = planService.createPlan(workspaceId, workflowId, row.getDefinitionJson(), accessToken);
+        RunSyncRequest plan;
+        try {
+            plan = planService.createPlan(workspaceId, workflowId, row.getDefinitionJson(), accessToken);
+        } catch (ValidationException exception) {
+            if (previewToken == null) throw exception;
+            throw new ApplicationException(ErrorCode.STATE_CONFLICT, "Cấu hình đã thay đổi. Xem trước lại trước khi áp dụng.");
+        }
         if ((plan.getSheetWriteTargetPlan() != null) != (previewToken != null)) {
             throw new ApplicationException(ErrorCode.STATE_CONFLICT, "Xem trước cấu hình Ghi về bảng tính trước khi áp dụng.");
         }
-        plan.setBootstrapConfirmed(bootstrapConfirmed);
+        plan.setBootstrapConfirmed(bootstrapConfirmed || previewToken != null);
         plan.setSheetWritePreviewToken(previewToken);
         RunSyncResponse response = syncExecutionService.executeSync(plan);
         audit.append(workspaceId, currentUser.requireUserId(), "WORKFLOW_RUN", workflowId);
@@ -443,7 +445,10 @@ public class TenantWorkflowServiceImpl implements TenantWorkflowService {
     }
 
     private String googleAccessForWorkflow(UUID workspaceId, String workflowId) {
-        return googleAccessForWorkflow(workspaceId, workflowId, Set.of());
+        Set<String> ignoredBindings = workflows.findWorkflow(workspaceId, workflowId)
+                .map(row -> sheetWriteNodeIds(readDefinition(row)))
+                .orElseGet(Set::of);
+        return googleAccessForWorkflow(workspaceId, workflowId, ignoredBindings);
     }
 
     private String googleAccessForWorkflow(UUID workspaceId, String workflowId, Set<String> ignoredBindings) {

@@ -1,6 +1,6 @@
 import { useExitMotion } from '../../hooks/useExitMotion';
 import { errorMessage } from '../../services/errors';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertTriangle,
   ArrowRight,
@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 import { ExcelIcon } from '../icons/BrandIcons';
 import { chooseSheetTab, parseSheetSource } from '../../services/sheetSource';
-import { tenantWorkflowService, workspaceConnectionService } from '../../services/api';
+import { workspaceConnectionService } from '../../services/api';
 import type {
   OrchestrationNodeData,
   SheetColumnMapping,
@@ -32,10 +32,12 @@ interface SheetWriteConfigModalProps {
   sourceHeaders?: string[];
   sourceSpreadsheetId?: string;
   sourceSheetName?: string;
+  sourceConnectionId?: string;
   defaultKeyColumn?: string;
   onClose: () => void;
   onSave: (data: Partial<OrchestrationNodeData>) => Promise<void>;
   onPreview?: (request: SheetWritePreviewRequest, signal?: AbortSignal) => Promise<SheetWritePreviewResponse>;
+  onApply?: (previewToken: string) => Promise<void>;
 }
 
 export function SheetWriteConfigModal({
@@ -45,16 +47,15 @@ export function SheetWriteConfigModal({
   sourceHeaders = [],
   sourceSpreadsheetId,
   sourceSheetName,
+  sourceConnectionId: selectedConnectionId,
   defaultKeyColumn = 'id',
   onClose,
   onSave,
   onPreview,
+  onApply,
 }: SheetWriteConfigModalProps) {
   const motionRef = useExitMotion(true);
   const [workspaceConnections, setWorkspaceConnections] = useState<WorkspaceConnectionResponse[]>([]);
-  const [selectedConnectionId, setSelectedConnectionId] = useState<string>(
-    () => (typeof data.connectionId === 'string' ? data.connectionId : '')
-  );
 
   const [link, setLink] = useState(
     () =>
@@ -88,6 +89,8 @@ export function SheetWriteConfigModal({
   const [previewResult, setPreviewResult] = useState<SheetWritePreviewResponse | null>(null);
   const [previewError, setPreviewError] = useState('');
   const [saving, setSaving] = useState(false);
+  const [applying, setApplying] = useState(false);
+  const previewRequest = useRef<AbortController | null>(null);
 
   const parsed = useMemo(() => {
     try {
@@ -97,6 +100,24 @@ export function SheetWriteConfigModal({
     }
   }, [link]);
   const spreadsheetId = parsed ? parsed.spreadsheetId : '';
+  const savedMappings = data.columnMappings || [];
+  const settingsSaved = spreadsheetId === (data.targetSpreadsheetId || data.spreadsheetId)
+    && selectedTab === (data.targetSheetName || data.sheetName)
+    && sourceKeyColumn === (data.sourceKeyColumn || defaultKeyColumn)
+    && targetKeyColumn === data.targetKeyColumn
+    && columnMappings.length === savedMappings.length
+    && columnMappings.every((mapping, i) => mapping.sourceColumn === savedMappings[i].sourceColumn
+      && mapping.targetColumn === savedMappings[i].targetColumn);
+  const hasTargetAccess = !!selectedConnectionId && !!metadata && targetHeaders.includes(targetKeyColumn);
+  const busy = saving || applying;
+
+  useEffect(() => {
+    setPreviewResult(null);
+    setPreviewError('');
+    setPreviewLoading(false);
+    return () => previewRequest.current?.abort();
+  }, [workspaceId, workflowId, sourceSpreadsheetId, sourceSheetName, selectedConnectionId, spreadsheetId,
+    selectedTab, sourceKeyColumn, targetKeyColumn, columnMappings]);
 
   // 1. Tải danh sách Google Connections trong workspace
   useEffect(() => {
@@ -105,11 +126,7 @@ export function SheetWriteConfigModal({
     workspaceConnectionService
       .list(workspaceId, controller.signal)
       .then((items) => {
-        const googleConns = items.filter((c) => c.provider === 'GOOGLE' && c.state === 'ACTIVE');
-        setWorkspaceConnections(googleConns);
-        if (!selectedConnectionId && googleConns.length > 0) {
-          setSelectedConnectionId(googleConns[0].id);
-        }
+        if (!controller.signal.aborted) setWorkspaceConnections(items);
       })
       .catch((err) => {
         if (!controller.signal.aborted) {
@@ -123,15 +140,18 @@ export function SheetWriteConfigModal({
   useEffect(() => {
     if (!workspaceId || !selectedConnectionId || !spreadsheetId) {
       setMetadata(null);
+      setLoading(false);
       return;
     }
     const controller = new AbortController();
     setLoading(true);
+    setMetadata(null);
     setError('');
 
     workspaceConnectionService
       .getSheetMetadata(workspaceId, selectedConnectionId, spreadsheetId, controller.signal)
       .then((meta) => {
+        if (controller.signal.aborted) return;
         setMetadata(meta);
         if (meta.sheets.length > 0) {
           if (!selectedTab || !meta.sheets.some((s) => s.title === selectedTab)) {
@@ -157,8 +177,8 @@ export function SheetWriteConfigModal({
 
   // 3. Tải headers của tab đích khi chọn tab
   useEffect(() => {
+    setTargetHeaders([]);
     if (!workspaceId || !selectedConnectionId || !spreadsheetId || !selectedTab) {
-      setTargetHeaders([]);
       return;
     }
     const controller = new AbortController();
@@ -171,6 +191,7 @@ export function SheetWriteConfigModal({
         controller.signal
       )
       .then((sheetData) => {
+        if (controller.signal.aborted) return;
         const headers = sheetData.headers || [];
         setTargetHeaders(headers);
         if (!targetKeyColumn && headers.length > 0) {
@@ -205,7 +226,7 @@ export function SheetWriteConfigModal({
   }
 
   async function handlePreview() {
-    if (!workspaceId || !workflowId || !spreadsheetId || !selectedTab) {
+    if (!onPreview || !workspaceId || !workflowId || !spreadsheetId || !selectedTab) {
       setPreviewError('Vui lòng chọn đầy đủ bảng tính đích và tab trước khi xem trước.');
       return;
     }
@@ -238,16 +259,33 @@ export function SheetWriteConfigModal({
     setPreviewLoading(true);
     setPreviewError('');
     setPreviewResult(null);
+    previewRequest.current?.abort();
+    const controller = new AbortController();
+    previewRequest.current = controller;
 
     try {
-      const result = onPreview
-        ? await onPreview(previewReq)
-        : await tenantWorkflowService.previewSheetWrite(workspaceId, workflowId, previewReq);
-      setPreviewResult(result);
+      const result = await onPreview(previewReq, controller.signal);
+      if (!controller.signal.aborted) setPreviewResult(result);
     } catch (err) {
+      if (!controller.signal.aborted) setPreviewError(errorMessage(err));
+    } finally {
+      if (!controller.signal.aborted) setPreviewLoading(false);
+    }
+  }
+
+  async function handleApply() {
+    const token = previewResult?.previewToken;
+    if (!onApply || !token || !settingsSaved || busy) return;
+    setApplying(true);
+    setPreviewError('');
+    try {
+      await onApply(token);
+      onClose();
+    } catch (err) {
+      setPreviewResult(null);
       setPreviewError(errorMessage(err));
     } finally {
-      setPreviewLoading(false);
+      setApplying(false);
     }
   }
 
@@ -276,7 +314,7 @@ export function SheetWriteConfigModal({
         sourceKeyColumn,
         targetKeyColumn,
         columnMappings,
-        connectionId: selectedConnectionId || undefined,
+        connectionId: undefined,
       });
       onClose();
     } catch (err) {
@@ -307,6 +345,7 @@ export function SheetWriteConfigModal({
           </div>
           <button
             onClick={onClose}
+            disabled={busy}
             className="p-1.5 rounded-lg text-surface-400 hover:text-surface-100 hover:bg-surface-800 transition"
           >
             <X size={18} />
@@ -314,7 +353,7 @@ export function SheetWriteConfigModal({
         </div>
 
         {/* Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6">
+        <fieldset disabled={busy} className="min-w-0 flex-1 overflow-y-auto p-6 space-y-6">
           {error && (
             <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-sm flex items-start gap-2.5">
               <AlertTriangle size={18} className="shrink-0 mt-0.5" />
@@ -328,25 +367,11 @@ export function SheetWriteConfigModal({
               1. Bảng tính đích
             </h3>
 
-            {/* Chọn kết nối */}
-            {workspaceConnections.length > 1 && (
-              <div>
-                <label className="block text-xs font-medium text-surface-300 mb-1.5">
-                  Kết nối Google của Workspace
-                </label>
-                <select
-                  value={selectedConnectionId}
-                  onChange={(e) => setSelectedConnectionId(e.target.value)}
-                  className="w-full px-3 py-2 bg-surface-950 border border-surface-800 rounded-xl text-sm focus:outline-none focus:border-blue-500"
-                >
-                  {workspaceConnections.map((c) => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} ({c.id})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
+            <p className="text-xs text-surface-300">
+              {selectedConnectionId
+                ? `Dùng kết nối Google của Sheet nguồn — ${workspaceConnections.find(c => c.id === selectedConnectionId)?.name || selectedConnectionId}`
+                : 'Chọn kết nối Google cho Sheet nguồn trước khi cấu hình Sheet đích.'}
+            </p>
 
             {/* Link bảng tính */}
             <div>
@@ -551,13 +576,13 @@ export function SheetWriteConfigModal({
                   4. Xem trước thay đổi (Readonly)
                 </h3>
                 <p className="text-xs text-surface-400 mt-0.5">
-                  Đối soát dữ liệu nguồn và đích để xem chính xác các ô sẽ đổi trước khi lưu
+                  Xem các ô đích dự kiến cập nhật trước khi áp dụng.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={handlePreview}
-                disabled={previewLoading || !spreadsheetId || !selectedTab || !targetKeyColumn || columnMappings.length === 0}
+                disabled={previewLoading || !onPreview || !hasTargetAccess || columnMappings.length === 0}
                 className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 disabled:opacity-50 disabled:cursor-not-allowed transition"
               >
                 <RefreshCw size={14} className={previewLoading ? 'animate-spin' : ''} />
@@ -573,6 +598,11 @@ export function SheetWriteConfigModal({
 
             {previewResult && (
               <div className="space-y-4">
+                {previewResult.errors.length > 0 && (
+                  <ul role="alert" className="list-disc pl-5 text-xs text-rose-300">
+                    {previewResult.errors.map((issue, index) => <li key={index}>{issue}</li>)}
+                  </ul>
+                )}
                 {/* Badges */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20">
@@ -650,22 +680,30 @@ export function SheetWriteConfigModal({
                       </tbody>
                     </table>
                   </div>
-                ) : (
+                ) : previewResult.valid ? (
                   <div className="p-3 text-center text-xs text-surface-400 bg-surface-950/50 rounded-xl">
                     <CheckCircle size={16} className="inline mr-1.5 text-emerald-400" />
-                    Không có ô nào cần cập nhật. Dữ liệu trên bảng tính đích đã khớp hoàn toàn.
+                    Không có ô nào cần cập nhật trong các dòng đã đối soát.
                   </div>
+                ) : null}
+                {previewResult.valid && (
+                  <p className="text-xs text-surface-400">
+                    {settingsSaved
+                      ? 'Áp dụng sẽ chạy workflow và khởi tạo checkpoint nếu đây là lần chạy đầu.'
+                      : 'Lưu cấu hình, sau đó mở lại khối để xem trước và áp dụng.'}
+                  </p>
                 )}
               </div>
             )}
           </div>
-        </div>
+        </fieldset>
 
         {/* Footer */}
         <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-surface-800 bg-surface-900/80">
           <button
             type="button"
             onClick={onClose}
+            disabled={busy}
             className="px-4 py-2 text-sm text-surface-300 hover:text-surface-100 hover:bg-surface-800 rounded-xl transition"
           >
             Hủy
@@ -673,12 +711,22 @@ export function SheetWriteConfigModal({
           <button
             type="button"
             onClick={handleSave}
-            disabled={saving || !spreadsheetId || !selectedTab || !targetKeyColumn || columnMappings.length === 0}
+            disabled={busy || !hasTargetAccess || columnMappings.length === 0}
             className="flex items-center gap-2 px-5 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-600/20 disabled:opacity-50 disabled:cursor-not-allowed transition"
           >
             <Save size={16} />
             <span>{saving ? 'Đang lưu...' : 'Lưu cấu hình'}</span>
           </button>
+          {onApply && (
+            <button
+              type="button"
+              onClick={handleApply}
+              disabled={busy || !settingsSaved || !previewResult?.valid || !previewResult.previewToken}
+              className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm disabled:opacity-50"
+            >
+              {applying ? 'Đang áp dụng…' : 'Áp dụng bản xem trước'}
+            </button>
+          )}
         </div>
       </div>
     </div>

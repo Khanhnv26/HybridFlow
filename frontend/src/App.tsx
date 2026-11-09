@@ -34,7 +34,7 @@ import {
   GenericOrchestrationNode,
   RouterConditionNode,
 } from './components/nodes/OrchestrationNodes';
-import { apiClient, googleService, syncService, workflowService, telegramService, workspaceConnectionService, workspaceTelegramApi, tenantWorkflowService } from './services/api';
+import { apiClient, googleService, syncService, workflowService, telegramService, workspaceConnectionService, workspaceTelegramApi } from './services/api';
 import { createTenantEditorApi } from './services/tenantEditor';
 import { arrangeWorkflowNodes } from './services/workflowLayout';
 import { connectedSheetSources, flowIdFor, workflowConfig } from './services/workflow';
@@ -474,9 +474,13 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
       setIsTogglingWorkflow(false);
     }
   }, [workflowEnabled, isTogglingWorkflow, workflowApi, workflowId, navigation, showToast]);
+  const sheetWriteNodeId = workspaceId ? nodes.find(node => node.type === 'sheetWriteAction')?.id : undefined;
   const runWorkflow = useCallback(
-    async (bootstrapConfirmed = false) => {
-      if (running.current || backendRunning.current) return;
+    async (bootstrapConfirmed = false, previewToken?: string) => {
+      if (running.current || backendRunning.current) {
+        if (previewToken) throw new Error('Chờ phiên đồng bộ hiện tại hoàn tất trước khi áp dụng.');
+        return;
+      }
       setManualBaseline(latestExecution?.id);
       running.current = true;
       setIsRunning(true);
@@ -486,8 +490,8 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
         if (!configState.config) throw new Error(configState.error);
         const config = configState.config;
         id = await flowIdFor(config);
-        await saveWorkflow();
-        const result = await workflowApi.run(workflowId, bootstrapConfirmed);
+        if (!previewToken) await saveWorkflow();
+        const result = await workflowApi.run(workflowId, bootstrapConfirmed, previewToken);
         if (currentFlow.current !== id) return;
         setBootstrapRequired(result.bootstrapRequired);
         setConflicts(result.conflicts);
@@ -505,8 +509,9 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
         showToast(message(error));
         if (id) {
           await refreshRunData(id).catch(() => {});
-          await refreshSources();
+          await refreshSources().catch(() => {});
         }
+        if (previewToken) throw error;
       } finally {
         running.current = false;
         setIsRunning(false);
@@ -515,12 +520,12 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
     [configState, token, saveWorkflow, refreshRunData, refreshSources, showToast, workflowId, workflowApi, workspaceId, latestExecution?.id],
   );
   useEffect(() => {
-    if (!autoActive) return;
+    if (!autoActive || sheetWriteNodeId) return;
     const timer = setInterval(() => {
       void runWorkflow();
     }, intervalMs);
     return () => clearInterval(timer);
-  }, [autoActive, intervalMs, runWorkflow]);
+  }, [autoActive, intervalMs, runWorkflow, sheetWriteNodeId]);
   const testStep = useCallback(
     async (nodeId: string) => {
       const node = nodes.find((n) => n.id === nodeId);
@@ -855,12 +860,16 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
         workspaceRole={workspaceRole}
         navigation={navigation}
         isRunning={isRunning}
-        autoActive={autoActive}
+        autoActive={autoActive && !sheetWriteNodeId}
+        requiresPreview={!!sheetWriteNodeId}
         onAutoChange={setAutoActive}
         intervalMs={intervalMs}
         onIntervalChange={setIntervalMs}
         connected={connected}
-        onRunWorkflow={() => void runWorkflow()}
+        onRunWorkflow={() => {
+          if (sheetWriteNodeId) setActiveNodeId(sheetWriteNodeId);
+          else void runWorkflow();
+        }}
         onSaveWorkflow={() => {
           void saveWorkflow()
             .then(() => showToast('Đã lưu cấu hình lên máy chủ.'))
@@ -1076,12 +1085,10 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
         comparisonSources={comparisonSources}
         sourceSpreadsheetId={diffUpstreamSheets[0]?.data.spreadsheetId}
         sourceSheetName={diffUpstreamSheets[0]?.data.sheetName}
+        sourceConnectionId={diffUpstreamSheets[0]?.data.connectionId}
         defaultKeyColumn={nodes.find(node => node.type === 'diffEngine')?.data.uniqueKey || 'id'}
-        onPreviewSheetWrite={
-          workspaceId && workflowId
-            ? (request, signal) => tenantWorkflowService.previewSheetWrite(workspaceId, workflowId, request, signal)
-            : undefined
-        }
+        onPreviewSheetWrite={tenant?.sync.previewSheetWrite}
+        onApplySheetWrite={tenant ? previewToken => runWorkflow(true, previewToken) : undefined}
         onReadComparisonSource={(id, types, signal) => {
           const source = diffUpstreamSheets.find(item => item.id === id);
           if (!source) return Promise.reject(new Error('Bảng tính chưa được nối vào khối đồng bộ.'));
