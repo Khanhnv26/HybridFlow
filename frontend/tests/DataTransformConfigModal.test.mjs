@@ -37,14 +37,15 @@ async function mount(overrides = {}) {
   return props;
 }
 
-test('palette enables transformation and keeps unsupported blocks disabled', async () => {
+test('palette enables transformation and webhook blocks', async () => {
   const added = [];
   await act(async () => { renderer = create(React.createElement(NodePalette, { onAddNode: item => added.push(item) })); });
   const transform = renderer.root.findAllByType('button').find(node => text(node).includes('Chuẩn hóa dữ liệu'));
   assert.equal(transform.props.disabled, false);
   await act(async () => transform.props.onClick());
   assert.equal(added[0].type, 'dataTransform');
-  assert.equal(renderer.root.findAllByType('button').find(node => text(node).includes('Webhook')).props.disabled, true);
+  const webhook = renderer.root.findAllByType('button').find(node => text(node).includes('Webhook'));
+  assert.equal(webhook.props.disabled, false);
 });
 test('draft choices update preview immediately and save in the displayed rule order', async () => {
   let saved;

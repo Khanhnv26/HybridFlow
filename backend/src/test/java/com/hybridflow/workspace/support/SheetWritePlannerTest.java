@@ -219,4 +219,86 @@ class SheetWritePlannerTest {
         assertTrue(response.getChanges().isEmpty());
         assertEquals(List.of("Khóa nguồn '1' bị trùng ở dòng 3 và 8."), response.getErrors());
     }
+
+    @Test
+    void planAppend_createsNewRowAtEndOfTargetSheet() {
+        List<String> webhookHeaders = List.of("ma_hv", "ho_ten", "hoc_phi");
+        List<Map<String, String>> webhookRows = List.of(
+                Map.of("ma_hv", "HV-2404", "ho_ten", "Nguyễn Minh Anh", "hoc_phi", "6.500.000đ")
+        );
+
+        SheetDataResponse targetSheet = SheetDataResponse.builder()
+                .headers(List.of("Mã HV", "Họ Tên", "Học Phí", "Công thức"))
+                .rows(List.of(
+                        Map.of("Mã HV", "HV-2401", "Họ Tên", "Nguyễn Hoàng Nam", "Học Phí", "6.500.000đ", "Công thức", "=B2")
+                ))
+                .build();
+
+        List<SheetWritePreviewRequest.ColumnMappingItem> mappings = List.of(
+                new SheetWritePreviewRequest.ColumnMappingItem("ho_ten", "Họ Tên"),
+                new SheetWritePreviewRequest.ColumnMappingItem("hoc_phi", "Học Phí")
+        );
+
+        SheetWritePreviewResponse response = planner.planAppend(
+                webhookRows,
+                webhookHeaders,
+                targetSheet,
+                "ma_hv",
+                "Mã HV",
+                mappings
+        );
+
+        assertTrue(response.isValid());
+        assertTrue(response.getErrors().isEmpty());
+        // 3 changes: 1 for key (Mã HV) and 2 for mappings (Họ Tên, Học Phí)
+        assertEquals(3, response.getChanges().size());
+
+        SheetWritePreviewResponse.CellChangePreview keyChange = response.getChanges().get(0);
+        assertEquals("HV-2404", keyChange.getKey());
+        assertEquals(3, keyChange.getTargetRowNumber());
+        assertEquals(1, keyChange.getTargetRowIndex());
+        assertEquals("Mã HV", keyChange.getTargetColumn());
+        assertEquals("", keyChange.getCurrentValue());
+        assertEquals("HV-2404", keyChange.getNewValue());
+
+        SheetWritePreviewResponse.CellChangePreview nameChange = response.getChanges().get(1);
+        assertEquals("HV-2404", nameChange.getKey());
+        assertEquals(3, nameChange.getTargetRowNumber());
+        assertEquals(1, nameChange.getTargetRowIndex());
+        assertEquals("Họ Tên", nameChange.getTargetColumn());
+        assertEquals("", nameChange.getCurrentValue());
+        assertEquals("Nguyễn Minh Anh", nameChange.getNewValue());
+    }
+
+    @Test
+    void planAppend_rejectsExistingTargetKey() {
+        List<String> webhookHeaders = List.of("ma_hv", "ho_ten");
+        List<Map<String, String>> webhookRows = List.of(
+                Map.of("ma_hv", "HV-2401", "ho_ten", "Nguyễn Hoàng Nam")
+        );
+
+        SheetDataResponse targetSheet = SheetDataResponse.builder()
+                .headers(List.of("Mã HV", "Họ Tên"))
+                .rows(List.of(
+                        Map.of("Mã HV", "HV-2401", "Họ Tên", "Nguyễn Hoàng Nam")
+                ))
+                .build();
+
+        List<SheetWritePreviewRequest.ColumnMappingItem> mappings = List.of(
+                new SheetWritePreviewRequest.ColumnMappingItem("ho_ten", "Họ Tên")
+        );
+
+        SheetWritePreviewResponse response = planner.planAppend(
+                webhookRows,
+                webhookHeaders,
+                targetSheet,
+                "ma_hv",
+                "Mã HV",
+                mappings
+        );
+
+        assertFalse(response.isValid());
+        assertTrue(response.getChanges().isEmpty());
+        assertTrue(response.getErrors().stream().anyMatch(e -> e.contains("đã tồn tại ở dòng 2")));
+    }
 }

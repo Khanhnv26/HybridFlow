@@ -1,5 +1,5 @@
 import type { AxiosInstance } from 'axios';
-import type { ExecutionHistoryDto, NotificationOutboxItem, SyncConflictDto, RunSyncResponse, TelegramAlertResponse, SheetWritePreviewRequest, SheetWritePreviewResponse } from '../types';
+import type { ExecutionHistoryDto, NotificationOutboxItem, SyncConflictDto, RunSyncResponse, TelegramAlertResponse, SheetWritePreviewRequest, SheetWritePreviewResponse, WorkflowWebhookInfo } from '../types';
 
 /** Keep the editor's existing service interface while all requests carry tenant ownership. */
 export function createTenantEditorApi(client: Pick<AxiosInstance, 'get' | 'post' | 'put' | 'delete'>, workspaceId: string, workflowId: string) {
@@ -47,9 +47,11 @@ export function createTenantEditorApi(client: Pick<AxiosInstance, 'get' | 'post'
       save: async (_id: string, definition: unknown) => {
         if (version === undefined) await load();
         const graph = definition as { nodes: unknown[]; edges: unknown[] };
+        const hasSheetsTrigger = Array.isArray(graph.nodes)
+          && (graph.nodes as Array<{ type?: string }>).some(n => n.type === 'sheetsTrigger');
         const extractedBindings = Array.isArray(graph.nodes)
           ? (graph.nodes as Array<{ id?: string; type?: string; data?: { connectionId?: string } }>)
-              .filter(n => n?.id && n.type !== 'sheetWriteAction' && n.data?.connectionId)
+              .filter(n => n?.id && (n.type !== 'sheetWriteAction' || !hasSheetsTrigger) && n.data?.connectionId)
               .map(n => ({ nodeId: n.id as string, connectionId: n.data!.connectionId as string }))
           : [];
         const { data } = await client.put(base, {
@@ -110,6 +112,20 @@ export function createTenantEditorApi(client: Pick<AxiosInstance, 'get' | 'post'
       },
       resendTelegramAlert: async (_id: number, _chatId: string): Promise<TelegramAlertResponse> => {
         throw new Error('Mở Lịch sử → Xem thông báo để thử gửi lại cảnh báo theo workspace.');
+      },
+    },
+    webhook: {
+      get: async (signal?: AbortSignal): Promise<WorkflowWebhookInfo> => {
+        return (await client.get<WorkflowWebhookInfo>(`${base}/webhook`, { signal })).data;
+      },
+      rotate: async (): Promise<WorkflowWebhookInfo> => {
+        return (await client.post<WorkflowWebhookInfo>(`${base}/webhook/rotate`)).data;
+      },
+      updateStatus: async (enabled: boolean): Promise<WorkflowWebhookInfo> => {
+        return (await client.put<WorkflowWebhookInfo>(`${base}/webhook/status`, { enabled })).data;
+      },
+      previewAppend: async (request: SheetWritePreviewRequest, signal?: AbortSignal): Promise<SheetWritePreviewResponse> => {
+        return (await client.post<SheetWritePreviewResponse>(`${base}/webhook/preview-append`, request, { signal })).data;
       },
     },
   };

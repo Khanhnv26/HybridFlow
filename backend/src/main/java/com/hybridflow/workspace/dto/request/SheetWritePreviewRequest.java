@@ -15,9 +15,7 @@ import java.util.List;
 @Builder
 public class SheetWritePreviewRequest {
     private String upstreamNodeId;
-    @NotBlank
     private String sourceSpreadSheetId;
-    @NotBlank
     private String sourceSheetName;
     @NotBlank
     private String sourceKeyColumn;

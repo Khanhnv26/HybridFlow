@@ -10,6 +10,7 @@ import com.hybridflow.workspace.controller.InvitationController;
 import com.hybridflow.workspace.controller.MemberController;
 import com.hybridflow.workspace.controller.ModuleController;
 import com.hybridflow.workspace.controller.TenantWorkflowController;
+import com.hybridflow.workspace.controller.WebhookIngressController;
 import com.hybridflow.workspace.controller.WorkspaceConnectionController;
 import com.hybridflow.workspace.controller.WorkspaceController;
 import com.sun.source.tree.Tree;
@@ -43,6 +44,7 @@ class ControllerArchitectureTest {
                 MemberController.class,
                 InvitationController.class,
                 TenantWorkflowController.class,
+                WebhookIngressController.class,
                 WorkspaceConnectionController.class);
         for (Class<?> controller : controllers) {
             for (Field dependency : controller.getDeclaredFields()) {

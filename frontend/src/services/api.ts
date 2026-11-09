@@ -18,6 +18,9 @@ import type {
   BusinessModule,
   TenantWorkflowSummary,
   WorkspaceConnectionResponse,
+  WorkflowWebhookInfo,
+  SheetWritePreviewRequest,
+  SheetWritePreviewResponse,
 } from '../types';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '');
@@ -359,4 +362,15 @@ export const telegramService = {
     recipientType: TelegramRecipient['recipientType'],
   ): Promise<{ success: boolean; message: string; recipient: TelegramRecipient }> =>
     (await apiClient.post('/connections/telegram/test', { chatId, recipientType })).data,
+};
+
+export const webhookService = {
+  get: async (workspaceId: string, workflowId: string, signal?: AbortSignal): Promise<WorkflowWebhookInfo> =>
+    (await apiClient.get<WorkflowWebhookInfo>(`/workspaces/${encodeURIComponent(workspaceId)}/workflows/${encodeURIComponent(workflowId)}/webhook`, { signal })).data,
+  rotate: async (workspaceId: string, workflowId: string): Promise<WorkflowWebhookInfo> =>
+    (await apiClient.post<WorkflowWebhookInfo>(`/workspaces/${encodeURIComponent(workspaceId)}/workflows/${encodeURIComponent(workflowId)}/webhook/rotate`)).data,
+  updateStatus: async (workspaceId: string, workflowId: string, enabled: boolean): Promise<WorkflowWebhookInfo> =>
+    (await apiClient.put<WorkflowWebhookInfo>(`/workspaces/${encodeURIComponent(workspaceId)}/workflows/${encodeURIComponent(workflowId)}/webhook/status`, { enabled })).data,
+  previewAppend: async (workspaceId: string, workflowId: string, request: SheetWritePreviewRequest, signal?: AbortSignal): Promise<SheetWritePreviewResponse> =>
+    (await apiClient.post<SheetWritePreviewResponse>(`/workspaces/${encodeURIComponent(workspaceId)}/workflows/${encodeURIComponent(workflowId)}/webhook/preview-append`, request, { signal })).data,
 };

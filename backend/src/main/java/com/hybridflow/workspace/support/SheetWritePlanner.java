@@ -180,4 +180,157 @@ public class SheetWritePlanner {
                 .unmatchedRows(unmatchedRows)
                 .build();
     }
+
+    public SheetWritePreviewResponse planAppend(List<Map<String, String>> sourceRows,
+                                                List<String> sourceHeaders,
+                                                SheetDataResponse targetSheet,
+                                                String sourceKeyColumn,
+                                                String targetKeyColumn,
+                                                List<SheetWritePreviewRequest.ColumnMappingItem> columnMappings) {
+        List<String> errors = new ArrayList<>();
+        List<String> safeSourceHeaders = sourceHeaders != null ? sourceHeaders : List.of();
+        List<String> targetHeaders = (targetSheet != null && targetSheet.getHeaders() != null)
+                ? targetSheet.getHeaders()
+                : List.of();
+        List<Map<String, String>> safeSourceRows = sourceRows != null ? sourceRows : List.of();
+        List<Map<String, String>> targetRows = (targetSheet != null && targetSheet.getRows() != null)
+                ? targetSheet.getRows()
+                : List.of();
+        List<SheetWritePreviewRequest.ColumnMappingItem> safeColumnMappings = columnMappings != null
+                ? columnMappings
+                : List.of();
+
+        if (sourceKeyColumn == null || !safeSourceHeaders.contains(sourceKeyColumn)) {
+            errors.add("Trường khóa nguồn '" + sourceKeyColumn + "' không có trong dữ liệu Webhook.");
+        }
+        if (targetKeyColumn == null || !targetHeaders.contains(targetKeyColumn)) {
+            errors.add("Cột khóa đích '" + targetKeyColumn + "' không còn tồn tại trên bảng tính đích.");
+        }
+
+        Set<String> seenTargetCols = new LinkedHashSet<>();
+        for (SheetWritePreviewRequest.ColumnMappingItem mapping : safeColumnMappings) {
+            if (mapping == null) continue;
+            String sourceCol = mapping.getSourceColumn();
+            String targetCol = mapping.getTargetColumn();
+            if (sourceCol == null || !safeSourceHeaders.contains(sourceCol)) {
+                errors.add("Trường nguồn '" + sourceCol + "' không có trong dữ liệu Webhook.");
+            }
+            if (targetCol == null || !targetHeaders.contains(targetCol)) {
+                errors.add("Cột đích '" + targetCol + "' không còn tồn tại trên bảng tính đích.");
+            }
+            if (targetCol != null && !seenTargetCols.add(targetCol)) {
+                errors.add("Cột đích '" + targetCol + "' được ánh xạ nhiều lần.");
+            }
+            if (targetKeyColumn != null && targetKeyColumn.equals(targetCol)
+                    && !Objects.equals(sourceKeyColumn, sourceCol)) {
+                errors.add("Không được ánh xạ trường khác đè lên cột khóa đích '" + targetCol + "'.");
+            }
+        }
+
+        Map<String, List<Integer>> targetKeyToRows = new LinkedHashMap<>();
+        if (targetKeyColumn != null) {
+            for (int i = 0; i < targetRows.size(); i++) {
+                Map<String, String> row = targetRows.get(i);
+                String rawKey = row != null ? row.get(targetKeyColumn) : null;
+                String key = rawKey != null ? rawKey.trim() : "";
+                if (!key.isEmpty()) {
+                    targetKeyToRows.computeIfAbsent(key, k -> new ArrayList<>()).add(i);
+                }
+            }
+        }
+
+        List<SheetWritePreviewResponse.DuplicateKeyItem> duplicateKeyItems = new ArrayList<>();
+        for (Map.Entry<String, List<Integer>> entry : targetKeyToRows.entrySet()) {
+            if (entry.getValue().size() > 1) {
+                duplicateKeyItems.add(SheetWritePreviewResponse.DuplicateKeyItem.builder()
+                        .key(entry.getKey())
+                        .targetRowNumbers(entry.getValue().stream().map(i -> i + 2).toList())
+                        .build());
+            }
+        }
+        if (!duplicateKeyItems.isEmpty()) {
+            errors.add("Bảng tính đích có " + duplicateKeyItems.size() + " mã khóa bị trùng lặp.");
+        }
+        if (!errors.isEmpty()) {
+            return SheetWritePreviewResponse.builder()
+                    .valid(false)
+                    .errors(errors)
+                    .changes(List.of())
+                    .missingSourceKeyRows(List.of())
+                    .duplicateTargetKeys(duplicateKeyItems)
+                    .unmatchedRows(List.of())
+                    .build();
+        }
+
+        List<SheetWritePreviewResponse.CellChangePreview> changes = new ArrayList<>();
+        List<Integer> missingSourceKeyRows = new ArrayList<>();
+        Map<String, Integer> seenBatchKeys = new HashMap<>();
+        int nextTargetRowIndex = targetRows.size();
+
+        for (int i = 0; i < safeSourceRows.size(); i++) {
+            int payloadItemNumber = i + 1;
+            Map<String, String> sRow = safeSourceRows.get(i);
+            String rawKey = sRow != null && sourceKeyColumn != null ? sRow.get(sourceKeyColumn) : null;
+            String key = rawKey != null ? rawKey.trim() : "";
+
+            if (key.isEmpty()) {
+                missingSourceKeyRows.add(payloadItemNumber);
+                errors.add("Bản ghi thứ " + payloadItemNumber + " trong Webhook bị thiếu mã khóa '" + sourceKeyColumn + "'.");
+                continue;
+            }
+
+            Integer firstInBatch = seenBatchKeys.putIfAbsent(key, payloadItemNumber);
+            if (firstInBatch != null) {
+                errors.add("Mã khóa '" + key + "' bị lặp lại trong cùng gói dữ liệu Webhook (vị trí " + firstInBatch + " và " + payloadItemNumber + ").");
+                continue;
+            }
+
+            List<Integer> existingInTarget = targetKeyToRows.get(key);
+            if (existingInTarget != null && !existingInTarget.isEmpty()) {
+                int existingRowNum = existingInTarget.get(0) + 2;
+                errors.add("Mã học viên '" + key + "' đã tồn tại ở dòng " + existingRowNum + " trên bảng tính đích.");
+                continue;
+            }
+
+            int rowIndex = nextTargetRowIndex++;
+            int rowNumber = rowIndex + 2;
+
+            changes.add(SheetWritePreviewResponse.CellChangePreview.builder()
+                    .key(key)
+                    .targetRowNumber(rowNumber)
+                    .targetRowIndex(rowIndex)
+                    .sourceColumn(sourceKeyColumn)
+                    .targetColumn(targetKeyColumn)
+                    .currentValue("")
+                    .newValue(key)
+                    .build());
+
+            for (SheetWritePreviewRequest.ColumnMappingItem mapping : safeColumnMappings) {
+                if (mapping == null || Objects.equals(mapping.getTargetColumn(), targetKeyColumn)) {
+                    continue;
+                }
+                String newVal = (sRow != null && mapping.getSourceColumn() != null)
+                        ? Optional.ofNullable(sRow.get(mapping.getSourceColumn())).orElse("")
+                        : "";
+                changes.add(SheetWritePreviewResponse.CellChangePreview.builder()
+                        .key(key)
+                        .targetRowNumber(rowNumber)
+                        .targetRowIndex(rowIndex)
+                        .sourceColumn(mapping.getSourceColumn())
+                        .targetColumn(mapping.getTargetColumn())
+                        .currentValue("")
+                        .newValue(newVal)
+                        .build());
+            }
+        }
+
+        return SheetWritePreviewResponse.builder()
+                .valid(errors.isEmpty())
+                .errors(errors)
+                .changes(errors.isEmpty() ? changes : List.of())
+                .missingSourceKeyRows(missingSourceKeyRows)
+                .duplicateTargetKeys(duplicateKeyItems)
+                .unmatchedRows(List.of())
+                .build();
+    }
 }

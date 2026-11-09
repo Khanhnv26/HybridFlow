@@ -20,6 +20,7 @@ type WorkflowEdge = {
 const supported = new Set([
   'sheetsTrigger',
   'scheduleTrigger',
+  'webhookTrigger',
   'diffEngine',
   'storageAction',
   'telegramAction',
@@ -85,7 +86,31 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
     throw new Error('Luồng có khối chưa được hỗ trợ thực thi.');
 
   const diffs = nodes.filter((n) => n.type === 'diffEngine');
-  if (diffs.length !== 1) throw new Error('Luồng cần đúng một khối diffEngine.');
+  const webhooks = nodes.filter((n) => n.type === 'webhookTrigger');
+
+  if (diffs.length === 0 && webhooks.length === 1) {
+    const webhook = webhooks[0];
+    const writeNodes = nodes.filter(n => n.type === 'sheetWriteAction');
+    if (writeNodes.length > 1) throw new Error('Chỉ hỗ trợ một khối Ghi Sheet trong mỗi luồng.');
+    const sheetWriteNode = writeNodes[0];
+    if (sheetWriteNode) {
+      const edge = edges.find(e => e.source === webhook.id && e.target === sheetWriteNode.id);
+      if (!edge || edge.sourceHandle !== 'out' || edge.targetHandle !== 'in') {
+        throw new Error('Nối cổng Ra của Webhook vào cổng Vào của khối Ghi về bảng tính.');
+      }
+    }
+    return {
+      type: 'webhookAppend',
+      webhookNodeId: webhook.id,
+      sheetWriteNodeId: sheetWriteNode?.id,
+      spreadsheetId: sheetWriteNode?.data.targetSpreadsheetId || sheetWriteNode?.data.spreadsheetId || '',
+      sheetName: sheetWriteNode?.data.targetSheetName || sheetWriteNode?.data.sheetName || '',
+      idColumn: sheetWriteNode?.data.targetKeyColumn || 'id',
+      storageName: 'webhook',
+    };
+  }
+
+  if (diffs.length !== 1) throw new Error('Luồng cần đúng một khối diffEngine hoặc Webhook.');
   const diff = diffs[0];
   const columnTypes = diff.data.columnTypes || {};
   if (Object.values(columnTypes).some(type => !['TEXT', 'NUMBER'].includes(type))) throw new Error('Kiểu cột không hợp lệ.');
@@ -414,6 +439,9 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
 }
 
 export async function flowIdFor(config: {
+  type?: string;
+  webhookNodeId?: string;
+  sheetWriteNodeId?: string;
   columnTypes?: Record<string, 'TEXT' | 'NUMBER'>;
   spreadsheetId: string;
   sheetName: string;
@@ -424,6 +452,12 @@ export async function flowIdFor(config: {
   transforms?: ColumnTransformConfig[];
   writeBackCleanData?: boolean;
 }) {
+  if (config.type === 'webhookAppend') {
+    const payload = ['webhookAppend', config.webhookNodeId || '', config.sheetWriteNodeId || '', config.spreadsheetId, config.sheetName, config.idColumn];
+    const data = JSON.stringify(payload);
+    const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(data));
+    return `flow-wh-${Array.from(new Uint8Array(bytes), (b) => b.toString(16).padStart(2, '0')).slice(0, 16).join('')}`;
+  }
   const payload: unknown[] =
     config.sheets && config.sheets.length >= 2
       ? [

@@ -156,13 +156,26 @@ export interface SheetWriteTargetPlanPayload {
 
 export interface SheetWritePreviewRequest {
   upstreamNodeId?: string;
-  sourceSpreadSheetId: string;
-  sourceSheetName: string;
+  sourceSpreadSheetId?: string;
+  sourceSheetName?: string;
   sourceKeyColumn: string;
   targetSpreadSheetId: string;
   targetSheetName: string;
   targetKeyColumn: string;
   columnMappings: SheetColumnMapping[];
+  writeMode?: 'UPDATE_BY_KEY' | 'WEBHOOK_APPEND';
+  samplePayload?: Record<string, unknown>;
+}
+
+export interface WorkflowWebhookInfo {
+  workflowId: string;
+  webhookToken: string;
+  webhookUrl: string;
+  enabled: boolean;
+  createdAt?: string;
+  lastReceivedAt?: string;
+  lastPayloadSample?: string;
+  sampleFields?: string[];
 }
 
 export interface SheetCellChangePreview {
@@ -266,6 +279,9 @@ export interface OrchestrationNodeData extends Record<string, unknown> {
   botName?: string;
   telegramRecipientType?: 'PRIVATE' | 'GROUP';
   telegramRecipientName?: string;
+  webhookSampleFields?: string[];
+  webhookToken?: string;
+  writeMode?: 'UPDATE_BY_KEY' | 'WEBHOOK_APPEND';
 }
 
 export interface TelegramBotInfo {

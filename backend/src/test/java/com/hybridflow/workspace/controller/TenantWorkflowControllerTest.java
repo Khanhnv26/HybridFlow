@@ -44,6 +44,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class TenantWorkflowControllerTest {
     @Mock
     private TenantWorkflowService service;
+    @Mock
+    private com.hybridflow.workspace.service.WorkflowWebhookService webhookService;
 
     private MockMvc mvc;
     private final ObjectMapper mapper = new ObjectMapper();
@@ -54,7 +56,7 @@ class TenantWorkflowControllerTest {
 
     @BeforeEach
     void setup() {
-        mvc = MockMvcBuilders.standaloneSetup(new TenantWorkflowController(service))
+        mvc = MockMvcBuilders.standaloneSetup(new TenantWorkflowController(service, webhookService))
                 .setControllerAdvice(new GlobalExceptionHandler())
                 .build();
     }

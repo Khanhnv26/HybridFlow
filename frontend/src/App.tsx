@@ -34,7 +34,7 @@ import {
   GenericOrchestrationNode,
   RouterConditionNode,
 } from './components/nodes/OrchestrationNodes';
-import { apiClient, googleService, syncService, workflowService, telegramService, workspaceConnectionService, workspaceTelegramApi } from './services/api';
+import { apiClient, googleService, syncService, workflowService, telegramService, workspaceConnectionService, workspaceTelegramApi, webhookService } from './services/api';
 import { createTenantEditorApi } from './services/tenantEditor';
 import { arrangeWorkflowNodes } from './services/workflowLayout';
 import { connectedSheetSources, flowIdFor, workflowConfig } from './services/workflow';
@@ -733,8 +733,9 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
   const sheetWriteEdge = sheetWriteInputs.length === 1 ? sheetWriteInputs[0] : undefined;
   const sheetWriteInput = sheetWriteEdge?.targetHandle === 'in'
     ? nodes.find(node => node.id === sheetWriteEdge.source &&
-        (node.type === 'diffEngine' && sheetWriteEdge.sourceHandle === 'clean' ||
-         node.type === 'routerCondition' && sheetWriteEdge.sourceHandle === 'out'))
+        ((node.type === 'diffEngine' && sheetWriteEdge.sourceHandle === 'clean') ||
+         (node.type === 'routerCondition' && sheetWriteEdge.sourceHandle === 'out') ||
+         (node.type === 'webhookTrigger' && sheetWriteEdge.sourceHandle === 'out')))
     : undefined;
   const transformInputs = activeNode?.type === 'dataTransform'
     ? edges.filter(edge => edge.target === activeNode.id && edge.sourceHandle === 'out' && edge.targetHandle === 'in')
@@ -1114,10 +1115,22 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
         sourceConnectionId={diffUpstreamSheets[0]?.data.connectionId}
         sheetWriteInput={sheetWriteInput && {
           id: sheetWriteInput.id,
-          label: sheetWriteInput.data.label || (sheetWriteInput.type === 'routerCondition' ? 'Rẽ nhánh điều kiện' : 'So khớp'),
+          type: sheetWriteInput.type,
+          label: sheetWriteInput.data.label || (
+            sheetWriteInput.type === 'routerCondition' ? 'Rẽ nhánh điều kiện' :
+            sheetWriteInput.type === 'webhookTrigger' ? 'Webhook' : 'So khớp'
+          ),
+          sampleFields: sheetWriteInput.data.webhookSampleFields || [],
         }}
         defaultKeyColumn={nodes.find(node => node.type === 'diffEngine')?.data.uniqueKey || 'id'}
-        onPreviewSheetWrite={tenant?.sync.previewSheetWrite}
+        onPreviewSheetWrite={async (request, signal) => {
+          if (sheetWriteInput?.type === 'webhookTrigger' || request.writeMode === 'WEBHOOK_APPEND') {
+            if (!workspaceId) throw new Error('Cần chọn workspace để xem trước Webhook.');
+            return tenant ? tenant.webhook.previewAppend(request, signal) : webhookService.previewAppend(workspaceId, workflowId, request, signal);
+          }
+          if (tenant) return tenant.sync.previewSheetWrite(request, signal);
+          throw new Error('Chưa hỗ trợ xem trước cho luồng này.');
+        }}
         onApplySheetWrite={tenant ? previewToken => runWorkflow(true, previewToken) : undefined}
         onReadComparisonSource={(id, types, signal) => {
           const source = diffUpstreamSheets.find(item => item.id === id);

@@ -37,7 +37,7 @@ interface SheetWriteConfigModalProps {
   sourceSpreadsheetId?: string;
   sourceSheetName?: string;
   sourceConnectionId?: string;
-  upstream?: { id: string; label: string };
+  upstream?: { id: string; label: string; type?: string; sampleFields?: string[] };
   defaultKeyColumn?: string;
   onClose: () => void;
   onSave: (data: Partial<OrchestrationNodeData>) => Promise<void>;
@@ -62,6 +62,20 @@ export function SheetWriteConfigModal({
 }: SheetWriteConfigModalProps) {
   const motionRef = useExitMotion(true);
   const [workspaceConnections, setWorkspaceConnections] = useState<WorkspaceConnectionResponse[]>([]);
+  const isWebhookMode = upstream?.type === 'webhookTrigger' || data.writeMode === 'WEBHOOK_APPEND';
+  const [chosenConnectionId, setChosenConnectionId] = useState(() => data.connectionId || '');
+  const activeConnectionId = selectedConnectionId || chosenConnectionId || workspaceConnections.find(c => c.provider === 'GOOGLE')?.id || '';
+
+  const effectiveSourceHeaders = useMemo(() => {
+    if (isWebhookMode) {
+      const fromUpstream = upstream?.sampleFields || [];
+      const fromData = data.webhookSampleFields || [];
+      const combined = [...new Set([...fromUpstream, ...fromData])];
+      if (combined.length > 0) return combined;
+      return ['student_id', 'full_name', 'email', 'phone', 'course_code', 'tuition_fee', 'created_at'];
+    }
+    return sourceHeaders;
+  }, [isWebhookMode, upstream?.sampleFields, data.webhookSampleFields, sourceHeaders]);
 
   const [link, setLink] = useState(
     () =>
@@ -114,16 +128,16 @@ export function SheetWriteConfigModal({
     && columnMappings.length === savedMappings.length
     && columnMappings.every((mapping, i) => mapping.sourceColumn === savedMappings[i].sourceColumn
       && mapping.targetColumn === savedMappings[i].targetColumn);
-  const hasTargetAccess = !!selectedConnectionId && !!metadata && targetHeaders.includes(targetKeyColumn);
+  const hasTargetAccess = !!activeConnectionId && !!metadata && targetHeaders.includes(targetKeyColumn);
   const busy = saving || applying;
-  const canApply = !!upstream && settingsSaved && !!previewResult?.valid && !!previewResult.previewToken;
+  const canApply = !isWebhookMode && !!upstream && settingsSaved && !!previewResult?.valid && !!previewResult.previewToken;
 
   useEffect(() => {
     setPreviewResult(null);
     setPreviewError('');
     setPreviewLoading(false);
     return () => previewRequest.current?.abort();
-  }, [workspaceId, workflowId, sourceSpreadsheetId, sourceSheetName, selectedConnectionId, spreadsheetId,
+  }, [workspaceId, workflowId, sourceSpreadsheetId, sourceSheetName, activeConnectionId, spreadsheetId,
     selectedTab, sourceKeyColumn, targetKeyColumn, columnMappings, upstream?.id]);
 
   // 1. Tải danh sách Google Connections trong workspace
@@ -145,7 +159,7 @@ export function SheetWriteConfigModal({
 
   // 2. Tải metadata của Google Sheet đích khi có link + connection
   useEffect(() => {
-    if (!workspaceId || !selectedConnectionId || !spreadsheetId) {
+    if (!workspaceId || !activeConnectionId || !spreadsheetId) {
       setMetadata(null);
       setLoading(false);
       return;
@@ -156,7 +170,7 @@ export function SheetWriteConfigModal({
     setError('');
 
     workspaceConnectionService
-      .getSheetMetadata(workspaceId, selectedConnectionId, spreadsheetId, controller.signal)
+      .getSheetMetadata(workspaceId, activeConnectionId, spreadsheetId, controller.signal)
       .then((meta) => {
         if (controller.signal.aborted) return;
         setMetadata(meta);
@@ -180,19 +194,19 @@ export function SheetWriteConfigModal({
       });
 
     return () => controller.abort();
-  }, [workspaceId, selectedConnectionId, spreadsheetId]);
+  }, [workspaceId, activeConnectionId, spreadsheetId]);
 
   // 3. Tải headers của tab đích khi chọn tab
   useEffect(() => {
     setTargetHeaders([]);
-    if (!workspaceId || !selectedConnectionId || !spreadsheetId || !selectedTab) {
+    if (!workspaceId || !activeConnectionId || !spreadsheetId || !selectedTab) {
       return;
     }
     const controller = new AbortController();
     workspaceConnectionService
       .readSheet(
         workspaceId,
-        selectedConnectionId,
+        activeConnectionId,
         spreadsheetId,
         selectedTab,
         controller.signal
@@ -214,10 +228,10 @@ export function SheetWriteConfigModal({
       });
 
     return () => controller.abort();
-  }, [workspaceId, selectedConnectionId, spreadsheetId, selectedTab]);
+  }, [workspaceId, activeConnectionId, spreadsheetId, selectedTab]);
 
   function handleAddMapping() {
-    const availableSrc = sourceHeaders.find((h) => h !== sourceKeyColumn && !columnMappings.some((m) => m.sourceColumn === h)) || sourceHeaders[0] || '';
+    const availableSrc = effectiveSourceHeaders.find((h) => h !== sourceKeyColumn && !columnMappings.some((m) => m.sourceColumn === h)) || effectiveSourceHeaders[0] || '';
     const availableTgt = targetHeaders.find((h) => h !== targetKeyColumn && !columnMappings.some((m) => m.targetColumn === h)) || targetHeaders[0] || '';
     setColumnMappings((prev) => [...prev, { sourceColumn: availableSrc, targetColumn: availableTgt }]);
   }
@@ -234,7 +248,7 @@ export function SheetWriteConfigModal({
 
   async function handlePreview() {
     if (!upstream) {
-      setPreviewError('Nối đầu vào từ So khớp hoặc Rẽ nhánh trước khi xem trước.');
+      setPreviewError(isWebhookMode ? 'Nối đầu vào từ Webhook trước khi xem trước.' : 'Nối đầu vào từ So khớp hoặc Rẽ nhánh trước khi xem trước.');
       return;
     }
     if (!onPreview || !workspaceId || !workflowId || !spreadsheetId || !selectedTab) {
@@ -242,7 +256,7 @@ export function SheetWriteConfigModal({
       return;
     }
     if (!sourceKeyColumn || !targetKeyColumn) {
-      setPreviewError('Vui lòng chọn cột khóa ở cả bảng tính nguồn và bảng tính đích.');
+      setPreviewError(isWebhookMode ? 'Vui lòng chọn khóa học viên từ Webhook và cột khóa ở bảng tính đích.' : 'Vui lòng chọn cột khóa ở cả bảng tính nguồn và bảng tính đích.');
       return;
     }
     if (columnMappings.length === 0) {
@@ -250,9 +264,9 @@ export function SheetWriteConfigModal({
       return;
     }
 
-    const srcId = sourceSpreadsheetId || data.spreadsheetId || '';
-    const srcTab = sourceSheetName || data.sheetName || '';
-    if (!srcId || !srcTab) {
+    const srcId = sourceSpreadsheetId || data.spreadsheetId || (isWebhookMode ? 'webhook' : '');
+    const srcTab = sourceSheetName || data.sheetName || (isWebhookMode ? 'webhook' : '');
+    if (!isWebhookMode && (!srcId || !srcTab)) {
       setPreviewError('Không tìm thấy thông tin bảng tính nguồn. Hãy kiểm tra khối Google Sheets nguồn.');
       return;
     }
@@ -266,6 +280,7 @@ export function SheetWriteConfigModal({
       targetSheetName: selectedTab,
       targetKeyColumn,
       columnMappings,
+      writeMode: isWebhookMode ? 'WEBHOOK_APPEND' : 'UPDATE_BY_KEY',
     };
 
     setPreviewLoading(true);
@@ -326,7 +341,8 @@ export function SheetWriteConfigModal({
         sourceKeyColumn,
         targetKeyColumn,
         columnMappings,
-        connectionId: undefined,
+        connectionId: isWebhookMode ? activeConnectionId : undefined,
+        writeMode: isWebhookMode ? 'WEBHOOK_APPEND' : 'UPDATE_BY_KEY',
       });
       onClose();
     } catch (err) {
@@ -350,12 +366,16 @@ export function SheetWriteConfigModal({
               <FileEdit size={20} />
             </span>
             <div className="min-w-0">
-              <h2 id="sheet-write-title" className="font-semibold">Ghi về bảng tính</h2>
+              <h2 id="sheet-write-title" className="font-semibold">
+                {isWebhookMode ? 'Ghi về bảng tính · Thêm dòng từ Webhook' : 'Ghi về bảng tính'}
+              </h2>
               <p className="mt-1 text-sm text-secondary">
-                Tìm dòng theo cột khóa và cập nhật các cột được ánh xạ.
+                {isWebhookMode
+                  ? 'Tự động thêm dòng mới vào Google Sheets khi có dữ liệu từ Webhook (chống trùng theo mã học viên).'
+                  : 'Tìm dòng theo cột khóa và cập nhật các cột được ánh xạ.'}
               </p>
               <p className="mt-1 text-xs text-secondary">
-                {upstream ? `Nhận dữ liệu từ ${upstream.label}` : 'Nối đầu vào từ So khớp hoặc Rẽ nhánh.'}
+                {upstream ? `Nhận dữ liệu từ ${upstream.label}` : 'Nối đầu vào từ So khớp, Rẽ nhánh hoặc Webhook.'}
               </p>
             </div>
           </div>
@@ -386,10 +406,39 @@ export function SheetWriteConfigModal({
             </h3>
 
             <p className="text-xs text-secondary">
-              {selectedConnectionId
-                ? `Dùng kết nối Google của Sheet nguồn — ${workspaceConnections.find(c => c.id === selectedConnectionId)?.name || selectedConnectionId}`
-                : 'Chọn kết nối Google cho Sheet nguồn trước khi cấu hình Sheet đích.'}
+              {isWebhookMode ? (
+                activeConnectionId
+                  ? `Dùng kết nối Google — ${workspaceConnections.find(c => c.id === activeConnectionId)?.name || activeConnectionId}`
+                  : 'Chọn kết nối Google của workspace để ghi dòng học viên mới.'
+              ) : (
+                activeConnectionId
+                  ? `Dùng kết nối Google của Sheet nguồn — ${workspaceConnections.find(c => c.id === activeConnectionId)?.name || activeConnectionId}`
+                  : 'Chọn kết nối Google cho Sheet nguồn trước khi cấu hình Sheet đích.'
+              )}
             </p>
+
+            {isWebhookMode && !selectedConnectionId && (
+              <div>
+                <label htmlFor="sheet-write-conn-select" className="mb-1.5 block text-xs font-medium text-secondary">
+                  Chọn kết nối Google của Workspace
+                </label>
+                <select
+                  id="sheet-write-conn-select"
+                  value={activeConnectionId}
+                  onChange={(e) => setChosenConnectionId(e.target.value)}
+                  className={fieldClass}
+                >
+                  <option value="">-- Chọn kết nối Google --</option>
+                  {workspaceConnections
+                    .filter((c) => c.provider === 'GOOGLE')
+                    .map((c) => (
+                      <option key={c.id} value={c.id}>
+                        {c.name} ({c.id.slice(0, 8)})
+                      </option>
+                    ))}
+                </select>
+              </div>
+            )}
 
             {/* Link bảng tính */}
             <div>
@@ -459,16 +508,18 @@ export function SheetWriteConfigModal({
 
           <div className="space-y-3 border-t border-line pt-4">
             <h3 className="font-semibold">
-              2. Khóa đối soát
+              {isWebhookMode ? '2. Khóa học viên' : '2. Khóa đối soát'}
             </h3>
             <p className="text-xs text-secondary">
-              Chọn cột dùng để tìm cùng một dòng ở hai bảng tính.
+              {isWebhookMode
+                ? 'Chọn trường nhận diện học viên duy nhất (tránh ghi đè hoặc tạo dòng trùng lặp).'
+                : 'Chọn cột dùng để tìm cùng một dòng ở hai bảng tính.'}
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label htmlFor="sheet-write-source-key" className="mb-1.5 block text-sm font-medium">
-                  Cột khóa nguồn
+                  {isWebhookMode ? 'Khóa học viên từ Webhook' : 'Cột khóa nguồn'}
                 </label>
                 <select
                   id="sheet-write-source-key"
@@ -476,8 +527,8 @@ export function SheetWriteConfigModal({
                   onChange={(e) => setSourceKeyColumn(e.target.value)}
                   className={fieldClass}
                 >
-                  {sourceHeaders.length > 0 ? (
-                    sourceHeaders.map((h) => (
+                  {effectiveSourceHeaders.length > 0 ? (
+                    effectiveSourceHeaders.map((h) => (
                       <option key={h} value={h}>
                         {h}
                       </option>
@@ -514,10 +565,12 @@ export function SheetWriteConfigModal({
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
                 <h3 className="font-semibold">
-                  3. Ánh xạ cột dữ liệu
+                  {isWebhookMode ? '3. Ánh xạ trường Webhook -> Cột Google Sheets' : '3. Ánh xạ cột dữ liệu'}
                 </h3>
                 <p className="text-xs text-secondary mt-0.5">
-                  Chọn cột nguồn và cột đích cần cập nhật.
+                  {isWebhookMode
+                    ? 'Ghép trường dữ liệu Webhook gửi lên với cột trên Google Sheets để thêm dòng mới.'
+                    : 'Chọn cột nguồn và cột đích cần cập nhật.'}
                 </p>
               </div>
               <button
@@ -542,14 +595,16 @@ export function SheetWriteConfigModal({
                     className="flex items-end gap-2 rounded-lg border border-line bg-elevated p-2.5"
                   >
                     <div className="min-w-0 flex-1">
-                      <label htmlFor={`sheet-write-source-${idx}`} className="mb-1 block text-xs text-secondary">Cột nguồn</label>
+                      <label htmlFor={`sheet-write-source-${idx}`} className="mb-1 block text-xs text-secondary">
+                        {isWebhookMode ? 'Trường Webhook' : 'Cột nguồn'}
+                      </label>
                       <select
                         id={`sheet-write-source-${idx}`}
                         value={mapping.sourceColumn}
                         onChange={(e) => handleUpdateMapping(idx, 'sourceColumn', e.target.value)}
                         className={fieldClass}
                       >
-                        {sourceHeaders.map((h) => (
+                        {effectiveSourceHeaders.map((h) => (
                           <option key={h} value={h}>
                             {h}
                           </option>
@@ -601,7 +656,9 @@ export function SheetWriteConfigModal({
                   4. Xem trước thay đổi
                 </h3>
                 <p className="text-xs text-secondary mt-0.5">
-                  Xem các ô đích dự kiến cập nhật trước khi áp dụng.
+                  {isWebhookMode
+                    ? 'Xem trước dòng học viên mới sẽ thêm vào bảng tính đích từ dữ liệu mẫu Webhook.'
+                    : 'Xem các ô đích dự kiến cập nhật trước khi áp dụng.'}
                 </p>
               </div>
               <button
@@ -611,7 +668,7 @@ export function SheetWriteConfigModal({
                 className={secondaryButton}
               >
                 <RefreshCw size={14} className={previewLoading ? 'animate-spin' : ''} />
-                <span>{previewLoading ? 'Đang phân tích...' : 'Xem trước thay đổi'}</span>
+                <span>{previewLoading ? 'Đang phân tích...' : isWebhookMode ? 'Xem trước thêm dòng' : 'Xem trước thay đổi'}</span>
               </button>
             </div>
 
@@ -625,7 +682,7 @@ export function SheetWriteConfigModal({
               <div className="space-y-4">
                 {previewResult.matchedRows != null && (
                   <p className="text-sm text-secondary">
-                    <span className="font-semibold text-primary">{previewResult.matchedRows}</span> dòng khớp điều kiện rẽ nhánh
+                    <span className="font-semibold text-primary">{previewResult.matchedRows}</span> dòng khớp điều kiện
                   </p>
                 )}
                 {previewResult.errors.length > 0 && (
@@ -636,15 +693,17 @@ export function SheetWriteConfigModal({
                 {/* Badges */}
                 <div className="flex flex-wrap gap-2">
                   <div className="flex-1 basis-32 rounded-lg border border-line bg-info-soft px-3 py-2">
-                    <p className="text-[11px] text-secondary">Sẽ cập nhật</p>
+                    <p className="text-[11px] text-secondary">{isWebhookMode ? 'Sẽ thêm mới' : 'Sẽ cập nhật'}</p>
                     <p className="text-lg font-bold text-info">{previewResult.changes.length} ô</p>
                   </div>
                   <div className="flex-1 basis-32 rounded-lg border border-line bg-warning-soft px-3 py-2">
-                    <p className="text-[11px] text-secondary">Không tìm thấy ở đích</p>
-                    <p className="text-lg font-bold text-warning">{previewResult.unmatchedRows.length} dòng</p>
+                    <p className="text-[11px] text-secondary">{isWebhookMode ? 'Đã có ở đích (Bỏ qua)' : 'Không tìm thấy ở đích'}</p>
+                    <p className="text-lg font-bold text-warning">
+                      {isWebhookMode ? previewResult.duplicateTargetKeys.length : previewResult.unmatchedRows.length} {isWebhookMode ? 'khóa' : 'dòng'}
+                    </p>
                   </div>
                   <div className="flex-1 basis-32 rounded-lg border border-line bg-elevated px-3 py-2">
-                    <p className="text-[11px] text-secondary">Thiếu khóa nguồn</p>
+                    <p className="text-[11px] text-secondary">{isWebhookMode ? 'Thiếu khóa Webhook' : 'Thiếu khóa nguồn'}</p>
                     <p className="text-lg font-bold text-primary">{previewResult.missingSourceKeyRows.length} dòng</p>
                   </div>
                   <div
@@ -668,7 +727,9 @@ export function SheetWriteConfigModal({
                   <div className="space-y-1 rounded-lg border border-line bg-danger-soft p-3 text-sm text-danger">
                     <p className="font-semibold flex items-center gap-1.5">
                       <AlertTriangle size={15} />
-                      Bảng tính đích có khóa bị trùng lặp:
+                      {isWebhookMode
+                        ? 'Phát hiện mã học viên đã tồn tại ở bảng tính đích (sẽ bỏ qua để tránh trùng):'
+                        : 'Bảng tính đích có khóa bị trùng lặp:'}
                     </p>
                     <ul className="list-disc pl-5 space-y-0.5">
                       {previewResult.duplicateTargetKeys.map((dup, i) => (

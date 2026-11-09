@@ -82,6 +82,126 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
     }
 
     @Override
+    public SheetWritePreviewResponse previewWebhookAppend(
+            String accessToken,
+            SheetWriteTargetPlan targetPlan,
+            List<Map<String, String>> payloadRows,
+            List<String> payloadHeaders
+    ) {
+        require(accessToken, "Access token");
+        if (targetPlan == null) throw new ValidationException("Chưa có cấu hình khối Ghi về bảng tính.");
+        SheetDataResponse liveTarget = googleSheetsService.readSheet(ReadSheetRequest.builder()
+                .accessToken(accessToken)
+                .spreadsheetId(targetPlan.getTargetSpreadSheetId())
+                .sheetname(targetPlan.getTargetSheetName())
+                .build());
+        return sheetWritePlanner.planAppend(
+                payloadRows,
+                payloadHeaders,
+                liveTarget,
+                targetPlan.getSourceKeyColumn(),
+                targetPlan.getTargetKeyColumn(),
+                targetPlan.getColumnMappings()
+        );
+    }
+
+    @Override
+    @Transactional
+    public RunSyncResponse executeWebhookAppend(
+            UUID workspaceId,
+            String workflowId,
+            String contextId,
+            String accessToken,
+            SheetWriteTargetPlan targetPlan,
+            List<Map<String, String>> payloadRows,
+            List<String> payloadHeaders
+    ) {
+        long start = System.currentTimeMillis();
+        require(accessToken, "Access token");
+        if (targetPlan == null) throw new ValidationException("Chưa có cấu hình khối Ghi về bảng tính.");
+        String targetFile = targetPlan.getTargetSpreadSheetId();
+        require(targetFile, "Mã file bảng tính đích");
+        require(targetPlan.getTargetSheetName(), "Tên trang tính đích");
+
+        store.lock("sheet:" + targetFile);
+        store.lock(contextId);
+        String executionId = history.start(contextId);
+
+        try {
+            phase(executionId, List.of(targetPlan.getNodeId()), "RECOVER", "Đang kiểm tra lần ghi trước");
+            writes.recover(accessToken, List.of(targetFile));
+
+            phase(executionId, List.of(targetPlan.getNodeId()), "READ", "Đang đọc bảng tính đích");
+            SheetDataResponse liveTarget = googleSheetsService.readSheet(ReadSheetRequest.builder()
+                    .accessToken(accessToken)
+                    .spreadsheetId(targetFile)
+                    .sheetname(targetPlan.getTargetSheetName())
+                    .build());
+
+            phase(executionId, List.of(targetPlan.getNodeId()), "PLAN", "Đang lập kế hoạch thêm dòng học viên");
+            SheetWritePreviewResponse preview = sheetWritePlanner.planAppend(
+                    payloadRows,
+                    payloadHeaders,
+                    liveTarget,
+                    targetPlan.getSourceKeyColumn(),
+                    targetPlan.getTargetKeyColumn(),
+                    targetPlan.getColumnMappings()
+            );
+
+            if (!preview.isValid()) {
+                throw new ApplicationException(ErrorCode.STATE_CONFLICT, String.join("; ", preview.getErrors()));
+            }
+
+            List<SheetCellChange> cellChanges = preview.getChanges().stream()
+                    .map(c -> new SheetCellChange(
+                            c.getTargetRowIndex(),
+                            c.getTargetColumn(),
+                            liveTarget.getRows().size() > c.getTargetRowIndex() ? liveTarget.getRows().get(c.getTargetRowIndex()).get(targetPlan.getTargetKeyColumn()) : "",
+                            c.getCurrentValue(),
+                            c.getNewValue()
+                    ))
+                    .toList();
+
+            SheetWritePlan writePlan = new SheetWritePlan(
+                    targetFile,
+                    liveTarget.getSheetName(),
+                    targetPlan.getTargetKeyColumn(),
+                    liveTarget.getHeaders(),
+                    cellChanges,
+                    Map.of()
+            );
+
+            phase(executionId, List.of(targetPlan.getNodeId()), "WRITE", "Đang thêm dòng học viên vào bảng tính đích");
+            writes.apply(accessToken, List.of(writePlan));
+
+            List<String> appendedKeys = preview.getChanges().stream()
+                    .map(SheetWritePreviewResponse.CellChangePreview::getKey)
+                    .distinct()
+                    .toList();
+
+            RunSyncResponse result = RunSyncResponse.builder()
+                    .flowId(contextId)
+                    .executionId(executionId)
+                    .status("SUCCESS")
+                    .sheetName(liveTarget.getSheetName())
+                    .totalRowsProcessed(appendedKeys.size())
+                    .cleanRecordIds(appendedKeys)
+                    .conflicts(List.of())
+                    .targetCellsUpdated(cellChanges.size())
+                    .targetRowsUpdated(appendedKeys.size())
+                    .targetRowsSkipped(0)
+                    .latency((System.currentTimeMillis() - start) + " ms")
+                    .build();
+
+            completeAfterCommit(executionId, result);
+            return result;
+        } catch (RuntimeException failure) {
+            history.fail(executionId, failure);
+            throw failure;
+        }
+    }
+
+    @Override
     @Transactional
     public RunSyncResponse executeSync(RunSyncRequest request) {
         try (ErrorContext context = ErrorContext.open(ErrorContext.currentId())) {

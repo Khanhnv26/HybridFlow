@@ -26,7 +26,7 @@ const bundle = await build({
           namespace: 'test-api',
         }));
         builder.onLoad({ filter: /.*/, namespace: 'test-api' }, () => ({
-          contents: ['apiClient', 'googleService', 'syncService', 'workflowService', 'telegramService', 'workspaceConnectionService', 'moduleService', 'tenantWorkflowService']
+          contents: ['apiClient', 'googleService', 'syncService', 'workflowService', 'telegramService', 'workspaceConnectionService', 'moduleService', 'tenantWorkflowService', 'webhookService']
             .map(
               (name) =>
                 'export const ' +

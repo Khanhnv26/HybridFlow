@@ -7,6 +7,7 @@ import type { OrchestrationNodeData, SheetDataResponse } from '../../types';
 import { SheetSourceConfig } from './SheetSourceConfig';
 import { TelegramConfig } from './TelegramConfig';
 import { ScheduleConfig } from './ScheduleConfig';
+import { WebhookConfigModal } from './WebhookConfigModal';
 import { DiffEngineConfigModal, type ComparisonSource } from './DiffEngineConfigModal';
 import { SheetWriteConfigModal } from './SheetWriteConfigModal';
 import type { SheetWritePreviewRequest, SheetWritePreviewResponse } from '../../types';
@@ -36,7 +37,7 @@ interface Props {
   sourceSpreadsheetId?: string;
   sourceSheetName?: string;
   sourceConnectionId?: string;
-  sheetWriteInput?: { id: string; label: string };
+  sheetWriteInput?: { id: string; label: string; type?: string; sampleFields?: string[] };
   defaultKeyColumn?: string;
   onPreviewSheetWrite?: (request: SheetWritePreviewRequest, signal?: AbortSignal) => Promise<SheetWritePreviewResponse>;
   onApplySheetWrite?: (previewToken: string) => Promise<void>;
@@ -62,6 +63,9 @@ export function NaturalLanguageConfigModal(props: Props) {
     onConnectGoogle={props.onConnectGoogle} onReadSource={(file, tab, signal) => props.onReadSource(node.id, file, tab, signal)}
     onSave={settings => props.onSaveSource(node.id, settings)} />;
   if (node.type === 'scheduleTrigger') return <ScheduleConfig workspaceId={props.workspaceId} workflowId={props.workflowId} data={node.data}
+    disabled={disabled} onClose={onClose} onSave={settings => props.onSaveSource(node.id, settings)} />;
+  if (node.type === 'webhookTrigger') return <WebhookConfigModal
+    workspaceId={props.workspaceId} workflowId={props.workflowId} data={node.data}
     disabled={disabled} onClose={onClose} onSave={settings => props.onSaveSource(node.id, settings)} />;
   if (node.type === 'telegramAction') return <TelegramConfig workspaceId={props.workspaceId} data={node.data} disabled={disabled}
     notificationConnected={props.notificationConnected} availableColumns={props.availableColumns}

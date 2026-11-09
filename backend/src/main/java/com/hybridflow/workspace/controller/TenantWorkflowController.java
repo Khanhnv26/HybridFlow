@@ -8,7 +8,9 @@ import com.hybridflow.workspace.dto.request.*;
 import com.hybridflow.workspace.dto.response.SheetWritePreviewResponse;
 import com.hybridflow.workspace.dto.response.TenantWorkflowResponse;
 import com.hybridflow.workspace.dto.response.WorkflowPermissionResponse;
+import com.hybridflow.workspace.dto.response.WorkflowWebhookResponse;
 import com.hybridflow.workspace.service.TenantWorkflowService;
+import com.hybridflow.workspace.service.WorkflowWebhookService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -33,6 +35,7 @@ import java.util.UUID;
 @RequestMapping("/api/v1/workspaces/{workspaceId}/workflows")
 public class TenantWorkflowController {
     private final TenantWorkflowService service;
+    private final WorkflowWebhookService webhookService;
 
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
@@ -162,6 +165,32 @@ public class TenantWorkflowController {
                                                        @PathVariable String workflowId,
                                                        @Valid @RequestBody SheetWritePreviewRequest request) {
         return service.previewSheetWrite(workspaceId, workflowId, request);
+    }
+
+    @GetMapping("/{workflowId}/webhook")
+    public WorkflowWebhookResponse getWebhook(@PathVariable UUID workspaceId,
+                                              @PathVariable String workflowId) {
+        return webhookService.getOrCreateWebhook(workspaceId, workflowId);
+    }
+
+    @PostMapping("/{workflowId}/webhook/rotate")
+    public WorkflowWebhookResponse rotateWebhook(@PathVariable UUID workspaceId,
+                                                 @PathVariable String workflowId) {
+        return webhookService.rotateToken(workspaceId, workflowId);
+    }
+
+    @PutMapping("/{workflowId}/webhook/status")
+    public WorkflowWebhookResponse updateWebhookStatus(@PathVariable UUID workspaceId,
+                                                       @PathVariable String workflowId,
+                                                       @Valid @RequestBody UpdateWorkflowStatusRequest request) {
+        return webhookService.updateEnabled(workspaceId, workflowId, request.getEnabled());
+    }
+
+    @PostMapping("/{workflowId}/webhook/preview-append")
+    public SheetWritePreviewResponse previewWebhookAppend(@PathVariable UUID workspaceId,
+                                                          @PathVariable String workflowId,
+                                                          @Valid @RequestBody SheetWritePreviewRequest request) {
+        return webhookService.previewWebhookAppend(workspaceId, workflowId, request);
     }
 
 }
