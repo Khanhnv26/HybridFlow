@@ -171,7 +171,7 @@ const mockWebhookService = {
     enabled: true,
     lastReceivedAt: '2026-11-09T12:00:00Z',
     sampleFields: ['student_id', 'full_name', 'email', 'phone', 'tuition_fee'],
-    lastPayloadSample: '{"student_id":"SV01","full_name":"Test Student"}',
+    lastPayload: { student_id: 'SV01', full_name: 'Test Student' },
   }),
   updateStatus: async (_w, _wf, enabled) => ({
     workflowId: 'wf-1',
@@ -247,11 +247,16 @@ test('WebhookConfigModal loads webhook info, displays token endpoint and detecte
 
   const fullText = text(renderer.root);
   assert.match(fullText, /Cấu hình Webhook/);
-  assert.match(fullText, /token-sample-999/);
-  assert.match(fullText, /Đang nhận dữ liệu/);
+  assert.match(renderer.root.findByProps({ 'aria-label': 'Địa chỉ Webhook' }).props.value, /token-sample-999$/);
+  assert.match(fullText, /Đang nhận/);
   assert.match(fullText, /student_id/);
   assert.match(fullText, /full_name/);
   assert.match(fullText, /tuition_fee/);
+  const disclosures = renderer.root.findAllByType('details');
+  assert.deepEqual(disclosures.map(item => text(item.findByType('summary'))),
+    ['Xem JSON gốc', 'Gửi thử bằng curl', 'Bảo mật']);
+  assert.ok(disclosures.every(item => !item.props.open));
+  assert.match(text(disclosures[0].findByType('pre')), /"student_id": "SV01"/);
 });
 
 test('WebhookConfigModal saves captured sample fields and token on Save', async () => {

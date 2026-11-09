@@ -174,6 +174,7 @@ export interface WorkflowWebhookInfo {
   enabled: boolean;
   createdAt?: string;
   lastReceivedAt?: string;
+  lastPayload?: unknown;
   lastPayloadSample?: string;
   sampleFields?: string[];
 }
