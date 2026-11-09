@@ -8,6 +8,8 @@ import { SheetSourceConfig } from './SheetSourceConfig';
 import { TelegramConfig } from './TelegramConfig';
 import { ScheduleConfig } from './ScheduleConfig';
 import { DiffEngineConfigModal, type ComparisonSource } from './DiffEngineConfigModal';
+import { SheetWriteConfigModal } from './SheetWriteConfigModal';
+import type { SheetWritePreviewRequest, SheetWritePreviewResponse } from '../../types';
 
 interface Props {
   workspaceId?: string;
@@ -31,6 +33,10 @@ interface Props {
   onRetryNotification?: (id: string) => Promise<void>;
   comparisonSources?: ComparisonSource[];
   onReadComparisonSource?: (id: string, types: Record<string, 'TEXT' | 'NUMBER'>, signal: AbortSignal) => Promise<SheetDataResponse>;
+  sourceSpreadsheetId?: string;
+  sourceSheetName?: string;
+  defaultKeyColumn?: string;
+  onPreviewSheetWrite?: (request: SheetWritePreviewRequest, signal?: AbortSignal) => Promise<SheetWritePreviewResponse>;
 }
 
 export function NaturalLanguageConfigModal(props: Props) {
@@ -58,6 +64,25 @@ export function NaturalLanguageConfigModal(props: Props) {
     notificationConnected={props.notificationConnected} availableColumns={props.availableColumns}
     previewRow={props.previewRow} previewConflict={props.previewConflict} onRetryNotification={props.onRetryNotification}
     onClose={onClose} onSave={settings => props.onSaveTelegram(node.id, settings)} />;
+  if (node.type === 'sheetWriteAction') {
+    const upstream = props.comparisonSources?.[0];
+    const sourceSpreadsheetId = props.sourceSpreadsheetId || upstream?.data?.spreadsheetId || (upstream?.id ? upstream.id : '');
+    const sourceSheetName = props.sourceSheetName || upstream?.sheetName || '';
+    const defaultKey = props.defaultKeyColumn || 'id';
+
+    return <SheetWriteConfigModal
+      workspaceId={props.workspaceId}
+      workflowId={props.workflowId}
+      data={node.data}
+      sourceHeaders={props.availableColumns || []}
+      sourceSpreadsheetId={sourceSpreadsheetId}
+      sourceSheetName={sourceSheetName}
+      defaultKeyColumn={defaultKey}
+      onClose={onClose}
+      onSave={settings => props.onSaveSource(node.id, settings)}
+      onPreview={props.onPreviewSheetWrite}
+    />;
+  }
 
   const save = async () => {
     if (!tableName.trim()) { setError('Nhập tên vùng lưu trữ.'); return; }

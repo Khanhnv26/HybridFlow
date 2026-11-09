@@ -6,6 +6,8 @@ import type {
   RouterPlanPayload,
   RunSyncRequestPayload,
   SheetEndpointPayload,
+  SheetColumnMapping,
+  SheetWriteTargetPlanPayload,
 } from '../types';
 
 type WorkflowNode = { id: string; type?: string; data: OrchestrationNodeData };
@@ -22,6 +24,7 @@ const supported = new Set([
   'storageAction',
   'telegramAction',
   'routerCondition',
+  'sheetWriteAction',
 ]);
 
 // A transform receives one or more Sheets and feeds exactly one comparison node.
@@ -313,6 +316,36 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
   if (!connects(source.id, diff.id, 'out') || !connects(diff.id, storage.id, 'clean'))
     throw new Error('Nối Google Sheet → So khớp → Kho lưu trữ trước khi chạy.');
 
+  const sheetWriteNodes = nodes.filter((n) => n.type === 'sheetWriteAction');
+  if (sheetWriteNodes.length > 1) {
+    throw new Error('Chỉ hỗ trợ một khối Ghi Sheet trong mỗi luồng.');
+  }
+
+  let sheetWritePlan: SheetWriteTargetPlanPayload | undefined;
+  if (sheetWriteNodes.length === 1) {
+    const swn = sheetWriteNodes[0];
+    if (!edges.some((e) => e.source === diff.id && e.sourceHandle === 'clean' && e.target === swn.id && e.targetHandle === 'in')) {
+      throw new Error('Khối Ghi về bảng tính phải được nối từ cổng Hành động của khối So khớp.');
+    }
+    const targetSpreadsheetId = (swn.data.targetSpreadsheetId || swn.data.spreadsheetId || '').toString().trim();
+    const targetSheetName = (swn.data.targetSheetName || swn.data.sheetName || '').toString().trim();
+    const sourceKeyColumn = (swn.data.sourceKeyColumn || diff.data.uniqueKey || '').toString().trim();
+    const targetKeyColumn = (swn.data.targetKeyColumn || '').toString().trim();
+    const columnMappings = (swn.data.columnMappings || []) as SheetColumnMapping[];
+
+    if (!targetSpreadsheetId || !targetSheetName || !targetKeyColumn || !columnMappings.length) {
+      throw new Error('Khối Ghi về bảng tính chưa được cấu hình đầy đủ (file đích, tab đích, khóa đích, ánh xạ cột).');
+    }
+    sheetWritePlan = {
+      nodeId: swn.id,
+      targetSpreadSheetId: targetSpreadsheetId,
+      targetSheetName,
+      sourceKeyColumn,
+      targetKeyColumn,
+      columnMappings,
+    };
+  }
+
   const allowed = (edge: WorkflowEdge) =>
     (scheduleIds.has(edge.source) &&
       edge.target === diff.id &&
@@ -321,6 +354,9 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
     (edge.targetHandle === 'in' &&
       ((edge.source === source.id && edge.target === diff.id && edge.sourceHandle === 'out') ||
         (edge.source === diff.id && edge.target === storage.id && edge.sourceHandle === 'clean') ||
+        (edge.source === diff.id &&
+          edge.sourceHandle === 'clean' &&
+          sheetWriteNodes.some((swn) => swn.id === edge.target)) ||
         (edge.source === diff.id &&
           edge.sourceHandle === 'clean' &&
           routerNodes.some((rn) => rn.id === edge.target)) ||
@@ -361,6 +397,7 @@ function baseWorkflowConfig(nodes: WorkflowNode[], edges: WorkflowEdge[]) {
       ...(routerPlans.length ? { routers: routerPlans } : {}),
     ...(actionPlans.length ? { actions: actionPlans } : {}),
     ...(conflictActionIds.length ? { conflictActionIds } : {}),
+    ...(sheetWritePlan ? { sheetWriteTargetPlan: sheetWritePlan } : {}),
   };
 }
 

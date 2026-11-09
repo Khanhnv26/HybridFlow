@@ -139,6 +139,59 @@ export interface NotificationOutboxItem {
   sentAt?: string;
 }
 
+export interface SheetColumnMapping {
+  sourceColumn: string;
+  targetColumn: string;
+}
+
+export interface SheetWriteTargetPlanPayload {
+  nodeId: string;
+  targetSpreadSheetId: string;
+  targetSheetName: string;
+  sourceKeyColumn: string;
+  targetKeyColumn: string;
+  columnMappings: SheetColumnMapping[];
+}
+
+export interface SheetWritePreviewRequest {
+  sourceSpreadSheetId: string;
+  sourceSheetName: string;
+  sourceKeyColumn: string;
+  targetSpreadSheetId: string;
+  targetSheetName: string;
+  targetKeyColumn: string;
+  columnMappings: SheetColumnMapping[];
+}
+
+export interface SheetCellChangePreview {
+  key: string;
+  targetRowNumber: number;
+  targetRowIndex: number;
+  sourceColumn: string;
+  targetColumn: string;
+  currentValue: string;
+  newValue: string;
+}
+
+export interface SheetWriteUnmatchedRow {
+  key: string;
+  sourceRowNumber: number;
+}
+
+export interface SheetWriteDuplicateKey {
+  key: string;
+  targetRowNumbers: number[];
+}
+
+export interface SheetWritePreviewResponse {
+  valid: boolean;
+  errors: string[];
+  changes: SheetCellChangePreview[];
+  missingSourceKeyRows: number[];
+  duplicateTargetKeys: SheetWriteDuplicateKey[];
+  unmatchedRows: SheetWriteUnmatchedRow[];
+}
+
 export interface DataTransformNodeData extends OrchestrationNodeData {
   transforms?: ColumnTransformConfig[];
   writeBackCleanData?: boolean;
@@ -191,6 +244,13 @@ export interface OrchestrationNodeData extends Record<string, unknown> {
   spreadsheetTitle?: string;
   spreadsheetUrl?: string;
   sheetName?: string;
+  targetSpreadsheetId?: string;
+  targetSpreadsheetTitle?: string;
+  targetSpreadsheetUrl?: string;
+  targetSheetName?: string;
+  sourceKeyColumn?: string;
+  targetKeyColumn?: string;
+  columnMappings?: SheetColumnMapping[];
   chatId?: string;
   tableName?: string;
   scheduleTime?: string;
@@ -276,6 +336,7 @@ export interface RunSyncRequestPayload {
   routers?: RouterPlanPayload[];
   actions?: ActionPlanPayload[];
   conflictActionIds?: string[];
+  sheetWriteTargetPlan?: SheetWriteTargetPlanPayload;
 }
 
 export interface RunSyncResponse {
@@ -292,6 +353,9 @@ export interface RunSyncResponse {
   notificationsSent: number;
   notificationsFailed: number;
   notificationsQueued?: number;
+  targetCellsUpdated?: number;
+  targetRowsUpdated?: number;
+  targetRowsSkipped?: number;
 }
 
 export interface ExecutionHistoryDto {

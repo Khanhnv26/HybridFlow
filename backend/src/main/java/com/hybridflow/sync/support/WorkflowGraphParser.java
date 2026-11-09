@@ -13,6 +13,7 @@ import com.hybridflow.sync.dto.request.RouterConditionItem;
 import com.hybridflow.sync.dto.request.RouterPlan;
 import com.hybridflow.sync.dto.request.RunSyncRequest;
 import com.hybridflow.sync.dto.request.SheetEndpointRequest;
+import com.hybridflow.sync.dto.request.SheetWriteTargetPlan;
 import com.hybridflow.sync.model.ParsedSchedule;
 import com.hybridflow.sync.util.RuleOperators;
 import com.hybridflow.workspace.dto.request.SheetWritePreviewRequest;
@@ -202,16 +203,45 @@ public class WorkflowGraphParser {
             throw new ValidationException("Luồng nhiều Sheet cần chọn cột chia sẻ và không có khối Kho.");
         JsonNode sheetWriteNode = findFirstByType(nodes, "sheetWriteAction");
 
-        if(count(nodes, "sheetWriteAction") > 1)
+        if (count(nodes, "sheetWriteAction") > 1)
             throw new ValidationException("Chỉ hỗ trợ một khối Ghi Sheet trong mỗi luồng.");
 
-        if(sheetWriteNode != null) {
-            if(hasEdge(edges, diffId, "clean", sheetWriteNode.path("id").asText(), "in")) {
-                String targetSpreadsheetId = sheetWriteNode.path("data").path("spreadsheetId").asText("").trim();
-                String targetSheetName = sheetWriteNode.path("data").path("sheetName").asText("").trim();
-                List<SheetWritePreviewRequest.ColumnMappingItem> columnMappings = sheetWriteNode.path("data").path("columnMappings").isArray() ? new ArrayList<>() : null;
-
+        SheetWriteTargetPlan sheetWriteTargetPlan = null;
+        if (sheetWriteNode != null) {
+            String swId = sheetWriteNode.path("id").asText();
+            if (!hasEdge(edges, diffId, "clean", swId, "in")) {
+                throw new ValidationException("Khối Ghi về bảng tính phải được nối từ cổng Hành động (clean) của khối So khớp.");
             }
+            JsonNode data = sheetWriteNode.path("data");
+            String targetSpreadsheetId = data.path("targetSpreadsheetId").asText(data.path("spreadsheetId").asText("")).trim();
+            String targetSheetName = data.path("targetSheetName").asText(data.path("sheetName").asText("")).trim();
+            String targetKey = data.path("targetKeyColumn").asText("").trim();
+            String sourceKey = data.path("sourceKeyColumn").asText("").trim();
+            if (sourceKey.isBlank()) {
+                sourceKey = idColumn;
+            }
+            List<SheetWritePreviewRequest.ColumnMappingItem> columnMappings = new ArrayList<>();
+            JsonNode mappingsNode = data.path("columnMappings");
+            if (mappingsNode.isArray()) {
+                for (JsonNode m : mappingsNode) {
+                    String srcCol = m.path("sourceColumn").asText("").trim();
+                    String tgtCol = m.path("targetColumn").asText("").trim();
+                    if (!srcCol.isBlank() && !tgtCol.isBlank()) {
+                        columnMappings.add(new SheetWritePreviewRequest.ColumnMappingItem(srcCol, tgtCol));
+                    }
+                }
+            }
+            if (targetSpreadsheetId.isBlank() || targetSheetName.isBlank() || targetKey.isBlank() || columnMappings.isEmpty()) {
+                throw new ValidationException("Khối Ghi về bảng tính chưa được cấu hình đầy đủ (file đích, tab đích, khóa đích, ánh xạ cột).");
+            }
+            sheetWriteTargetPlan = SheetWriteTargetPlan.builder()
+                    .nodeId(swId)
+                    .targetSpreadSheetId(targetSpreadsheetId)
+                    .targetSheetName(targetSheetName)
+                    .sourceKeyColumn(sourceKey)
+                    .targetKeyColumn(targetKey)
+                    .columnMappings(columnMappings)
+                    .build();
         }
 
         if (!multi && (count(nodes, "storageAction") != 1 || storageName.isBlank()
@@ -370,7 +400,8 @@ public class WorkflowGraphParser {
                     "sheetsTrigger".equals(source.path("type").asText()) && "out".equals(port) && diffId.equals(to)
                     || diffId.equals(from) && "clean".equals(port) && (multi
                         ? connectedSheets.stream().anyMatch(sheet -> sheet.getNodeId().equals(to)) || isRouter
-                        : (storageNode != null && storageNode.path("id").asText().equals(to)) || isRouter)
+                        : (storageNode != null && storageNode.path("id").asText().equals(to)) || isRouter
+                          || (sheetWriteNode != null && sheetWriteNode.path("id").asText().equals(to)))
                     || diffId.equals(from) && "conflict".equals(port) && isTelegram
                     || fromRouter && "out".equals(port) && isTelegram));
             if (!allowed) throw new ValidationException("Có dây nối không được hỗ trợ trong luồng.");
@@ -385,6 +416,7 @@ public class WorkflowGraphParser {
         executionNodes.put("sheets", connectedSheets.stream().map(SheetEndpointRequest::getNodeId).toList());
         executionNodes.put("diff", List.of(diffId));
         if (storageNode != null) executionNodes.put("storage", List.of(storageNode.path("id").asText()));
+        if (sheetWriteTargetPlan != null) executionNodes.put("sheetWrite", List.of(sheetWriteTargetPlan.getNodeId()));
         if (!conflictActionIds.isEmpty()) executionNodes.put("telegram", conflictActionIds);
         for (RouterPlan rp : routerPlans) {
             executionNodes.put("router:" + rp.getNodeId(), List.of(rp.getNodeId()));
@@ -413,6 +445,7 @@ public class WorkflowGraphParser {
                 .routers(routerPlans.isEmpty() ? null : routerPlans)
                 .actions(actionPlans.isEmpty() ? null : actionPlans)
                 .conflictActionIds(conflictActionIds.isEmpty() ? null : conflictActionIds)
+                .sheetWriteTargetPlan(sheetWriteTargetPlan)
                 .build();
         return Optional.of(request);
     }

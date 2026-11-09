@@ -34,7 +34,7 @@ import {
   GenericOrchestrationNode,
   RouterConditionNode,
 } from './components/nodes/OrchestrationNodes';
-import { apiClient, googleService, syncService, workflowService, telegramService, workspaceConnectionService, workspaceTelegramApi } from './services/api';
+import { apiClient, googleService, syncService, workflowService, telegramService, workspaceConnectionService, workspaceTelegramApi, tenantWorkflowService } from './services/api';
 import { createTenantEditorApi } from './services/tenantEditor';
 import { arrangeWorkflowNodes } from './services/workflowLayout';
 import { connectedSheetSources, flowIdFor, workflowConfig } from './services/workflow';
@@ -714,7 +714,7 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
     .map(edge => nodes.find(node => node.type === 'sheetsTrigger' && node.id === edge.source))
     .filter((node): node is Node<OrchestrationNodeData> => !!node);
   const diffUpstreamSheets = useMemo(() => {
-    if (!activeNode || !['diffEngine', 'routerCondition', 'telegramAction'].includes(activeNode.type || '')) return [];
+    if (!activeNode || !['diffEngine', 'routerCondition', 'telegramAction', 'sheetWriteAction'].includes(activeNode.type || '')) return [];
     const diffId = activeNode.type === 'diffEngine' ? activeNode.id : nodes.find(node => node.type === 'diffEngine')?.id;
     const direct = edges
       .filter(e => e.target === diffId)
@@ -741,7 +741,7 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
     return unique;
   }, [activeNode, edges, nodes]);
   const diffAvailableColumns = useMemo(() => {
-    if (!activeNode || !['diffEngine', 'routerCondition', 'telegramAction'].includes(activeNode.type || '')) return [];
+    if (!activeNode || !['diffEngine', 'routerCondition', 'telegramAction', 'sheetWriteAction'].includes(activeNode.type || '')) return [];
     const headers = diffUpstreamSheets.map(source => stateFor(sourceDescriptor(source)).data?.headers).filter((value): value is string[] => !!value);
     const common = headers.length ? headers[0].filter(column => headers.every(list => list.includes(column))) : [];
     const diffNode = nodes.find(node => node.type === 'diffEngine');
@@ -1074,6 +1074,14 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
         onRetryNotification={retryNotification}
         upstreamSheets={diffUpstreamSheets.map(s => s.data.spreadsheetTitle || s.data.label || 'Sheet')}
         comparisonSources={comparisonSources}
+        sourceSpreadsheetId={diffUpstreamSheets[0]?.data.spreadsheetId}
+        sourceSheetName={diffUpstreamSheets[0]?.data.sheetName}
+        defaultKeyColumn={nodes.find(node => node.type === 'diffEngine')?.data.uniqueKey || 'id'}
+        onPreviewSheetWrite={
+          workspaceId && workflowId
+            ? (request, signal) => tenantWorkflowService.previewSheetWrite(workspaceId, workflowId, request, signal)
+            : undefined
+        }
         onReadComparisonSource={(id, types, signal) => {
           const source = diffUpstreamSheets.find(item => item.id === id);
           if (!source) return Promise.reject(new Error('Bảng tính chưa được nối vào khối đồng bộ.'));

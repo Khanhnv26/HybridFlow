@@ -18,6 +18,7 @@ import com.hybridflow.sync.model.RecordChangeEvent;
 import com.hybridflow.sync.model.SheetWritePlan;
 import com.hybridflow.sync.service.impl.DataTransformerServiceImpl;
 import com.hybridflow.sync.service.impl.SyncExecutionServiceImpl;
+import com.hybridflow.workspace.support.SheetWritePlanner;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -68,6 +69,7 @@ class SyncExecutionServiceTest {
     @Mock NotificationOutboxService notificationOutboxService;
     @Spy ThreeWayDiffEngine engine = new ThreeWayDiffEngine();
     @Spy DataTransformerServiceImpl transformer = new DataTransformerServiceImpl();
+    @Spy SheetWritePlanner sheetWritePlanner = new SheetWritePlanner();
     @InjectMocks SyncExecutionServiceImpl service;
 
     private RunSyncRequest eventRequest(boolean multi, boolean initial, Map<String, String> base,
@@ -517,5 +519,65 @@ class SyncExecutionServiceTest {
         verify(ruleEvaluationService).validate(eq(List.of(router)), any(), any(), any());
         verify(notificationTemplateService).validateTemplate(eq("Đơn {id} chuyển sang {status}"), any());
         verify(notificationOutboxService).enqueue(eq("router-flow"), any(), eq(List.of(router)), eq(List.of(action)), argThat(events -> events.size() == 1 && events.getFirst().getKind().equals("UPDATED")), any(), any(), any());
+    }
+
+    @Test
+    void syncExecutesSheetWriteTargetPlanWhenPresent() {
+        SheetDataResponse sourceSheet = SheetDataResponse.builder()
+                .sheetName("Source")
+                .headers(List.of("id", "status"))
+                .rows(List.of(Map.of("id", "ORD-1", "status", "DELIVERED")))
+                .totalRows(1)
+                .build();
+        SheetDataResponse targetSheet = SheetDataResponse.builder()
+                .sheetName("Orders")
+                .headers(List.of("order_id", "order_status", "formula_col"))
+                .rows(List.of(Map.of("order_id", "ORD-1", "order_status", "PENDING", "formula_col", "=SUM(A1:B1)")))
+                .totalRows(1)
+                .build();
+
+        when(sheets.readSheet(argThat(req -> req != null && "sheet".equals(req.getSpreadsheetId())))).thenReturn(sourceSheet);
+        when(sheets.readSheet(argThat(req -> req != null && "target-sheet".equals(req.getSpreadsheetId())))).thenReturn(targetSheet);
+
+        when(store.hasSnapshots("write-flow")).thenReturn(true);
+        when(store.getSnapshot("write-flow", "ORD-1")).thenReturn(Map.of("id", "ORD-1", "status", "PENDING"));
+        when(store.getVaultRecord("write-flow", "ORD-1")).thenReturn(Map.of("id", "ORD-1", "status", "PENDING"));
+
+        com.hybridflow.sync.dto.request.SheetWriteTargetPlan targetPlan = com.hybridflow.sync.dto.request.SheetWriteTargetPlan.builder()
+                .nodeId("sheetWrite-1")
+                .targetSpreadSheetId("target-sheet")
+                .targetSheetName("Orders")
+                .sourceKeyColumn("id")
+                .targetKeyColumn("order_id")
+                .columnMappings(List.of(new com.hybridflow.workspace.dto.request.SheetWritePreviewRequest.ColumnMappingItem("status", "order_status")))
+                .build();
+
+        RunSyncRequest request = RunSyncRequest.builder()
+                .flowId("write-flow")
+                .accessToken("test-token")
+                .spreadsheetId("sheet")
+                .sheetName("Source")
+                .idColumn("id")
+                .sheetWriteTargetPlan(targetPlan)
+                .build();
+
+        RunSyncResponse response = service.executeSync(request);
+
+        assertEquals("SUCCESS", response.getStatus());
+        assertEquals(1, response.getTargetCellsUpdated());
+        assertEquals(1, response.getTargetRowsUpdated());
+        assertEquals(0, response.getTargetRowsSkipped());
+
+        ArgumentCaptor<List<SheetWritePlan>> captor = ArgumentCaptor.forClass(List.class);
+        verify(writes, org.mockito.Mockito.times(2)).apply(eq("test-token"), captor.capture());
+        List<List<SheetWritePlan>> allInvocations = captor.getAllValues();
+        assertEquals(2, allInvocations.size());
+        SheetWritePlan targetSheetPlan = allInvocations.get(1).get(0);
+        assertEquals("target-sheet", targetSheetPlan.getSpreadsheetId());
+        assertEquals("Orders", targetSheetPlan.getSheetName());
+        assertEquals(1, targetSheetPlan.getChanges().size());
+        assertEquals("order_status", targetSheetPlan.getChanges().get(0).getColumn());
+        assertEquals("PENDING", targetSheetPlan.getChanges().get(0).getBefore());
+        assertEquals("DELIVERED", targetSheetPlan.getChanges().get(0).getAfter());
     }
 }

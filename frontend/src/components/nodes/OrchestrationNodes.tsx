@@ -549,9 +549,26 @@ export const GenericOrchestrationNode: React.FC<any> = ({ data, selected }) => {
       </div>
 
       <div className="p-3 text-xs text-secondary space-y-1">
-        <div className="text-xs text-secondary">
-          Click để điền các câu nói cấu hình tự nhiên.
-        </div>
+        {nodeData.type === 'sheetWriteAction' ? (
+          <div>
+            {nodeData.targetSheetName ? (
+              <>
+                <div className="font-medium text-primary truncate">
+                  {nodeData.targetSpreadsheetTitle || 'Google Sheets'} · {nodeData.targetSheetName}
+                </div>
+                <div className="text-xs text-secondary mt-0.5">
+                  {nodeData.columnMappings?.length || 0} cột được ánh xạ
+                </div>
+              </>
+            ) : (
+              <div className="text-xs text-secondary">Nhấn để chọn file đích và ánh xạ cột.</div>
+            )}
+          </div>
+        ) : (
+          <div className="text-xs text-secondary">
+            Click để điền các câu nói cấu hình tự nhiên.
+          </div>
+        )}
       </div>
 
       {!isAction && (

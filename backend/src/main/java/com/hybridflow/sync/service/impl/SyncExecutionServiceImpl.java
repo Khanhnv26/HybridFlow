@@ -13,6 +13,9 @@ import com.hybridflow.sync.dto.request.ColumnTransformConfig;
 import com.hybridflow.sync.dto.request.RouterPlan;
 import com.hybridflow.sync.dto.request.RunSyncRequest;
 import com.hybridflow.sync.dto.request.SheetEndpointRequest;
+import com.hybridflow.sync.dto.request.SheetWriteTargetPlan;
+import com.hybridflow.workspace.dto.response.SheetWritePreviewResponse;
+import com.hybridflow.workspace.support.SheetWritePlanner;
 import com.hybridflow.sync.dto.response.FieldConflict;
 import com.hybridflow.sync.dto.response.RunSyncResponse;
 import com.hybridflow.sync.engine.ThreeWayDiffEngine;
@@ -64,6 +67,7 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
     private final RuleEvaluationService ruleEvaluationService;
     private final NotificationTemplateService notificationTemplateService;
     private final NotificationOutboxService notificationOutboxService;
+    private final SheetWritePlanner sheetWritePlanner;
 
     @Override
     @Transactional
@@ -389,12 +393,82 @@ public class SyncExecutionServiceImpl implements SyncExecutionService {
         vaultWrites.forEach((id, row) -> store.saveVaultRecord(flow, id, row));
         snapshotWrites.forEach((id, row) -> store.saveSnapshot(flow, id, row));
 
+        int targetCellsUpdated = 0;
+        int targetRowsUpdated = 0;
+        int targetRowsSkipped = 0;
+
+        if (request.getSheetWriteTargetPlan() != null) {
+            phase(request, executionId, "sheetWrite", "WRITE", "Đang ghi về bảng tính đích");
+            SheetWriteTargetPlan targetPlanConfig = request.getSheetWriteTargetPlan();
+            store.lock("sheet:" + targetPlanConfig.getTargetSpreadSheetId());
+            writes.recover(request.getAccessToken(), List.of(targetPlanConfig.getTargetSpreadSheetId()));
+
+            SheetDataResponse liveTarget = googleSheetsService.readSheet(ReadSheetRequest.builder()
+                    .accessToken(request.getAccessToken())
+                    .spreadsheetId(targetPlanConfig.getTargetSpreadSheetId())
+                    .sheetname(targetPlanConfig.getTargetSheetName())
+                    .build());
+
+            List<Map<String, String>> cleanSourceRows = new ArrayList<>();
+            for (String cleanId : clean) {
+                Integer sourceRowIdx = index.get(cleanId);
+                if (sourceRowIdx != null && sourceRowIdx < sheet.getRows().size()) {
+                    cleanSourceRows.add(sheet.getRows().get(sourceRowIdx));
+                }
+            }
+
+            SheetWritePreviewResponse preview = sheetWritePlanner.plan(
+                    cleanSourceRows,
+                    sheet.getHeaders(),
+                    liveTarget,
+                    targetPlanConfig.getSourceKeyColumn(),
+                    targetPlanConfig.getTargetKeyColumn(),
+                    targetPlanConfig.getColumnMappings()
+            );
+
+            if (!preview.isValid()) {
+                throw new ValidationException(String.join("; ", preview.getErrors()));
+            }
+
+            targetRowsSkipped = preview.getUnmatchedRows().size() + preview.getMissingSourceKeyRows().size();
+
+            if (!preview.getChanges().isEmpty()) {
+                List<SheetCellChange> targetChanges = preview.getChanges().stream()
+                        .map(c -> new SheetCellChange(
+                                c.getTargetRowIndex(),
+                                c.getTargetColumn(),
+                                c.getKey(),
+                                c.getCurrentValue(),
+                                c.getNewValue()
+                        ))
+                        .toList();
+
+                SheetWritePlan sheetWritePlan = new SheetWritePlan(
+                        targetPlanConfig.getTargetSpreadSheetId(),
+                        liveTarget.getSheetName(),
+                        targetPlanConfig.getTargetKeyColumn(),
+                        liveTarget.getHeaders(),
+                        targetChanges,
+                        Map.of()
+                );
+
+                writes.apply(request.getAccessToken(), List.of(sheetWritePlan));
+                targetCellsUpdated = targetChanges.size();
+                Set<Integer> uniqueRows = new HashSet<>();
+                targetChanges.forEach(c -> uniqueRows.add(c.getRowIndex()));
+                targetRowsUpdated = uniqueRows.size();
+            }
+        }
+
         int queued = enqueueNotifications(request, flow, executionId, recordEvents, columns, initial ? List.of() : detected);
         int sent = 0, failed = 0;
         RunSyncResponse result = RunSyncResponse.builder().flowId(flow).sheetName(sheet.getSheetName()).executionId(executionId)
                 .status(detected.isEmpty() ? "SUCCESS" : "CONFLICT").totalRowsProcessed(index.size())
                 .cleanRecordIds(clean).conflicts(detected).comparedColumns(columns)
                 .notificationsSent(sent).notificationsFailed(failed).notificationsQueued(queued)
+                .targetCellsUpdated(targetCellsUpdated)
+                .targetRowsUpdated(targetRowsUpdated)
+                .targetRowsSkipped(targetRowsSkipped)
                 .latency((System.currentTimeMillis() - start) + " ms").build();
         completeAfterCommit(executionId, result);
         return result;

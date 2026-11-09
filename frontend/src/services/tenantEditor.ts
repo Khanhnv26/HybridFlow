@@ -1,5 +1,5 @@
 import type { AxiosInstance } from 'axios';
-import type { ExecutionHistoryDto, NotificationOutboxItem, SyncConflictDto, RunSyncResponse, TelegramAlertResponse } from '../types';
+import type { ExecutionHistoryDto, NotificationOutboxItem, SyncConflictDto, RunSyncResponse, TelegramAlertResponse, SheetWritePreviewRequest, SheetWritePreviewResponse } from '../types';
 
 /** Keep the editor's existing service interface while all requests carry tenant ownership. */
 export function createTenantEditorApi(client: Pick<AxiosInstance, 'get' | 'post' | 'put' | 'delete'>, workspaceId: string, workflowId: string) {
@@ -101,6 +101,9 @@ export function createTenantEditorApi(client: Pick<AxiosInstance, 'get' | 'post'
         const context = conflictContexts.get(id);
         if (!context) throw new Error('Tải lại danh sách xung đột trước khi xử lý.');
         return (await client.post<SyncConflictDto>(`${base}/contexts/${encodeURIComponent(context)}/conflicts/${id}/resolve`, { resolvedValue })).data;
+      },
+      previewSheetWrite: async (request: SheetWritePreviewRequest, signal?: AbortSignal) => {
+        return (await client.post<SheetWritePreviewResponse>(`${base}/sheet-write/preview`, request, { signal })).data;
       },
       resendTelegramAlert: async (_id: number, _chatId: string): Promise<TelegramAlertResponse> => {
         throw new Error('Mở Lịch sử → Xem thông báo để thử gửi lại cảnh báo theo workspace.');
