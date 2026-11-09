@@ -15,7 +15,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 
-/** Safe fallback for servlet error dispatches that never reach controller advice. */
+
 @Component
 public class ApiErrorAttributes extends DefaultErrorAttributes {
     @Override
