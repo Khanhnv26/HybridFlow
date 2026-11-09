@@ -25,6 +25,10 @@ import type {
   WorkspaceConnectionResponse,
 } from '../../types';
 
+const fieldClass = 'w-full rounded-lg border border-line bg-canvas px-3 py-2 text-sm text-primary disabled:opacity-50';
+const secondaryButton = 'inline-flex items-center justify-center gap-2 rounded-lg border border-line px-3 py-2 text-sm font-medium text-primary hover:bg-elevated disabled:opacity-50';
+const primaryButton = 'inline-flex items-center justify-center gap-2 rounded-lg bg-purple-600 px-3 py-2 text-sm font-medium text-on-accent hover:bg-purple-500 disabled:opacity-50';
+
 interface SheetWriteConfigModalProps {
   workspaceId?: string;
   workflowId?: string;
@@ -110,6 +114,7 @@ export function SheetWriteConfigModal({
       && mapping.targetColumn === savedMappings[i].targetColumn);
   const hasTargetAccess = !!selectedConnectionId && !!metadata && targetHeaders.includes(targetKeyColumn);
   const busy = saving || applying;
+  const canApply = settingsSaved && !!previewResult?.valid && !!previewResult.previewToken;
 
   useEffect(() => {
     setPreviewResult(null);
@@ -325,49 +330,52 @@ export function SheetWriteConfigModal({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-150">
-      <div
-        ref={motionRef}
-        className="w-full max-w-3xl max-h-[90vh] bg-surface-900 border border-surface-700/80 rounded-2xl shadow-2xl flex flex-col overflow-hidden text-surface-100"
+    <div ref={motionRef} className="hf-motion-overlay fixed inset-0 z-50 flex items-center justify-center bg-black/70 p-4">
+      <section
+        role="dialog"
+        aria-modal="false"
+        aria-labelledby="sheet-write-title"
+        className="hf-modal hf-modal--complex flex flex-col rounded-2xl border border-line bg-surface text-primary"
       >
-        {/* Header */}
-        <div className="flex items-center justify-between px-6 py-4 border-b border-surface-800 bg-surface-900/80">
-          <div className="flex items-center gap-3">
-            <div className="p-2.5 rounded-xl bg-blue-500/10 text-blue-400 border border-blue-500/20">
+        <header className="hf-modal-header flex items-start justify-between gap-3 border-b border-line">
+          <div className="flex min-w-0 items-start gap-3">
+            <span className="shrink-0 rounded-xl border border-line bg-info-soft p-2.5 text-info">
               <FileEdit size={20} />
-            </div>
-            <div>
-              <h2 className="text-lg font-semibold text-surface-50">Cấu hình: Ghi về bảng tính</h2>
-              <p className="text-xs text-surface-400">
-                Tìm dòng theo cột khóa và cập nhật các cột đã ánh xạ trên Google Sheets đích
+            </span>
+            <div className="min-w-0">
+              <h2 id="sheet-write-title" className="font-semibold">Ghi về bảng tính</h2>
+              <p className="mt-1 text-sm text-secondary">
+                Tìm dòng theo cột khóa và cập nhật các cột được ánh xạ.
               </p>
             </div>
           </div>
           <button
+            type="button"
+            aria-label="Đóng cấu hình ghi về bảng tính"
             onClick={onClose}
             disabled={busy}
-            className="p-1.5 rounded-lg text-surface-400 hover:text-surface-100 hover:bg-surface-800 transition"
+            className="shrink-0 rounded-lg p-2 text-secondary hover:bg-elevated hover:text-primary disabled:opacity-40"
           >
             <X size={18} />
           </button>
-        </div>
+        </header>
 
         {/* Body */}
-        <fieldset disabled={busy} className="min-w-0 flex-1 overflow-y-auto p-6 space-y-6">
+        <fieldset disabled={busy} className="hf-modal-body min-w-0 flex-1 space-y-5 p-4">
           {error && (
-            <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-sm flex items-start gap-2.5">
+            <div role="alert" className="flex items-start gap-2 rounded-lg border border-line bg-danger-soft p-3 text-sm text-danger">
               <AlertTriangle size={18} className="shrink-0 mt-0.5" />
               <span>{error}</span>
             </div>
           )}
 
           {/* Section 1: Chọn Kết nối & File Google Sheet đích */}
-          <div className="space-y-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-surface-400">
+          <div className="space-y-3">
+            <h3 className="font-semibold">
               1. Bảng tính đích
             </h3>
 
-            <p className="text-xs text-surface-300">
+            <p className="text-xs text-secondary">
               {selectedConnectionId
                 ? `Dùng kết nối Google của Sheet nguồn — ${workspaceConnections.find(c => c.id === selectedConnectionId)?.name || selectedConnectionId}`
                 : 'Chọn kết nối Google cho Sheet nguồn trước khi cấu hình Sheet đích.'}
@@ -375,25 +383,26 @@ export function SheetWriteConfigModal({
 
             {/* Link bảng tính */}
             <div>
-              <label className="block text-xs font-medium text-surface-300 mb-1.5">
+              <label htmlFor="sheet-write-link" className="mb-1.5 block text-sm font-medium">
                 Đường dẫn hoặc ID Google Sheets đích
               </label>
               <div className="relative">
                 <input
+                  id="sheet-write-link"
                   type="text"
                   value={link}
                   onChange={(e) => setLink(e.target.value)}
-                  placeholder="https://docs.google.com/spreadsheets/d/1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms/edit"
-                  className="w-full px-3.5 py-2.5 pl-10 bg-surface-950 border border-surface-800 rounded-xl text-sm placeholder:text-surface-600 focus:outline-none focus:border-blue-500"
+                  placeholder="Dán liên kết hoặc nhập ID"
+                  className={`${fieldClass} pl-9 ${spreadsheetId ? 'pr-9' : ''}`}
                 />
-                <ExcelIcon size={18} className="absolute left-3 top-3 text-surface-500" />
+                <ExcelIcon size={17} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2" />
                 {spreadsheetId && (
                   <a
                     href={`https://docs.google.com/spreadsheets/d/${spreadsheetId}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="absolute right-3 top-2.5 p-1 rounded text-surface-400 hover:text-surface-200"
-                    title="Mở trên tab mới"
+                    className="absolute right-2 top-1/2 -translate-y-1/2 rounded p-1 text-secondary hover:text-primary"
+                    aria-label="Mở bảng tính đích trong tab mới"
                   >
                     <ExternalLink size={16} />
                   </a>
@@ -403,20 +412,21 @@ export function SheetWriteConfigModal({
 
             {/* Metadata & Tab Selection */}
             {loading ? (
-              <div className="flex items-center gap-2 text-xs text-surface-400 py-1">
-                <RefreshCw size={14} className="animate-spin text-blue-400" />
+              <div className="flex items-center gap-2 text-xs text-secondary py-1">
+                <RefreshCw size={14} className="animate-spin text-info" />
                 <span>Đang đọc danh sách trang tính...</span>
               </div>
             ) : metadata ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-medium text-surface-300 mb-1.5">
-                    Trang tính (Tab) đích
+                  <label htmlFor="sheet-write-tab" className="mb-1.5 block text-sm font-medium">
+                    Tab đích
                   </label>
                   <select
+                    id="sheet-write-tab"
                     value={selectedTab}
                     onChange={(e) => setSelectedTab(e.target.value)}
-                    className="w-full px-3 py-2 bg-surface-950 border border-surface-800 rounded-xl text-sm focus:outline-none focus:border-blue-500"
+                    className={fieldClass}
                   >
                     {metadata.sheets.map((s) => (
                       <option key={s.sheetId} value={s.title}>
@@ -426,34 +436,35 @@ export function SheetWriteConfigModal({
                   </select>
                 </div>
                 <div className="flex flex-col justify-end">
-                  <p className="text-xs text-surface-400">
-                    Tên file: <span className="text-surface-200 font-medium">{metadata.title}</span>
+                  <p className="text-xs text-secondary">
+                    Tên file: <span className="text-primary font-medium">{metadata.title}</span>
                   </p>
-                  <p className="text-xs text-surface-400 mt-1">
-                    Số cột tìm thấy: <span className="text-surface-200 font-medium">{targetHeaders.length}</span>
+                  <p className="text-xs text-secondary mt-1">
+                    Số cột tìm thấy: <span className="text-primary font-medium">{targetHeaders.length}</span>
                   </p>
                 </div>
               </div>
             ) : null}
           </div>
 
-          <div className="border-t border-surface-800/80 pt-5 space-y-4">
-            <h3 className="text-xs font-semibold uppercase tracking-wider text-surface-400">
-              2. Khóa đối soát (Key Column)
+          <div className="space-y-3 border-t border-line pt-4">
+            <h3 className="font-semibold">
+              2. Khóa đối soát
             </h3>
-            <p className="text-xs text-surface-400">
-              Hệ thống dựa vào giá trị khóa này để tìm đúng dòng trên Google Sheets đích cần cập nhật.
+            <p className="text-xs text-secondary">
+              Chọn cột dùng để tìm cùng một dòng ở hai bảng tính.
             </p>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-xs font-medium text-surface-300 mb-1.5">
-                  Cột khóa nguồn (Sheet gốc)
+                <label htmlFor="sheet-write-source-key" className="mb-1.5 block text-sm font-medium">
+                  Cột khóa nguồn
                 </label>
                 <select
+                  id="sheet-write-source-key"
                   value={sourceKeyColumn}
                   onChange={(e) => setSourceKeyColumn(e.target.value)}
-                  className="w-full px-3 py-2 bg-surface-950 border border-surface-800 rounded-xl text-sm focus:outline-none focus:border-blue-500"
+                  className={fieldClass}
                 >
                   {sourceHeaders.length > 0 ? (
                     sourceHeaders.map((h) => (
@@ -468,15 +479,16 @@ export function SheetWriteConfigModal({
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-surface-300 mb-1.5">
-                  Cột khóa đích (Sheet đích)
+                <label htmlFor="sheet-write-target-key" className="mb-1.5 block text-sm font-medium">
+                  Cột khóa đích
                 </label>
                 <select
+                  id="sheet-write-target-key"
                   value={targetKeyColumn}
                   onChange={(e) => setTargetKeyColumn(e.target.value)}
-                  className="w-full px-3 py-2 bg-surface-950 border border-surface-800 rounded-xl text-sm focus:outline-none focus:border-blue-500"
+                  className={fieldClass}
                 >
-                  <option value="">-- Chọn cột khóa đích --</option>
+                  <option value="">Chọn cột khóa đích</option>
                   {targetHeaders.map((h) => (
                     <option key={h} value={h}>
                       {h}
@@ -488,20 +500,20 @@ export function SheetWriteConfigModal({
           </div>
 
           {/* Section 3: Ánh xạ từng cột (Field Mapping) */}
-          <div className="border-t border-surface-800/80 pt-5 space-y-4">
-            <div className="flex items-center justify-between">
+          <div className="space-y-3 border-t border-line pt-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-surface-400">
+                <h3 className="font-semibold">
                   3. Ánh xạ cột dữ liệu
                 </h3>
-                <p className="text-xs text-surface-400 mt-0.5">
-                  Chỉ những cột được ánh xạ mới bị thay đổi. Các cột chứa công thức hoặc ghi chú khác vẫn giữ nguyên.
+                <p className="text-xs text-secondary mt-0.5">
+                  Chọn cột nguồn và cột đích cần cập nhật.
                 </p>
               </div>
               <button
                 type="button"
                 onClick={handleAddMapping}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-blue-500/10 text-blue-400 border border-blue-500/20 hover:bg-blue-500/20 transition"
+                className={secondaryButton}
               >
                 <Plus size={14} />
                 <span>Thêm cột ánh xạ</span>
@@ -509,22 +521,23 @@ export function SheetWriteConfigModal({
             </div>
 
             {columnMappings.length === 0 ? (
-              <div className="p-4 rounded-xl border border-dashed border-surface-800 text-center text-xs text-surface-500">
-                Chưa có cột nào được ánh xạ. Bấm "Thêm cột ánh xạ" ở trên để bắt đầu.
+              <div className="rounded-lg border border-dashed border-line bg-canvas p-3 text-sm text-secondary">
+                Chưa có cặp cột nào.
               </div>
             ) : (
               <div className="space-y-2.5">
                 {columnMappings.map((mapping, idx) => (
                   <div
                     key={idx}
-                    className="flex items-center gap-3 p-2.5 rounded-xl bg-surface-950/60 border border-surface-800/80"
+                    className="flex items-end gap-2 rounded-lg border border-line bg-elevated p-2.5"
                   >
-                    <div className="flex-1">
-                      <label className="block text-[10px] text-surface-400 mb-1">Cột nguồn</label>
+                    <div className="min-w-0 flex-1">
+                      <label htmlFor={`sheet-write-source-${idx}`} className="mb-1 block text-xs text-secondary">Cột nguồn</label>
                       <select
+                        id={`sheet-write-source-${idx}`}
                         value={mapping.sourceColumn}
                         onChange={(e) => handleUpdateMapping(idx, 'sourceColumn', e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-surface-900 border border-surface-700/80 rounded-lg text-xs focus:outline-none focus:border-blue-500"
+                        className={fieldClass}
                       >
                         {sourceHeaders.map((h) => (
                           <option key={h} value={h}>
@@ -534,16 +547,17 @@ export function SheetWriteConfigModal({
                       </select>
                     </div>
 
-                    <ArrowRight size={16} className="text-surface-500 shrink-0 mt-4" />
+                    <ArrowRight size={16} className="mb-3 shrink-0 text-muted" />
 
-                    <div className="flex-1">
-                      <label className="block text-[10px] text-surface-400 mb-1">Cột đích</label>
+                    <div className="min-w-0 flex-1">
+                      <label htmlFor={`sheet-write-target-${idx}`} className="mb-1 block text-xs text-secondary">Cột đích</label>
                       <select
+                        id={`sheet-write-target-${idx}`}
                         value={mapping.targetColumn}
                         onChange={(e) => handleUpdateMapping(idx, 'targetColumn', e.target.value)}
-                        className="w-full px-2.5 py-1.5 bg-surface-900 border border-surface-700/80 rounded-lg text-xs focus:outline-none focus:border-blue-500"
+                        className={fieldClass}
                       >
-                        <option value="">-- Chọn cột đích --</option>
+                        <option value="">Chọn cột đích</option>
                         {targetHeaders
                           .filter((h) => h !== targetKeyColumn)
                           .map((h) => (
@@ -556,8 +570,9 @@ export function SheetWriteConfigModal({
 
                     <button
                       type="button"
+                      aria-label={`Xóa ánh xạ ${idx + 1}`}
                       onClick={() => handleRemoveMapping(idx)}
-                      className="p-1.5 mt-4 rounded-lg text-surface-500 hover:text-rose-400 hover:bg-rose-500/10 transition"
+                      className="shrink-0 rounded-lg p-2 text-secondary hover:bg-danger-soft hover:text-danger"
                       title="Xóa ánh xạ này"
                     >
                       <Trash2 size={16} />
@@ -569,13 +584,13 @@ export function SheetWriteConfigModal({
           </div>
 
           {/* Section 4: Khu vực Xem trước (Readonly Preview) */}
-          <div className="border-t border-surface-800/80 pt-5 space-y-4">
-            <div className="flex items-center justify-between">
+          <div className="space-y-3 border-t border-line pt-4">
+            <div className="flex flex-wrap items-start justify-between gap-2">
               <div>
-                <h3 className="text-xs font-semibold uppercase tracking-wider text-surface-400">
-                  4. Xem trước thay đổi (Readonly)
+                <h3 className="font-semibold">
+                  4. Xem trước thay đổi
                 </h3>
-                <p className="text-xs text-surface-400 mt-0.5">
+                <p className="text-xs text-secondary mt-0.5">
                   Xem các ô đích dự kiến cập nhật trước khi áp dụng.
                 </p>
               </div>
@@ -583,7 +598,7 @@ export function SheetWriteConfigModal({
                 type="button"
                 onClick={handlePreview}
                 disabled={previewLoading || !onPreview || !hasTargetAccess || columnMappings.length === 0}
-                className="flex items-center gap-2 px-3.5 py-2 rounded-xl text-xs font-medium bg-emerald-500/15 text-emerald-400 border border-emerald-500/30 hover:bg-emerald-500/25 disabled:opacity-50 disabled:cursor-not-allowed transition"
+                className={secondaryButton}
               >
                 <RefreshCw size={14} className={previewLoading ? 'animate-spin' : ''} />
                 <span>{previewLoading ? 'Đang phân tích...' : 'Xem trước thay đổi'}</span>
@@ -591,7 +606,7 @@ export function SheetWriteConfigModal({
             </div>
 
             {previewError && (
-              <div className="p-3 rounded-xl bg-rose-500/10 border border-rose-500/20 text-rose-300 text-xs">
+              <div role="alert" className="rounded-lg border border-line bg-danger-soft p-3 text-sm text-danger">
                 {previewError}
               </div>
             )}
@@ -599,29 +614,29 @@ export function SheetWriteConfigModal({
             {previewResult && (
               <div className="space-y-4">
                 {previewResult.errors.length > 0 && (
-                  <ul role="alert" className="list-disc pl-5 text-xs text-rose-300">
+                  <ul role="alert" className="list-disc pl-5 text-xs text-danger">
                     {previewResult.errors.map((issue, index) => <li key={index}>{issue}</li>)}
                   </ul>
                 )}
                 {/* Badges */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div className="p-3 rounded-xl bg-blue-500/10 border border-blue-500/20">
-                    <p className="text-[11px] text-blue-300">Sẽ cập nhật</p>
-                    <p className="text-lg font-bold text-blue-400">{previewResult.changes.length} ô</p>
+                <div className="flex flex-wrap gap-2">
+                  <div className="flex-1 basis-32 rounded-lg border border-line bg-info-soft px-3 py-2">
+                    <p className="text-[11px] text-secondary">Sẽ cập nhật</p>
+                    <p className="text-lg font-bold text-info">{previewResult.changes.length} ô</p>
                   </div>
-                  <div className="p-3 rounded-xl bg-amber-500/10 border border-amber-500/20">
-                    <p className="text-[11px] text-amber-300">Không tìm thấy ở đích</p>
-                    <p className="text-lg font-bold text-amber-400">{previewResult.unmatchedRows.length} dòng</p>
+                  <div className="flex-1 basis-32 rounded-lg border border-line bg-warning-soft px-3 py-2">
+                    <p className="text-[11px] text-secondary">Không tìm thấy ở đích</p>
+                    <p className="text-lg font-bold text-warning">{previewResult.unmatchedRows.length} dòng</p>
                   </div>
-                  <div className="p-3 rounded-xl bg-surface-800/60 border border-surface-700/60">
-                    <p className="text-[11px] text-surface-300">Thiếu khóa nguồn</p>
-                    <p className="text-lg font-bold text-surface-200">{previewResult.missingSourceKeyRows.length} dòng</p>
+                  <div className="flex-1 basis-32 rounded-lg border border-line bg-elevated px-3 py-2">
+                    <p className="text-[11px] text-secondary">Thiếu khóa nguồn</p>
+                    <p className="text-lg font-bold text-primary">{previewResult.missingSourceKeyRows.length} dòng</p>
                   </div>
                   <div
-                    className={`p-3 rounded-xl border ${
+                    className={`flex-1 basis-32 rounded-lg border border-line px-3 py-2 ${
                       previewResult.duplicateTargetKeys.length > 0
-                        ? 'bg-rose-500/15 border-rose-500/30 text-rose-300'
-                        : 'bg-emerald-500/10 border-emerald-500/20 text-emerald-400'
+                        ? 'bg-danger-soft text-danger'
+                        : 'bg-success-soft text-success'
                     }`}
                   >
                     <p className="text-[11px]">Khóa trùng ở đích</p>
@@ -635,7 +650,7 @@ export function SheetWriteConfigModal({
 
                 {/* Cảnh báo khóa trùng nếu có */}
                 {previewResult.duplicateTargetKeys.length > 0 && (
-                  <div className="p-3.5 rounded-xl bg-rose-500/10 border border-rose-500/20 text-xs text-rose-300 space-y-1">
+                  <div className="space-y-1 rounded-lg border border-line bg-danger-soft p-3 text-sm text-danger">
                     <p className="font-semibold flex items-center gap-1.5">
                       <AlertTriangle size={15} />
                       Bảng tính đích có khóa bị trùng lặp:
@@ -643,7 +658,7 @@ export function SheetWriteConfigModal({
                     <ul className="list-disc pl-5 space-y-0.5">
                       {previewResult.duplicateTargetKeys.map((dup, i) => (
                         <li key={i}>
-                          Khóa <code className="bg-rose-950/60 px-1 py-0.5 rounded">{dup.key}</code> xuất hiện ở các dòng: {dup.targetRowNumbers.join(', ')}
+                          Khóa <code className="bg-surface px-1 py-0.5 rounded">{dup.key}</code> xuất hiện ở các dòng: {dup.targetRowNumbers.join(', ')}
                         </li>
                       ))}
                     </ul>
@@ -652,9 +667,9 @@ export function SheetWriteConfigModal({
 
                 {/* Bảng chi tiết thay đổi */}
                 {previewResult.changes.length > 0 ? (
-                  <div className="border border-surface-800 rounded-xl overflow-hidden max-h-56 overflow-y-auto">
-                    <table className="w-full text-xs text-left">
-                      <thead className="bg-surface-800/80 text-surface-300 font-medium sticky top-0">
+                  <div role="region" aria-label="Chi tiết ô thay đổi" tabIndex={0} className="max-h-56 overflow-auto rounded-lg border border-line">
+                    <table className="w-full min-w-[28rem] text-left text-xs">
+                      <thead className="sticky top-0 whitespace-nowrap bg-elevated font-medium text-secondary">
                         <tr>
                           <th className="px-3 py-2">Khóa</th>
                           <th className="px-3 py-2">Dòng đích</th>
@@ -663,16 +678,16 @@ export function SheetWriteConfigModal({
                           <th className="px-3 py-2">Giá trị mới</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-surface-800 text-surface-200">
+                      <tbody className="divide-y divide-line text-primary">
                         {previewResult.changes.map((change, idx) => (
-                          <tr key={idx} className="hover:bg-surface-800/40 transition">
-                            <td className="px-3 py-2 font-mono text-surface-400">{change.key}</td>
+                          <tr key={idx} className="hover:bg-elevated transition">
+                            <td className="whitespace-nowrap px-3 py-2 font-mono text-secondary">{change.key}</td>
                             <td className="px-3 py-2">{change.targetRowNumber}</td>
-                            <td className="px-3 py-2 text-surface-300">{change.targetColumn}</td>
-                            <td className="px-3 py-2 text-surface-500 line-through">
+                            <td className="px-3 py-2 text-secondary">{change.targetColumn}</td>
+                            <td className="px-3 py-2 text-muted line-through">
                               {change.currentValue || '∅'}
                             </td>
-                            <td className="px-3 py-2 text-emerald-400 font-medium">
+                            <td className="px-3 py-2 text-success font-medium">
                               {change.newValue || '∅'}
                             </td>
                           </tr>
@@ -681,13 +696,13 @@ export function SheetWriteConfigModal({
                     </table>
                   </div>
                 ) : previewResult.valid ? (
-                  <div className="p-3 text-center text-xs text-surface-400 bg-surface-950/50 rounded-xl">
-                    <CheckCircle size={16} className="inline mr-1.5 text-emerald-400" />
+                  <div className="rounded-lg border border-line bg-canvas p-3 text-sm text-secondary">
+                    <CheckCircle size={16} className="inline mr-1.5 text-success" />
                     Không có ô nào cần cập nhật trong các dòng đã đối soát.
                   </div>
                 ) : null}
                 {previewResult.valid && (
-                  <p className="text-xs text-surface-400">
+                  <p className="text-xs text-secondary">
                     {settingsSaved
                       ? 'Áp dụng sẽ chạy workflow và khởi tạo checkpoint nếu đây là lần chạy đầu.'
                       : 'Lưu cấu hình, sau đó mở lại khối để xem trước và áp dụng.'}
@@ -699,12 +714,12 @@ export function SheetWriteConfigModal({
         </fieldset>
 
         {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-surface-800 bg-surface-900/80">
+        <footer className="hf-modal-footer flex flex-wrap items-center justify-end gap-2 border-t border-line bg-surface">
           <button
             type="button"
             onClick={onClose}
             disabled={busy}
-            className="px-4 py-2 text-sm text-surface-300 hover:text-surface-100 hover:bg-surface-800 rounded-xl transition"
+            className={secondaryButton}
           >
             Hủy
           </button>
@@ -712,7 +727,7 @@ export function SheetWriteConfigModal({
             type="button"
             onClick={handleSave}
             disabled={busy || !hasTargetAccess || columnMappings.length === 0}
-            className="flex items-center gap-2 px-5 py-2 text-sm font-medium bg-blue-600 hover:bg-blue-500 text-white rounded-xl shadow-lg shadow-blue-600/20 disabled:opacity-50 disabled:cursor-not-allowed transition"
+            className={`${onApply && canApply ? secondaryButton : primaryButton} transition-none`}
           >
             <Save size={16} />
             <span>{saving ? 'Đang lưu...' : 'Lưu cấu hình'}</span>
@@ -721,14 +736,14 @@ export function SheetWriteConfigModal({
             <button
               type="button"
               onClick={handleApply}
-              disabled={busy || !settingsSaved || !previewResult?.valid || !previewResult.previewToken}
-              className="px-4 py-2 rounded-xl bg-emerald-600 text-white text-sm disabled:opacity-50"
+              disabled={busy || !canApply}
+              className={`${canApply ? primaryButton : secondaryButton} transition-none`}
             >
               {applying ? 'Đang áp dụng…' : 'Áp dụng bản xem trước'}
             </button>
           )}
-        </div>
-      </div>
+        </footer>
+      </section>
     </div>
   );
 }
