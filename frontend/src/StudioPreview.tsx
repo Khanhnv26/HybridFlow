@@ -71,6 +71,7 @@ function StudioPreview() {
       onOpenTable={() => setTableOpen(true)}
       onConnectGoogle={explain}
       onManageConnections={explain}
+      onOpenShare={explain}
     />
     <div className="relative flex flex-1 min-h-0 overflow-hidden">
       <NodePalette open={palette} onAddNode={item => setNodes(current => [...current, { id: crypto.randomUUID(), type: item.type, position: { x: 250, y: 400 }, data: { subtitle: 'Dữ liệu minh họa', label: item.label, type: item.type, category: item.category } }])} />

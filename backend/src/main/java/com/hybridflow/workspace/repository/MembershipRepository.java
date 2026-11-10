@@ -42,7 +42,7 @@ public class MembershipRepository {
 
     public List<MemberResponse> findMembers(UUID workspaceId) {
         return jdbc.query("""
-                SELECT m.workspace_id, m.user_id, u.email, u.display_name, m.role, m.joined_at
+                SELECT m.workspace_id, m.user_id, u.email, u.display_name, u.avatar_url, m.role, m.joined_at
                 FROM workspace_members m
                 JOIN app_users u ON u.id = m.user_id
                 WHERE m.workspace_id = ?
@@ -54,6 +54,7 @@ public class MembershipRepository {
                     rs.getObject("user_id", UUID.class),
                     rs.getString("email"),
                     rs.getString("display_name"),
+                    rs.getString("avatar_url"),
                     WorkspaceRole.valueOf(rs.getString("role")),
                     timestamp != null ? timestamp.toInstant() : null
             );

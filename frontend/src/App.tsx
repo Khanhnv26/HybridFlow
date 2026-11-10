@@ -21,6 +21,7 @@ import { DataTransformConfigModal } from './components/orchestration/DataTransfo
 import { RouterConditionConfigModal } from './components/orchestration/RouterConditionConfigModal';
 import { NaturalLanguageConfigModal } from './components/orchestration/NaturalLanguageConfigModal';
 import { WorkspaceConnectionsModal } from './components/workspace/WorkspaceConnectionsModal';
+import { WorkspaceShareModal } from './components/workspace/WorkspaceShareModal';
 import { RunHistoryDrawer } from './components/orchestration/RunHistoryDrawer';
 import { ConflictModal } from './components/nocode/ConflictModal';
 import { DataTableModal } from './components/nocode/DataTableModal';
@@ -34,7 +35,7 @@ import {
   GenericOrchestrationNode,
   RouterConditionNode,
 } from './components/nodes/OrchestrationNodes';
-import { apiClient, googleService, syncService, workflowService, telegramService, workspaceConnectionService, workspaceTelegramApi, webhookService } from './services/api';
+import { apiClient, googleService, syncService, workflowService, telegramService, workspaceConnectionService, workspaceTelegramApi, webhookService, invitationService } from './services/api';
 import { createTenantEditorApi } from './services/tenantEditor';
 import { arrangeWorkflowNodes } from './services/workflowLayout';
 import { connectedSheetSources, flowIdFor, workflowConfig } from './services/workflow';
@@ -192,6 +193,7 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
   const connected = workspaceId ? nodes.some(node => node.type === 'sheetsTrigger' && node.data.connectionId) : legacyConnected;
   const [connectionVersion, setConnectionVersion] = useState(0);
   const [isConnectionsModalOpen, setIsConnectionsModalOpen] = useState(false);
+  const [isShareModalOpen, setIsShareModalOpen] = useState(false);
   const [autoActive, setAutoActive] = useState(false);
   const [intervalMs, setIntervalMs] = useState(300000);
   const popup = useRef<Window | null>(null);
@@ -203,6 +205,27 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
     toastTimer.current = setTimeout(() => setToastMessage(null), 6000);
   }, []);
   useEffect(() => () => clearTimeout(toastTimer.current), []);
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.location) return;
+    const hash = window.location.hash || '';
+    const search = window.location.search || '';
+    const match = hash.match(/invite=([a-zA-Z0-9_-]+)/) || search.match(/invite=([a-zA-Z0-9_-]+)/);
+    if (!match) return;
+    const token = match[1];
+    void invitationService.accept(token)
+      .then((joined) => {
+        showToast(`Đã tham gia không gian làm việc "${joined.name}".`);
+        if (window.history?.replaceState) {
+          window.history.replaceState({}, '', window.location.pathname);
+        }
+      })
+      .catch((reason) => {
+        showToast(message(reason));
+        if (window.history?.replaceState) {
+          window.history.replaceState({}, '', window.location.pathname);
+        }
+      });
+  }, [showToast]);
   const configState = useMemo(() => {
     try {
       return { config: workflowConfig(nodes, edges), error: '' };
@@ -906,6 +929,7 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
           void connectGoogle().catch((error) => showToast(message(error)));
         }}
         onManageConnections={workspaceId ? () => setIsConnectionsModalOpen(true) : undefined}
+        onOpenShare={workspaceId ? () => setIsShareModalOpen(true) : undefined}
         workflowEnabled={workflowEnabled}
         onToggleWorkflowEnabled={workspaceId ? handleToggleWorkflow : undefined}
         isTogglingWorkflow={isTogglingWorkflow}
@@ -1194,6 +1218,17 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
           onConnectionsChanged={() => {
             setConnectionVersion((v) => v + 1);
           }}
+        />
+      )}
+      {isShareModalOpen && workspaceId && (
+        <WorkspaceShareModal
+          workspaceId={workspaceId}
+          workspaceName={navigation?.workspaces.find((w) => w.id === workspaceId)?.name}
+          currentUserRole={workspaceRole}
+          currentUserId={userId}
+          currentUserAvatarUrl={user?.avatarUrl}
+          isOpen={isShareModalOpen}
+          onClose={() => setIsShareModalOpen(false)}
         />
       )}
     </div>

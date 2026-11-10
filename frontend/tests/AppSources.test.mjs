@@ -8,7 +8,10 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
-const api = {};
+const api = {
+  memberService: { list: async () => [] },
+  invitationService: { accept: async () => ({}) },
+};
 globalThis.__sourceAppApi = api;
 const bundle = await build({
   entryPoints: [fileURLToPath(new URL('../src/App.tsx', import.meta.url))],
@@ -26,7 +29,7 @@ const bundle = await build({
           namespace: 'test-api',
         }));
         builder.onLoad({ filter: /.*/, namespace: 'test-api' }, () => ({
-          contents: ['apiClient', 'googleService', 'syncService', 'workflowService', 'telegramService', 'workspaceConnectionService', 'moduleService', 'tenantWorkflowService', 'webhookService']
+          contents: ['apiClient', 'googleService', 'syncService', 'workflowService', 'telegramService', 'workspaceConnectionService', 'moduleService', 'tenantWorkflowService', 'webhookService', 'memberService', 'invitationService']
             .map(
               (name) =>
                 'export const ' +

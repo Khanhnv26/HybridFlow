@@ -22,6 +22,7 @@ globalThis.__switcherApi = {
   authService: {},
   moduleService: { list: async id => modules.filter(item => item.workspaceId === id) },
   tenantWorkflowService: { list: async id => workflows.filter(item => item.workspaceId === id) },
+  invitationService: { accept: async () => ({}) },
 };
 const bundle = await build({
   stdin: { contents: `export { WorkflowSwitcher } from './src/components/workspace/WorkflowSwitcher';
@@ -30,7 +31,7 @@ const bundle = await build({
   plugins: [{ name: 'boundaries', setup(builder) {
     builder.onResolve({ filter: /services\/api$/ }, () => ({ path: 'api', namespace: 'switcher-api' }));
     builder.onLoad({ filter: /.*/, namespace: 'switcher-api' }, () => ({
-      contents: 'export const { moduleService, tenantWorkflowService, workspaceService, authService } = globalThis.__switcherApi;',
+      contents: 'export const { moduleService, tenantWorkflowService, workspaceService, authService, invitationService } = globalThis.__switcherApi;',
     }));
     builder.onResolve({ filter: /^(?:react(?:\/.*)?|lucide-react)$/ }, args => ({ path: import.meta.resolve(args.path), external: true }));
   } }],

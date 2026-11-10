@@ -21,6 +21,9 @@ import type {
   WorkflowWebhookInfo,
   SheetWritePreviewRequest,
   SheetWritePreviewResponse,
+  WorkspaceMember,
+  InvitationResponse,
+  WorkspaceRole,
 } from '../types';
 
 const API_BASE_URL = (import.meta.env.VITE_API_BASE_URL || '/api/v1').replace(/\/$/, '');
@@ -98,6 +101,27 @@ export const workspaceService = {
     (await apiClient.get<Workspace[]>('/workspaces', { signal })).data,
   create: async (name: string) =>
     (await apiClient.post<Workspace>('/workspaces', { name })).data,
+};
+
+export const memberService = {
+  list: async (workspaceId: string, signal?: AbortSignal) =>
+    (await apiClient.get<WorkspaceMember[]>(`/workspaces/${encodeURIComponent(workspaceId)}/members`, { signal })).data,
+  changeRole: async (workspaceId: string, userId: string, role: WorkspaceRole) => {
+    await apiClient.put(`/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}/role`, { role });
+  },
+  remove: async (workspaceId: string, userId: string) => {
+    await apiClient.delete(`/workspaces/${encodeURIComponent(workspaceId)}/members/${encodeURIComponent(userId)}`);
+  },
+};
+
+export const invitationService = {
+  create: async (workspaceId: string, email: string, role: WorkspaceRole) =>
+    (await apiClient.post<InvitationResponse>(`/workspaces/${encodeURIComponent(workspaceId)}/invitations`, { email, role })).data,
+  accept: async (token: string) =>
+    (await apiClient.post<Workspace>('/workspaces/invitations/accept', { token })).data,
+  revoke: async (workspaceId: string, invitationId: string) => {
+    await apiClient.delete(`/workspaces/${encodeURIComponent(workspaceId)}/invitations/${encodeURIComponent(invitationId)}`);
+  },
 };
 
 export const moduleService = {

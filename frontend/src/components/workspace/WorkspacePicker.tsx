@@ -1,7 +1,7 @@
 import { useEffect, useState, type ReactNode } from 'react';
 import { ArrowUpRight, Database, GitBranch, Send, Sheet, Workflow } from 'lucide-react';
 import type { Me, StudioNavigation, WorkflowSelection, Workspace } from '../../types';
-import { authService, workspaceService } from '../../services/api';
+import { authService, workspaceService, invitationService } from '../../services/api';
 import { errorMessage } from '../../services/errors';
 import { AccountMenu } from '../orchestration/AccountMenu';
 import { ThemeToggle } from '../ThemeToggle';
@@ -26,6 +26,28 @@ export function WorkspacePicker({ user, children }: {
       .finally(() => { if (!controller.signal.aborted) setLoading(false); });
     return () => controller.abort();
   }, [revision]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.location) return;
+    const hash = window.location.hash || '';
+    const search = window.location.search || '';
+    const match = hash.match(/invite=([a-zA-Z0-9_-]+)/) || search.match(/invite=([a-zA-Z0-9_-]+)/);
+    if (!match) return;
+    const token = match[1];
+    void invitationService.accept(token)
+      .then(() => {
+        setRevision(v => v + 1);
+        if (window.history?.replaceState) {
+          window.history.replaceState({}, '', window.location.pathname);
+        }
+      })
+      .catch(reason => {
+        setListError(errorMessage(reason));
+        if (window.history?.replaceState) {
+          window.history.replaceState({}, '', window.location.pathname);
+        }
+      });
+  }, []);
 
   async function createWorkspace(name: string) {
     const created = await workspaceService.create(name);

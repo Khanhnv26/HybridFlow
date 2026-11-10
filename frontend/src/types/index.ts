@@ -484,3 +484,20 @@ export interface StudioNavigation {
   workflows: TenantWorkflowSummary[];
   selectedWorkflowId: string;
 }
+
+export interface WorkspaceMember {
+  workspaceId: string;
+  userId: string;
+  email: string;
+  displayName: string;
+  avatarUrl?: string | null;
+  role: WorkspaceRole;
+  joinedAt: string;
+}
+
+export interface InvitationResponse {
+  id: string;
+  inviteUrl: string;
+  expiresAt: string;
+}
+

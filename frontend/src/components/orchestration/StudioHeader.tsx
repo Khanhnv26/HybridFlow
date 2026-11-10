@@ -10,6 +10,7 @@ import {
   MoreHorizontal,
   Shield,
   Save,
+  UserPlus,
 } from 'lucide-react';
 import { ThemeToggle } from '../ThemeToggle';
 import type { Me, WorkspaceRole, StudioNavigation } from '../../types';
@@ -30,6 +31,7 @@ interface StudioHeaderProps {
   intervalMs: number;
   onIntervalChange: (interval: number) => void;
   onSaveWorkflow: () => void;
+  onOpenShare?: () => void;
   navigation?: StudioNavigation;
   workflowEnabled?: boolean;
   onToggleWorkflowEnabled?: () => void;
@@ -50,6 +52,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
   intervalMs,
   onIntervalChange,
   onSaveWorkflow,
+  onOpenShare,
   navigation,
   user,
   workspaceRole,
@@ -178,6 +181,19 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
           </button>
         )}
 
+        {onOpenShare && (
+          <button
+            type="button"
+            onClick={onOpenShare}
+            aria-label="Chia sẻ không gian làm việc"
+            className="toolbar-button text-indigo-400 hover:text-indigo-300 border-indigo-500/30 bg-indigo-500/10 hover:bg-indigo-500/20"
+            title="Chia sẻ và cấp quyền truy cập"
+          >
+            <UserPlus size={14} />
+            <span className="hidden xl:inline">Chia sẻ</span>
+          </button>
+        )}
+
         {/* Save Workflow Button */}
         <button
           type="button"
@@ -217,6 +233,19 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
             <MoreHorizontal size={17} />
           </summary>
           <div className="toolbar-popover w-52 space-y-1">
+            {onOpenShare && (
+              <button
+                type="button"
+                onClick={(event) => {
+                  onOpenShare();
+                  event.currentTarget.closest('details')?.removeAttribute('open');
+                }}
+                className="toolbar-menu-item"
+              >
+                <UserPlus size={14} className="text-indigo-400" />
+                <span>Chia sẻ workspace</span>
+              </button>
+            )}
             {onManageConnections && (
               <button
                 type="button"

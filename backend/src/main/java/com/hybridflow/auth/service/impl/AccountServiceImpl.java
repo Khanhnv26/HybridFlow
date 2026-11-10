@@ -1,12 +1,10 @@
 package com.hybridflow.auth.service.impl;
 
-import com.hybridflow.auth.dto.response.CsrfResponse;
 import com.hybridflow.auth.repository.AccountRepository;
 import com.hybridflow.auth.service.AccountService;
 import lombok.RequiredArgsConstructor;
 import org.springframework.security.oauth2.core.OAuth2AuthenticationException;
 import org.springframework.security.oauth2.core.oidc.user.OidcUser;
-import org.springframework.security.web.csrf.CsrfToken;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -26,8 +24,8 @@ public class AccountServiceImpl implements AccountService {
         }
         String email = user.getEmail().trim().toLowerCase(Locale.ROOT);
         String name = user.getFullName() == null ? email : user.getFullName();
-        accountRepository.upsertGoogle(user.getSubject(), email, name);
+        String picture = user.getPicture();
+        accountRepository.upsertGoogle(user.getSubject(), email, name, picture);
     }
-
 
 }
