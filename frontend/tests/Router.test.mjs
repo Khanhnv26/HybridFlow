@@ -1,6 +1,13 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveRoute, syncOAuthRedirect } from '../src/router.ts';
+import { readFile } from 'node:fs/promises';
+import ts from 'typescript';
+
+const source = await readFile(new URL('../src/router.ts', import.meta.url), 'utf8');
+const compiled = ts.transpileModule(source, {
+  compilerOptions: { module: ts.ModuleKind.ESNext, target: ts.ScriptTarget.ES2022 },
+}).outputText;
+const { resolveRoute, syncOAuthRedirect } = await import(`data:text/javascript;base64,${Buffer.from(compiled).toString('base64')}`);
 
 test('login has its own route and receives failed Google callbacks', () => {
   assert.equal(resolveRoute('/login', ''), 'login');
