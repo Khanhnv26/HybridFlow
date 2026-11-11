@@ -1,6 +1,13 @@
 # HybridFlow
 
+[![CI/CD Pipeline](https://github.com/Khanhnv26/HybridFlow/actions/workflows/ci-cd.yml/badge.svg)](https://github.com/Khanhnv26/HybridFlow/actions/workflows/ci-cd.yml)
+[![Live Demo](https://img.shields.io/badge/Demo-Vercel-black?logo=vercel)](https://hybrid-flow-six.vercel.app)
+[![Backend Status](https://img.shields.io/badge/Backend-Render-46E3B7?logo=render)](https://hybridflow-backend.onrender.com/api/v1/health)
+
 Ứng dụng đồng bộ Google Sheets hai chiều theo bản ghi/cột, phát hiện xung đột và tự động gửi Telegram. Backend Spring Boot/Java 21, frontend React/Vite, database PostgreSQL.
+
+- **Production URL**: [https://hybrid-flow-six.vercel.app](https://hybrid-flow-six.vercel.app)
+- **API Health Monitor**: [https://hybridflow-backend.onrender.com/api/v1/health](https://hybridflow-backend.onrender.com/api/v1/health)
 
 ## Chạy cục bộ
 
