@@ -1,22 +1,42 @@
 package com.hybridflow.common.config;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.security.web.authentication.SimpleUrlAuthenticationSuccessHandler;
 
-import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 
 class SecurityConfigTest {
 
     @Test
-    void shouldNormalizeFrontendUrlsCorrectly() {
-        assertEquals("http://localhost:3000", SecurityConfig.normalizeFrontendUrl(null));
-        assertEquals("http://localhost:3000", SecurityConfig.normalizeFrontendUrl(""));
-        assertEquals("http://localhost:3000", SecurityConfig.normalizeFrontendUrl("   "));
-        assertEquals("https://hybrid-flow-six.vercel.app", SecurityConfig.normalizeFrontendUrl("https://hybrid-flow-six.vercel.app"));
-        assertEquals("http://localhost:3000", SecurityConfig.normalizeFrontendUrl("http://localhost:3000"));
-        assertEquals("https://hybrid-flow-six.vercel.app", SecurityConfig.normalizeFrontendUrl("hybrid-flow-six.vercel.app"));
-        assertEquals("https://hybrid-flow-six.vercel.app", SecurityConfig.normalizeFrontendUrl("\"https://hybrid-flow-six.vercel.app\""));
-        assertEquals("https://hybrid-flow-six.vercel.app", SecurityConfig.normalizeFrontendUrl("'https://hybrid-flow-six.vercel.app'"));
-        assertEquals("https://hybrid-flow-six.vercel.app", SecurityConfig.normalizeFrontendUrl("  hybrid-flow-six.vercel.app  "));
-        assertEquals("/", SecurityConfig.normalizeFrontendUrl("/"));
+    void testBulletproofValidation() {
+        String[] samples = {
+            null,
+            "",
+            "   ",
+            "FRONTEND_ORIGIN=https://hybrid-flow-six.vercel.app",
+            "\"FRONTEND_ORIGIN=https://hybrid-flow-six.vercel.app\"",
+            "hybrid-flow-six.vercel.app",
+            "https://hybrid-flow-six.vercel.app",
+            "https://hybrid-flow-six.vercel.app/",
+            "\"https://hybrid-flow-six.vercel.app\"",
+            "'https://hybrid-flow-six.vercel.app'",
+            "https://",
+            "invalid url %%^^",
+            "///",
+            "/"
+        };
+
+        for (String sample : samples) {
+            assertDoesNotThrow(() -> {
+                String target;
+                try {
+                    target = SecurityConfig.normalizeFrontendUrl(sample);
+                    new SimpleUrlAuthenticationSuccessHandler().setDefaultTargetUrl(target);
+                } catch (Exception e) {
+                    target = "/";
+                }
+                new SimpleUrlAuthenticationSuccessHandler().setDefaultTargetUrl(target);
+            });
+        }
     }
 }

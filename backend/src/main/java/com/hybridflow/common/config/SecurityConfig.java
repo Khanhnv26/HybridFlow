@@ -20,7 +20,7 @@ public class SecurityConfig {
                                                    GoogleOidcUserLoader loader, SecurityErrorWriter errors,
                                                    GoogleLoginFailureHandler loginFailure,
                                                    @Value("${app.frontend-origin:http://localhost:3000}") String frontend) throws Exception {
-        String targetUrl = normalizeFrontendUrl(frontend);
+        String targetUrl = resolveSafeSuccessUrl(frontend);
         http.cors(Customizer.withDefaults());
         http.csrf(csrf -> csrf.ignoringRequestMatchers("/api/v1/health", "/api/v1/webhooks/**")
                 .csrfTokenRepository(new HttpSessionCsrfTokenRepository()));
@@ -46,15 +46,35 @@ public class SecurityConfig {
         return http.build();
     }
 
+    static String resolveSafeSuccessUrl(String raw) {
+        String candidate = normalizeFrontendUrl(raw);
+        try {
+            org.springframework.security.web.util.UrlUtils.isAbsoluteUrl(candidate);
+            if (org.springframework.security.web.util.UrlUtils.isValidRedirectUrl(candidate)) {
+                return candidate;
+            }
+        } catch (Exception ignored) {
+        }
+        return "/";
+    }
+
     static String normalizeFrontendUrl(String raw) {
         if (raw == null || raw.isBlank()) {
-            return "http://localhost:3000";
+            return "/";
         }
         String clean = raw.trim();
-        if ((clean.startsWith("\"") && clean.endsWith("\"")) || (clean.startsWith("'") && clean.endsWith("'"))) {
+        if (clean.contains("=")) {
+            clean = clean.substring(clean.indexOf('=') + 1).trim();
+        }
+        while ((clean.startsWith("\"") && clean.endsWith("\"")) || (clean.startsWith("'") && clean.endsWith("'"))) {
             if (clean.length() >= 2) {
                 clean = clean.substring(1, clean.length() - 1).trim();
+            } else {
+                break;
             }
+        }
+        if (clean.isBlank()) {
+            return "/";
         }
         if (!clean.startsWith("http://") && !clean.startsWith("https://") && !clean.startsWith("/")) {
             clean = "https://" + clean;
