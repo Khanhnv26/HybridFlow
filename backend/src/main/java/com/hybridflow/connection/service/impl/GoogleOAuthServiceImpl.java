@@ -40,13 +40,31 @@ public class GoogleOAuthServiceImpl implements GoogleOAuthService {
     @Value("${google.oauth.token-uri:https://oauth2.googleapis.com/token}")
     private String tokenUri = "https://oauth2.googleapis.com/token";
 
+    @Value("${spring.security.oauth2.client.registration.google.client-id:}")
+    private String clientId;
+
+    @Value("${spring.security.oauth2.client.registration.google.client-secret:}")
+    private String clientSecret;
+
     @PostConstruct
     public void init() {
         try {
             ClassPathResource resource = new ClassPathResource("client_secret.json");
-            clientSecrets = GoogleClientSecrets.load(
-                    GsonFactory.getDefaultInstance(),
-                    new InputStreamReader(resource.getInputStream()));
+            if (clientId != null && !clientId.isBlank() && clientSecret != null && !clientSecret.isBlank()) {
+                GoogleClientSecrets.Details details = new GoogleClientSecrets.Details();
+                details.setClientId(clientId);
+                details.setClientSecret(clientSecret);
+                details.setAuthUri("https://accounts.google.com/o/oauth2/auth");
+                details.setTokenUri(tokenUri);
+                clientSecrets = new GoogleClientSecrets();
+                clientSecrets.setWeb(details);
+            } else if (resource.exists()) {
+                clientSecrets = GoogleClientSecrets.load(
+                        GsonFactory.getDefaultInstance(),
+                        new InputStreamReader(resource.getInputStream()));
+            } else {
+                throw new IllegalStateException("Missing Google OAuth credentials: neither client_secret.json nor environment variables found.");
+            }
 
             transport = GoogleNetHttpTransport.newTrustedTransport();
             this.flow = new GoogleAuthorizationCodeFlow.Builder(
@@ -54,9 +72,6 @@ public class GoogleOAuthServiceImpl implements GoogleOAuthService {
                     GsonFactory.getDefaultInstance(),
                     clientSecrets,
                     SCOPES).setAccessType("offline").build();
-
-
-
         } catch (Exception e) {
             throw new ApplicationException(ErrorCode.CONFIGURATION_ERROR, "Không thể khởi tạo Google OAuth.", e);
         }
