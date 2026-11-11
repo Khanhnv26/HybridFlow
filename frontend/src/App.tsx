@@ -1030,7 +1030,7 @@ export default function App({ user, userId, workspaceId, workspaceRole, workflow
                 </div>
               </div>
             </Panel>}
-            <Panel position="top-left" className="flex gap-2">
+            <Panel position="top-left" className="flex select-none gap-2">
               <button
                 onClick={() => setIsPaletteOpen(!isPaletteOpen)}
                 aria-expanded={isPaletteOpen}
