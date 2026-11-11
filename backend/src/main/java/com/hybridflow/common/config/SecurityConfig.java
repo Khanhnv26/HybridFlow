@@ -20,6 +20,7 @@ public class SecurityConfig {
                                                    GoogleOidcUserLoader loader, SecurityErrorWriter errors,
                                                    GoogleLoginFailureHandler loginFailure,
                                                    @Value("${app.frontend-origin:http://localhost:3000}") String frontend) throws Exception {
+        String targetUrl = normalizeFrontendUrl(frontend);
         http.cors(Customizer.withDefaults());
         http.csrf(csrf -> csrf.ignoringRequestMatchers("/api/v1/health", "/api/v1/webhooks/**")
                 .csrfTokenRepository(new HttpSessionCsrfTokenRepository()));
@@ -32,7 +33,7 @@ public class SecurityConfig {
         http.requestCache(cache -> cache.disable());
         http.oauth2Login(login -> login
                 .userInfoEndpoint(info -> info.oidcUserService(loader))
-                .defaultSuccessUrl(frontend, true)
+                .defaultSuccessUrl(targetUrl, true)
                 .failureHandler(loginFailure));
         http.exceptionHandling(handler -> handler
                 .authenticationEntryPoint((request, response, exception) ->
@@ -43,5 +44,21 @@ public class SecurityConfig {
                 .invalidateHttpSession(true).clearAuthentication(true).deleteCookies("JSESSIONID")
                 .logoutSuccessHandler((request, response, authentication) -> response.setStatus(204)));
         return http.build();
+    }
+
+    static String normalizeFrontendUrl(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return "http://localhost:3000";
+        }
+        String clean = raw.trim();
+        if ((clean.startsWith("\"") && clean.endsWith("\"")) || (clean.startsWith("'") && clean.endsWith("'"))) {
+            if (clean.length() >= 2) {
+                clean = clean.substring(1, clean.length() - 1).trim();
+            }
+        }
+        if (!clean.startsWith("http://") && !clean.startsWith("https://") && !clean.startsWith("/")) {
+            clean = "https://" + clean;
+        }
+        return clean;
     }
 }
