@@ -348,6 +348,7 @@ test('the comparison dialog persists a numeric price column and keeps the key as
     'Editing the modal must not update the running workflow or persisted browser draft before Save');
   const dialog = renderer.root.findByProps({ role: 'dialog' });
   await act(async () => dialog.findAllByType('button').find(node => text(node).includes('Lưu cấu hình')).props.onClick());
+  for (let attempt = 0; attempt < 10 && !saved; attempt++) await act(async () => new Promise(setImmediate));
   assert.deepEqual(saved.nodes.find(node => node.id === 'diff').data.columnTypes, { price: 'NUMBER' });
   await act(async () => renderer.root.find(node => node.props['data-workflow-node'] === 'a')
     .findAllByType('button').find(node => text(node).includes('Xem dữ liệu')).props.onClick({ stopPropagation() {} }));
