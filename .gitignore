@@ -65,3 +65,5 @@ Desktop.ini
 
 # Private backend settings
 /backend/application-local.properties
+artifacts/
+

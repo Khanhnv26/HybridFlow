@@ -1,0 +1,21 @@
+{
+  "framework": "vite",
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "https://hybridflow-backend.onrender.com/api/$1"
+    },
+    {
+      "source": "/oauth2/(.*)",
+      "destination": "https://hybridflow-backend.onrender.com/oauth2/$1"
+    },
+    {
+      "source": "/login/oauth2/(.*)",
+      "destination": "https://hybridflow-backend.onrender.com/login/oauth2/$1"
+    },
+    {
+      "source": "/((?!assets/|favicon.ico).*)",
+      "destination": "/index.html"
+    }
+  ]
+}
